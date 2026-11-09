@@ -12,7 +12,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION_PATTERN = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)")
-RELEASE_DOCS = ("LICENSE", "README.md", "CHANGES.md", "THIRD_PARTY_NOTICES.md")
+RELEASE_DOCS = ("LICENSE", "README.md", "CHANGES.md", "THIRD_PARTY_NOTICES.md", "TEST_REPORT.md")
 
 
 def components(version):
@@ -90,19 +90,23 @@ def bundle(version, dist, output):
     (output / f"{name}-SHA256SUMS.txt").write_text("".join(checksum), encoding="ascii")
 
 
+def smoke_at(app, data):
+    data.mkdir(parents=True, exist_ok=True)
+    (data / "settings.json").write_text(
+        '{"capture_hotkey":false,"restore_on_start":false,"settings_theme":"light"}',
+        encoding="utf-8")
+    screenshot = data / "settings.png"
+    windows = Path(os.environ["SystemRoot"])
+    env = dict(os.environ, QT_QPA_PLATFORM="offscreen", PATH=f"{windows / 'System32'};{windows}")
+    subprocess.run((str(app.resolve()), "--data-dir", str(data), "--screenshot", str(screenshot)),
+                   env=env, check=True, timeout=40)
+    if screenshot.stat().st_size < 10000 or "ERROR" in (data / "still.log").read_text(encoding="utf-8"):
+        raise RuntimeError("The packaged settings window failed the startup smoke test.")
+
+
 def smoke(app):
     with tempfile.TemporaryDirectory(prefix="qingkuai-release-") as folder:
-        data = Path(folder)
-        (data / "settings.json").write_text(
-            '{"capture_hotkey":false,"restore_on_start":false,"settings_theme":"light"}',
-            encoding="utf-8")
-        screenshot = data / "settings.png"
-        windows = Path(os.environ["SystemRoot"])
-        env = dict(os.environ, QT_QPA_PLATFORM="offscreen", PATH=f"{windows / 'System32'};{windows}")
-        subprocess.run((str(app.resolve()), "--data-dir", str(data), "--screenshot", str(screenshot)),
-                       env=env, check=True, timeout=40)
-        if screenshot.stat().st_size < 10000 or "ERROR" in (data / "still.log").read_text(encoding="utf-8"):
-            raise RuntimeError("The packaged settings window failed the startup smoke test.")
+        smoke_at(app, Path(folder))
 
 
 def main():

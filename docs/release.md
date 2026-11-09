@@ -17,6 +17,8 @@ python tools/run_tests.py --desktop
 
 `release/` 包含 Setup、免安装 ZIP、同一提交的源码 ZIP 和 SHA-256。Setup 默认按当前用户安装，卸载保留应用配置目录。便携版移到安装版后，如已有自启动，可以在新版重新开启自启动以更新路径。安装包未签名。录屏和媒体导出需要单独安装带 `gdigrab`、`libx264` 和 `ffv1` 的 FFmpeg，并让 `ffmpeg.exe` 在 PATH 中可用。
 
+没有已安装版本的测试机上可执行 `python tools/test_setup.py`，在隔离目录检查安装、启动、卸载和配置保留。
+
 ## GitHub 首次接入
 
 1. 在 GitHub 建立空的 `light-block-desktop` 仓库，将本仓库的 `main` 推送到 `origin`。仓库已有 MIT 文件，创建时可保留空仓库选项。
@@ -27,6 +29,6 @@ python tools/run_tests.py --desktop
 
 更新 `CHANGES.md`，递增 `still/model.py` 的 `VERSION`，提交并推送到 `main`。若使用受保护分支，合入发布 PR 同样会触发流程。
 
-GitHub Actions 会验证版本、运行 Windows 测试、构建便携包和 Setup，然后以触发提交创建对应标签与 Release。相同版本已经有标签时会跳过发布。普通 PR 和主题分支保持测试流程，仓库的发布权限只授予主分支的发布任务。
+GitHub Actions 会验证版本、运行 Windows 测试、构建便携包和 Setup、验证安装与卸载，然后以触发提交创建对应标签与 Release。相同版本已经有标签时会跳过发布。普通 PR 和主题分支保持测试流程，仓库的发布权限只授予主分支的发布任务。
 
 如果发布中断，先检查 Actions 日志和 Releases 是否残留草稿。保留已经发布的标签和资产。维护者可以补齐同一提交的草稿，或者递增版本重新发布。已安装的应用可从 Releases 下载新版 Setup。
