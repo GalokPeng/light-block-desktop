@@ -1,11 +1,13 @@
 # 贡献与合并
 
+[English](CONTRIBUTING.en.md)
+
 项目的稳定分支为 `main`。自行维护的版本和向上游贡献可以共享本地开发流程。
 
 ## 向上游提交
 
 1. 先检查仓库远端和工作区。如果用 fork，`origin` 指向自己的 fork，`upstream` 指向作者仓库。用 `git fetch upstream` 同步，在 `upstream/main` 上新建 `fix/<短名>` 或 `feat/<短名>`。同仓库贡献者可从更新后的 `origin/main` 建分支。
-2. 一次 PR 聚焦一个可说明的改动，功能实现和必要测试一起提交。确认 `git diff --check` 通过，检查实际变化和配置向后兼容。
+2. 一次 PR 聚焦一个可说明的改动，功能实现和必要测试一起提交。确认 `git diff --check` 通过，检查实际变化和配置向后兼容。新增界面文案时，在 [locales/en.json](locales/en.json) 补齐英文并保留格式占位符，分别检查中英文。
 3. 推送主题分支后以作者仓库 `main` 为目标提 PR。说明复现或目标、改动范围、实际运行的测试、Windows / DPI 验证情况以及数据迁移影响。带界面截图时使用生成素材。
 4. 维护者审阅后合并。推荐 squash merge，让一次 PR 对应一条主线提交。更新分支时优先合并上游最新 `main`，保留共享分支的历史。
 

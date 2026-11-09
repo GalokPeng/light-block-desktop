@@ -38,7 +38,7 @@ python main.py
 python tools/run_tests.py
 ```
 
-Windows x64, Python 3.11 and PySide6. The [development Skill](skills/light-block-desktop-dev/SKILL.md) can onboard an agent. See the [contribution guidelines](CONTRIBUTING.md), [release workflow](docs/release.md) and [website deployment](docs/website.md).
+Windows x64, Python 3.11 and PySide6. The [development Skill](skills/light-block-desktop-dev/SKILL.md) can onboard an agent. See the [contribution guidelines](CONTRIBUTING.en.md), [release workflow](docs/release.en.md) and [website deployment](docs/website.md).
 
 The application source uses the [MIT license](LICENSE). Bundled dependencies keep their [own licenses](THIRD_PARTY_NOTICES.md).
 

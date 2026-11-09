@@ -1,5 +1,7 @@
 # Windows 构建与发布
 
+[English](release.en.md)
+
 发布版本取自 `still/model.py` 中的 `VERSION`，例如 `0.5.0`。PyInstaller 的文件版本、便携包目录、Setup 文件名和 GitHub 标签都由它生成。
 
 ## 本地验证
