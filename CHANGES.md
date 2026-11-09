@@ -1,3 +1,12 @@
+# v0.6.0 · 任务栏美化 / Taskbar Dock
+
+- 在「桌面收纳」中开启任务栏美化。主屏底部居中排列电源与搜索、应用 Dock 和原生系统托盘。
+- Dock 支持固定应用、拖动排序和切换多个窗口。搜索打开 Windows 原生面板，托盘保留系统菜单和输入法指示。
+- 功能默认关闭。关闭美化或退出后恢复原生任务栏。目前支持主屏底部布局，需关闭 Windows 任务栏自动隐藏。
+- Enable Taskbar Style in Desktop Organizer to center power and search, the app dock, and the native system tray on the primary display.
+- Pin and reorder apps, and switch between multiple windows. Search opens the Windows panel, and the tray keeps its system menus and input indicator.
+- Taskbar Style is off by default. Turning it off or exiting restores the original taskbar. It supports the primary display's bottom taskbar with Windows auto-hide turned off.
+
 # v0.5.1 · 截屏工具栏、贴图编辑与更新检查 / Capture tools, pin editing and update checks
 
 - 截屏工具按功能显示独立选项，矩形与圆形支持填充和虚实线，矩形支持圆角。马赛克支持圆角框选与画笔涂抹。
