@@ -5,6 +5,13 @@
   "installCommand": null,
   "outputDirectory": "site/public",
   "trailingSlash": true,
+  "redirects": [
+    {
+      "source": "/download/",
+      "destination": "https://github.com/GalokPeng/light-block-desktop/releases/latest/download/Qingkuai-Setup-x64.exe",
+      "permanent": false
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
