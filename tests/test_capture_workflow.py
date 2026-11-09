@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication, QToolButton
 from still.capture import AnnotationCanvas, PinWindow, next_number
 from still.capture_overlay import CaptureOverlay, beside_region, pixel_rect
 from still.desktop_icons import DesktopIconLease
+from still.i18n import tr
 from still.model import Store
 from still.organizer_model import Collections
 
@@ -108,7 +109,7 @@ class CaptureWorkflowTests(unittest.TestCase):
         self.assertEqual(self.overlay.selection, expected)
         results = []
         self.overlay.finished.connect(lambda *value: results.append(value))
-        pin = next(button for button in self.overlay.findChildren(QToolButton) if button.accessibleName() == "贴图")
+        pin = next(button for button in self.overlay.findChildren(QToolButton) if button.accessibleName() == tr("贴图"))
         QTest.mouseClick(pin, Qt.MouseButton.LeftButton)
         action, image, region = results[0]
         expected_physical = pixel_rect(expected, 1.5).translated(-1500, 0)
