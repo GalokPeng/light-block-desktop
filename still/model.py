@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .i18n import tr
 
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 APP_NAME = "轻块桌面"
 DEFAULT_ORGANIZER_TITLE = "桌面收纳"
 DEFAULT_CAPTURE_SHORTCUT = "Ctrl+Alt+A"
@@ -61,7 +61,9 @@ class Settings:
     restore_on_start: bool = True
     original_wallpaper: dict | None = None
     settings_theme: str = "dark"
+    settings_language: str = "system"
     organizer_enabled: bool = False
+    organizer_position: list[int] | None = None
     organizer_title: str = DEFAULT_ORGANIZER_TITLE
     organizer_groups: list = field(default_factory=list)
     organizer_pending: list = field(default_factory=list)
@@ -106,8 +108,14 @@ class Store:
                     self.settings.fit = "fill"
                 if self.settings.settings_theme not in ("dark", "light"):
                     self.settings.settings_theme = "dark"
+                if self.settings.settings_language not in ("system", "zh", "en"):
+                    self.settings.settings_language = "system"
                 if not isinstance(self.settings.organizer_title, str):
                     self.settings.organizer_title = DEFAULT_ORGANIZER_TITLE
+                position = self.settings.organizer_position
+                if not (isinstance(position, list) and len(position) == 2
+                        and all(type(axis) is int and abs(axis) < 100_000 for axis in position)):
+                    self.settings.organizer_position = None
                 if not isinstance(self.settings.capture_shortcut, str) or not self.settings.capture_shortcut:
                     self.settings.capture_shortcut = DEFAULT_CAPTURE_SHORTCUT
             except (ValueError, TypeError, OSError) as exc:

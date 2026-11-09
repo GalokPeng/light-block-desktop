@@ -1,3 +1,16 @@
+# v0.5.1 · 截屏工具栏、贴图编辑与更新检查 / Capture tools, pin editing and update checks
+
+- 截屏工具按功能显示独立选项，矩形与圆形支持填充和虚实线，矩形支持圆角。马赛克支持圆角框选与画笔涂抹。
+- 贴图支持 Ctrl + 滚轮缩放。右键可在原窗口编辑，复制和导出保留原图分辨率。
+- 设置可以在系统语言、简体中文和英文之间切换。明暗主题同步到 Windows 窗框，左下角显示更新状态。
+- 收纳默认居中，右键开启移动后可拖动面板。小收纳框支持拖动排序，位置和顺序会保存。
+- 官网和软件共用安装包下载入口，优先使用 GitHub 官方源，失败时尝试经 SHA-256 校验的公开加速源。
+- Capture tools have their own settings. Rectangles and ellipses support fill and dashed or solid outlines. Mosaic supports rounded selections and brush strokes.
+- Use Ctrl + scroll to zoom a pinned image, and right-click to edit it in place. Copies and exports retain the original resolution.
+- Settings can follow the system language or use Simplified Chinese or English. The native frame follows the app theme, and the sidebar shows update status.
+- Desktop collections start centered. Right-click to enable panel movement and drag folders to reorder them. Both settings are saved.
+- Website and app downloads use GitHub first and fall back to public mirrors with SHA-256 verification.
+
 # v0.5.0 · 中英文界面与安装向导 / Bilingual app and Setup
 
 - 程序启动时按 Windows 显示语言切换简体中文与英文。覆盖设置、托盘、收纳、截屏、录屏与效率工具。

@@ -6,6 +6,7 @@ import json
 import sys
 
 CATALOG = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)) / "locales" / "en.json"
+_preference = "system"
 
 
 def language_for_id(langid):
@@ -14,10 +15,19 @@ def language_for_id(langid):
 
 
 @lru_cache(maxsize=1)
-def display_language():
+def system_language():
     if sys.platform == "win32":
         return language_for_id(ctypes.windll.kernel32.GetUserDefaultUILanguage())
     return "en"
+
+
+def set_language(preference):
+    global _preference
+    _preference = preference if preference in {"zh", "en"} else "system"
+
+
+def display_language():
+    return system_language() if _preference == "system" else _preference
 
 
 @lru_cache(maxsize=1)
@@ -32,6 +42,11 @@ def tr(text):
 
 def install_qt_translation(app):
     """Localize built-in Qt buttons and dialogs in Chinese."""
+    previous = getattr(app, "_still_translator", None)
+    if previous is not None:
+        app.removeTranslator(previous)
+        previous.deleteLater()
+        app._still_translator = None
     if display_language() != "zh":
         return
     from PySide6.QtCore import QLibraryInfo, QTranslator
@@ -39,3 +54,6 @@ def install_qt_translation(app):
     translator = QTranslator(app)
     if translator.load("qtbase_zh_CN", QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)):
         app.installTranslator(translator)
+        app._still_translator = translator
+    else:
+        translator.deleteLater()

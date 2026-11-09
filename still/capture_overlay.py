@@ -4,17 +4,16 @@ from __future__ import annotations
 import ctypes as C
 from ctypes import wintypes as W
 
-from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QCursor, QFontMetrics, QIcon, QKeySequence, QPainter, QPen, QPixmap, QShortcut
-from PySide6.QtWidgets import (QApplication, QComboBox, QFormLayout, QFrame, QHBoxLayout,
-                             QMenu, QToolButton, QVBoxLayout, QWidget, QWidgetAction)
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QCursor, QFontMetrics, QKeySequence, QPainter, QPen, QShortcut
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
 
 from .i18n import tr
 from . import win32
-from .capture import (DRAW_COLORS, DRAW_TOOLS, STROKE_SIZES, AnnotationSizer, choose_number,
-                      next_number, paint_operation, render_operations)
+from .capture import (MOSAICS, AnnotationSizer, choose_number, extend_drawing, mosaic_texture, next_number,
+                      operation_rect, paint_mosaic, paint_operation, render_operations)
 from .capture_text import AnnotationHistory, InlineText
-from .capture_icons import capture_icon
+from .capture_tools import DOCK_STYLE, DrawingTools, divider, draw_colors, icon_button, strip
 
 
 def pixel_rect(rect, ratio):
@@ -111,7 +110,6 @@ class CaptureOverlay(QWidget):
     def __init__(self, screen, mode="capture"):
         super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint |
                          Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.NoDropShadowWindowHint)
-        from .ui import STYLE
         self.screen_source = screen
         self.mode = mode
         self.snapshot = screen.grabWindow(0)
@@ -135,87 +133,43 @@ class CaptureOverlay(QWidget):
         self.handle = ""
         self.anchor = QPoint()
         self.draft = None
+        self.mosaic_source = None
         self.history = AnnotationHistory()
         self.operations = self.history.operations
         self.tool = "move"
         self.setCursor(Qt.CursorShape.CrossCursor)
 
-        self.toolbar = QFrame(self)
-        self.toolbar.setObjectName("captureDock")
-        self.toolbar.setStyleSheet(STYLE + """
-            QFrame#captureDock { background:#171a21;border:1px solid #444b58;border-radius:10px; }
-            QToolButton { background:transparent;border:0;border-radius:6px;padding:2px;color:white; }
-            QToolButton:hover { background:#323944; }
-            QToolButton:checked { background:#274d7c; }
-            QToolButton#confirmCapture { background:#2d6bd2; }
-            QToolButton#confirmCapture:hover { background:#3b80eb; }
-            QToolButton::menu-button { width:13px;border:0; }
-            QToolButton::menu-indicator { width:8px;height:8px; }
-            QFrame#toolDivider { background:#414956; }
-        """)
+        self.toolbar = QWidget(self)
+        self.toolbar.setStyleSheet(DOCK_STYLE)
         bar = QVBoxLayout(self.toolbar)
+        bar.setContentsMargins(0, 0, 0, 0)
+        bar.setSpacing(4)
         self.inline = InlineText(self, lambda: QRectF(self.selection), lambda index: (QPointF(), 1),
-                                 self.publish, bar.addWidget, DRAW_COLORS)
+                                 self.publish, bar.addWidget, draw_colors())
         self.sizing = AnnotationSizer(self.inline, mode != "longshot")
         self.inline.resize_on_wheel = self.sizing.adjust
-        bar.setContentsMargins(6, 5, 6, 5)
-        bar.setSpacing(3)
-        self.picker = QWidget()
-        picker = QHBoxLayout(self.picker)
-        picker.setContentsMargins(0, 0, 0, 0)
-        picker.setSpacing(3)
+        self.picker, picker = strip()
         self.pick_controls = {}
         for key, title, smart in (("smart", tr("智能窗口"), True), ("rect", tr("手动选区"), False)):
-            item = self.icon_button(key, title, lambda checked=False, value=smart: self.set_smart(value))
+            item = icon_button(key, title, lambda checked=False, value=smart: self.set_smart(value))
             item.setCheckable(True)
             item.setChecked(smart)
             self.pick_controls[smart] = item
             picker.addWidget(item)
-        picker.addWidget(self.icon_button("full", tr("当前屏幕"), self.select_full))
-        picker.addWidget(self.icon_button("cancel", tr("取消 · Esc"), self.close))
+        picker.addWidget(icon_button("full", tr("当前屏幕"), self.select_full))
+        picker.addWidget(icon_button("cancel", tr("取消 · Esc"), self.close))
         bar.addWidget(self.picker)
 
-        self.actions = QWidget()
-        row = QHBoxLayout(self.actions)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(3)
-        self.drawing_controls = {}
-        self.add_drawing_group(row, ("rect", "line", "arrow"))
-        self.add_drawing_group(row, ("pen", "highlight"))
-        self.add_drawing_group(row, ("text",))
-        self.add_drawing_group(row, ("number",))
-        self.add_drawing_group(row, ("mosaic",))
-        options = QMenu(self)
-        form = QWidget()
-        form_layout = QFormLayout(form)
-        form_layout.setContentsMargins(12, 8, 12, 8)
-        self.color = QComboBox()
-        self.color.setEditable(False)
-        self.color.setAccessibleName(tr("标注颜色"))
-        for value, name in DRAW_COLORS:
-            swatch = QPixmap(14, 14)
-            swatch.fill(QColor(value))
-            self.color.addItem(QIcon(swatch), name, value)
-        form_layout.addRow(tr("颜色"), self.color)
-        self.stroke = QComboBox()
-        self.stroke.setEditable(False)
-        self.stroke.setAccessibleName(tr("画笔大小"))
-        for value in STROKE_SIZES:
-            self.stroke.addItem(f"{value} px", value)
-        self.stroke.setCurrentIndex(self.stroke.findData(4))
-        form_layout.addRow(tr("粗细"), self.stroke)
-        style_action = QWidgetAction(options)
-        style_action.setDefaultWidget(form)
-        options.addAction(style_action)
-        row.addWidget(self.icon_button("style", tr("颜色与粗细"), menu=options))
-        self.divider(row)
-        row.addWidget(self.icon_button("undo", tr("撤销 · Ctrl+Z"), self.undo))
-        row.addWidget(self.icon_button("redo", tr("重做"), self.redo))
-        self.divider(row)
+        self.actions, row = strip()
+        self.drawing = DrawingTools(row, bar.addWidget, self.set_tool, self.reset_number)
+        divider(row)
+        row.addWidget(icon_button("undo", tr("撤销 · Ctrl+Z"), self.undo))
+        row.addWidget(icon_button("redo", tr("重做"), self.redo))
+        divider(row)
         for action, title in (("longshot", tr("滚轮长截图")), ("record", tr("开始录屏")), ("pin", tr("贴图")),
                               ("save", tr("保存 PNG")), ("cancel", tr("取消 · Esc")), ("copy", tr("复制 · Ctrl+C"))):
             callback = self.close if action == "cancel" else lambda checked=False, value=action: self.commit(value)
-            item = self.icon_button(action, title, callback)
+            item = icon_button(action, title, callback)
             if mode == action or mode == "capture" and action == "copy":
                 item.setObjectName("confirmCapture")
             row.addWidget(item)
@@ -230,12 +184,12 @@ class CaptureOverlay(QWidget):
         side = QVBoxLayout(self.side_tools)
         side.setContentsMargins(0, 0, 0, 0)
         side.setSpacing(5)
-        self.move_tool = self.icon_button("move", tr("拖动选区"), lambda: self.set_tool("move"))
+        self.move_tool = icon_button("move", tr("拖动选区"), lambda: self.set_tool("move"))
         self.move_tool.setCheckable(True)
         self.move_tool.setChecked(True)
         side.addWidget(self.move_tool)
-        side.addWidget(self.icon_button("full", tr("选中当前屏幕"), self.select_full))
-        side.addWidget(self.icon_button("reset", tr("重新选区"), self.reset_selection))
+        side.addWidget(icon_button("full", tr("选中当前屏幕"), self.select_full))
+        side.addWidget(icon_button("reset", tr("重新选区"), self.reset_selection))
         self.side_tools.adjustSize()
         self.side_tools.hide()
         self.actions.hide()
@@ -281,44 +235,6 @@ class CaptureOverlay(QWidget):
             y = max(6, min(self.selection.top(), self.height()-self.side_tools.height()-6))
             self.side_tools.move(max(5, x), y)
 
-    def icon_button(self, key, title, callback=None, menu=None):
-        button = QToolButton()
-        button.setIcon(capture_icon(key))
-        button.setIconSize(QSize(21, 21))
-        button.setFixedSize(46 if menu and callback else 34, 34)
-        button.setToolTip(title)
-        button.setAccessibleName(title)
-        button.setCursor(Qt.CursorShape.PointingHandCursor)
-        button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        if callback:
-            button.clicked.connect(callback)
-        if menu:
-            button.setMenu(menu)
-            button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup if callback else
-                                QToolButton.ToolButtonPopupMode.InstantPopup)
-        return button
-
-    def divider(self, layout):
-        line = QFrame()
-        line.setObjectName("toolDivider")
-        line.setFixedSize(1, 20)
-        layout.addWidget(line)
-
-    def add_drawing_group(self, layout, tools):
-        labels = dict(DRAW_TOOLS)
-        first = tools[0]
-        menu = QMenu(self) if len(tools) > 1 or first == "number" else None
-        control = self.icon_button(first, labels[first], lambda: self.set_tool(control.property("tool")), menu)
-        control.setCheckable(True)
-        control.setProperty("tool", first)
-        for key in tools:
-            self.drawing_controls[key] = control
-            if menu and len(tools) > 1:
-                menu.addAction(capture_icon(key), labels[key], lambda checked=False, tool=key: self.set_tool(tool))
-        if first == "number":
-            menu.addAction(tr("重计序号…"), self.reset_number)
-        layout.addWidget(control)
-
     def set_smart(self, enabled):
         self.mode_smart = enabled
         for value, control in self.pick_controls.items():
@@ -329,17 +245,10 @@ class CaptureOverlay(QWidget):
     def set_tool(self, tool):
         self.tool = tool
         self.inline.activate(tool == "text")
+        self.drawing.activate(tool)
         self.place_bar()
         self.update()
-        selected = self.drawing_controls.get(tool)
-        for control in set(self.drawing_controls.values()):
-            control.setChecked(control is selected)
         self.move_tool.setChecked(tool == "move")
-        if selected:
-            selected.setIcon(capture_icon(tool))
-            selected.setProperty("tool", tool)
-            selected.setToolTip(dict(DRAW_TOOLS)[tool])
-            selected.setAccessibleName(dict(DRAW_TOOLS)[tool])
 
     def update_hover(self, point, outer=False):
         previous = self.hover
@@ -409,15 +318,13 @@ class CaptureOverlay(QWidget):
             for index, operation in enumerate(self.operations):
                 if index == self.inline.hidden:
                     continue
-                if operation["kind"] == "mosaic":
-                    painter.drawImage(QRectF(*operation["rect"]), operation["preview"])
+                if operation["kind"] in MOSAICS:
+                    paint_mosaic(painter, operation["preview"])
                 elif operation["kind"] != "sequence":
                     paint_operation(painter, operation)
             if self.draft:
-                if self.draft["kind"] == "mosaic":
-                    painter.setPen(QPen(QColor("#a6e4ca"), 1, Qt.PenStyle.DashLine))
-                    painter.setBrush(Qt.BrushStyle.NoBrush)
-                    painter.drawRect(QRectF(QPointF(*self.draft["points"][0]), QPointF(*self.draft["points"][-1])).normalized())
+                if self.draft["kind"] in MOSAICS:
+                    paint_mosaic(painter, self.mosaic_preview(self.draft))
                 elif self.draft["kind"] != "text":
                     paint_operation(painter, self.draft)
             self.inline.paint(painter, paint_operation)
@@ -469,21 +376,27 @@ class CaptureOverlay(QWidget):
         if self.handle:
             self.gesture = "resize"
         elif self.selection.contains(point):
+            if self.tool == "erase":
+                target = self.sizing.hit(event.position(), erase=True)
+                if target is not None:
+                    self.publish(None, target)
+                return
             self.gesture = "move" if self.tool == "move" else "draw"
             if self.gesture == "draw":
-                self.draft = {"kind": self.tool, "color": self.color.currentData(),
-                              "width": self.stroke.currentData(), "points": [(point.x(), point.y())]}
+                self.draft = self.drawing.operation(self.tool, (point.x(), point.y()))
                 if self.tool == "number":
                     self.draft["number"] = next_number(self.operations)
+                self.update()
         else:
             self.update_hover(point, bool(event.modifiers() & Qt.KeyboardModifier.AltModifier))
             self.gesture = "new"
             self.selection = QRect()
             self.update()
-        self.toolbar.hide()
-        self.side_tools.hide()
+        if self.gesture != "draw":
+            self.toolbar.hide()
+            self.side_tools.hide()
 
-    def update_gesture(self, point):
+    def update_gesture(self, point, constrain=False):
         if self.gesture == "new":
             self.selection = QRect(self.anchor, point).normalized().intersected(self.rect())
         elif self.gesture == "move":
@@ -505,12 +418,7 @@ class CaptureOverlay(QWidget):
         elif self.draft:
             position = (max(self.selection.left(), min(point.x(), self.selection.right())),
                         max(self.selection.top(), min(point.y(), self.selection.bottom())))
-            points = self.draft["points"]
-            if self.tool in {"pen", "highlight"}:
-                if points[-1] != position:
-                    points.append(position)
-            elif self.tool not in {"text", "number"}:
-                self.draft["points"] = [points[0], position]
+            extend_drawing(self.draft, position, constrain)
 
     def mouseMoveEvent(self, event):
         point = event.position().toPoint()
@@ -519,7 +427,7 @@ class CaptureOverlay(QWidget):
             return
         if self.gesture:
             previous = self.selection
-            self.update_gesture(point)
+            self.update_gesture(point, event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
             self.update(previous.united(self.selection).adjusted(-12, -38, 200, 12))
             return
         handle = self.hit_handle(point)
@@ -563,7 +471,7 @@ class CaptureOverlay(QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() != Qt.MouseButton.LeftButton or self.inline.release() or not self.gesture:
             return
-        self.update_gesture(event.position().toPoint())
+        self.update_gesture(event.position().toPoint(), event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
         gesture, self.gesture = self.gesture, None
         if gesture == "new" and (self.selection.width() < 5 or self.selection.height() < 5):
             self.selection = QRect(self.hover if self.original.isEmpty() else self.original)
@@ -578,17 +486,18 @@ class CaptureOverlay(QWidget):
             self.confirm_selection()
 
     def add_drawing(self, operation):
-        kind = operation["kind"]
-        if kind == "mosaic":
-            first, last = operation["points"][0], operation["points"][-1]
-            area = QRect(QPoint(*first), QPoint(*last)).normalized()
+        if operation["kind"] == "mosaic":
+            area = operation_rect(operation)
             if area.width() < 3 or area.height() < 3:
                 return
-            box = pixel_rect(area, self.ratio)
-            operation["rect"] = list(area.getRect())
-            operation["preview"] = self.snapshot.copy(box).toImage().scaled(max(1, box.width()//14), max(1, box.height()//14))
-            operation["preview"].setDevicePixelRatio(1)
+        if operation["kind"] in MOSAICS:
+            operation["preview"] = self.mosaic_preview(operation)
         self.publish(operation)
+
+    def mosaic_preview(self, operation):
+        if self.mosaic_source is None:
+            self.mosaic_source = self.snapshot.toImage()
+        return mosaic_texture(self.mosaic_source, operation, self.ratio)
 
     def publish(self, operation, index=None):
         if self.history.change(operation, index):
@@ -629,12 +538,9 @@ class CaptureOverlay(QWidget):
                     op["points"] = [(x*self.ratio-box.x(), y*self.ratio-box.y()) for x, y in op["points"]]
                 if "rect" in op:
                     op["rect"] = list(pixel_rect(QRect(*op["rect"]), self.ratio).translated(-box.topLeft()).getRect())
-                if "width" in op:
-                    op["width"] *= self.ratio
-                if "font_size" in op:
-                    op["font_size"] *= self.ratio
-                if "badge_size" in op:
-                    op["badge_size"] *= self.ratio
+                for key in ("width", "font_size", "badge_size", "radius", "block_size"):
+                    if key in op:
+                        op[key] *= self.ratio
                 op["scale"] = self.ratio
                 transformed.append(op)
             image = render_operations(image, transformed)

@@ -44,6 +44,21 @@ SystemParametersInfo = bind(user32, "SystemParametersInfoW", W.BOOL, W.UINT, W.U
 MonitorFromWindow = bind(user32, "MonitorFromWindow", W.HANDLE, W.HWND, W.DWORD)
 GetCurrentProcess = bind(kernel32, "GetCurrentProcess", W.HANDLE)
 DwmGetWindowAttribute = bind(dwmapi, "DwmGetWindowAttribute", C.c_long, W.HWND, W.DWORD, C.c_void_p, W.DWORD)
+DwmSetWindowAttribute = bind(dwmapi, "DwmSetWindowAttribute", C.c_long, W.HWND, W.DWORD, C.c_void_p, W.DWORD)
+
+
+def theme_frame(hwnd, light):
+    """Apply the app theme to the native title bar and border."""
+    dark = W.BOOL(not light)
+    if DwmSetWindowAttribute(hwnd, 20, C.byref(dark), C.sizeof(dark)):
+        DwmSetWindowAttribute(hwnd, 19, C.byref(dark), C.sizeof(dark))
+    if sys.getwindowsversion().build >= 22000:
+        # COLORREF is stored as 0x00BBGGRR.
+        colors = (0xD5DBD4, 0xF5F8F6, 0x312822) if light else (0x40342A, 0x211912, 0xF9F4ED)
+        for attribute, color in zip((34, 35, 36), colors):
+            value = W.DWORD(color)
+            DwmSetWindowAttribute(hwnd, attribute, C.byref(value), C.sizeof(value))
+    SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020)
 
 
 class MONITORINFOEX(C.Structure):

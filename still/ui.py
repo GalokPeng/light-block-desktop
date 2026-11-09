@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QImageReader, QKeySequence, QLinearGradient, QMovie, QPainter, QPainterPath, QPen, QPixmap, QShortcut
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QButtonGroup, QCheckBox, QComboBox, QFileDialog,
-    QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton,
+    QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox, QPushButton,
     QScrollArea, QSizePolicy, QStackedWidget, QToolButton, QVBoxLayout, QWidget)
 
 from .i18n import display_language, tr
@@ -13,7 +13,7 @@ from . import win32
 from .model import APP_NAME, ASSETS, FITS, VERSION, item_name, item_path
 
 ACCENT = "#a6e4ca"
-KIND_LABELS = {"image": tr("静态"), "gif": "GIF", "video": tr("视频")}
+KIND_LABELS = {"image": "静态", "gif": "GIF", "video": "视频"}
 
 
 def navigation_icon(index, light=False):
@@ -315,7 +315,7 @@ class Preview(QWidget):
         p.drawRoundedRect(QRectF(18, 18, 152 if display_language() == "en" else 116, 27), 13, 13)
         p.setPen(QColor("#f0f7f4"))
         p.setFont(QFont("Microsoft YaHei UI", 9))
-        p.drawText(QRectF(18, 18, 152 if display_language() == "en" else 116, 27), Qt.AlignmentFlag.AlignCenter, KIND_LABELS[self.item["kind"]]+tr("  /  原文件"))
+        p.drawText(QRectF(18, 18, 152 if display_language() == "en" else 116, 27), Qt.AlignmentFlag.AlignCenter, tr(KIND_LABELS[self.item["kind"]])+tr("  /  原文件"))
         p.setFont(QFont("Microsoft YaHei UI", 20, QFont.Weight.Medium))
         p.drawText(QRectF(24, self.height()-83, self.width()-48, 38), Qt.AlignmentFlag.AlignVCenter, p.fontMetrics().elidedText(item_name(self.item), Qt.TextElideMode.ElideRight, self.width() - 48))
         p.setFont(QFont("Microsoft YaHei UI", 9))
@@ -339,7 +339,7 @@ class WallpaperCard(QAbstractButton):
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip(str(item_path(item)))
-        self.setAccessibleName(item_name(item)+", "+KIND_LABELS[item["kind"]])
+        self.setAccessibleName(item_name(item)+", "+tr(KIND_LABELS[item["kind"]]))
 
     def paintEvent(self, _):
         p = QPainter(self)
@@ -369,7 +369,7 @@ class WallpaperCard(QAbstractButton):
         p.drawText(QRectF(12, 97, self.width()-58, 22), Qt.AlignmentFlag.AlignVCenter, self.fontMetrics().elidedText(item_name(self.item), Qt.TextElideMode.ElideRight, self.width()-65))
         p.setPen(QColor("#53666c" if self.light else "#9baabb"))
         p.setFont(QFont("Microsoft YaHei UI", 8))
-        p.drawText(QRectF(self.width()-46, 97, 35, 22), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, KIND_LABELS[self.item["kind"]])
+        p.drawText(QRectF(self.width()-46, 97, 35, 22), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, tr(KIND_LABELS[self.item["kind"]]))
         if self.hasFocus():
             p.setPen(QPen(QColor("#508f77" if self.light else "#d0f3e3"), 1, Qt.PenStyle.DotLine))
             p.setBrush(Qt.BrushStyle.NoBrush)
@@ -382,6 +382,7 @@ class MainWindow(QMainWindow):
     def __init__(self, controller):
         super().__init__()
         self.controller, self.store, self.engine = controller, controller.store, controller.engine
+        self.updater = controller.updater()
         self.selected = self.store.find(self.store.settings.active_id) or self.store.items[0]
         self.filter_kind = "all"
         self.cards = []
@@ -419,6 +420,8 @@ class MainWindow(QMainWindow):
         self.theme_toggle.clicked.connect(self.change_theme)
         self.update_theme_toggle()
         top.addWidget(self.theme_toggle)
+        self.language_button = self.language_control()
+        top.addWidget(self.language_button)
         add = button(tr("＋  导入壁纸"), self.primary_action, "primary")
         self.header_action = add
         add.setToolTip(tr("导入图片、GIF 或视频  Ctrl+O"))
@@ -454,6 +457,11 @@ class MainWindow(QMainWindow):
         self.resource_timer.setInterval(3000)
         self.resource_timer.timeout.connect(self.refresh_status)
         self.resource_timer.start()
+        self.update_timer = QTimer(self)
+        self.update_timer.setInterval(3600000)
+        self.update_timer.timeout.connect(self.updater.check)
+        self.updater.changed.connect(self.refresh_update)
+        self.refresh_update()
         self.engine.changed.connect(self.refresh_status)
         self.refresh_cards()
         self.update_selection()
@@ -493,19 +501,8 @@ class MainWindow(QMainWindow):
             self.nav_buttons.append(b)
             layout.addWidget(b)
         layout.addStretch()
-        hint = QFrame()
-        hint.setObjectName("surface")
-        tip = QVBoxLayout(hint)
-        tip.setContentsMargins(13, 14, 13, 14)
-        tip.setSpacing(8)
-        tip.addWidget(label(tr("留一点，给专注。")))
-        self.capture_hint = label("", "muted", True)
-        from .hotkeys import shortcut_label
-        settings = self.store.settings
-        self.update_capture_hint(shortcut_label(settings.capture_shortcut) if settings.capture_hotkey else "")
-        tip.addWidget(self.capture_hint)
-        layout.addWidget(hint)
-        layout.addSpacing(14)
+        self.update_button = button(tr("检查更新"), self.open_update)
+        layout.addWidget(self.update_button)
         layout.addWidget(label("  WINDOWS  /  v"+VERSION, "muted"))
         return side
 
@@ -668,8 +665,49 @@ class MainWindow(QMainWindow):
         v.addStretch()
         return page
 
-    def update_capture_hint(self, shortcut):
-        self.capture_hint.setText(tr("{0} 截屏\n关闭设置后仍可使用。").format(shortcut) if shortcut else tr("可从截屏页面或托盘打开截屏。"))
+    def language_control(self):
+        control = QToolButton()
+        control.setObjectName("themeToggle")
+        control.setText("EN" if display_language() == "en" else "中")
+        control.setFixedSize(47, 36)
+        control.setToolTip(tr("界面语言"))
+        control.setAccessibleName(tr("界面语言"))
+        control.setCursor(Qt.CursorShape.PointingHandCursor)
+        menu = QMenu(control)
+        for key, name in (("system", tr("跟随系统")), ("zh", "简体中文"), ("en", "English")):
+            item = menu.addAction(name)
+            item.setCheckable(True)
+            item.setChecked(self.store.settings.settings_language == key)
+            item.triggered.connect(lambda checked=False, choice=key: QTimer.singleShot(
+                0, lambda: self.controller.change_language(choice)))
+        control.setMenu(menu)
+        control.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        return control
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.apply_frame_theme()
+        if self.controller.check_updates:
+            self.update_timer.start()
+            self.updater.check()
+
+    def apply_frame_theme(self):
+        if QApplication.platformName() == "windows":
+            win32.theme_frame(int(self.winId()), self.light)
+
+    def refresh_update(self):
+        state = self.updater.state
+        messages = {"idle": tr("检查更新"), "checking": tr("正在检查更新…"),
+                    "latest": tr("已是最新版本"), "error": tr("重试检查更新")}
+        title = tr("更新至 {0}").format(self.updater.version) if state == "update" else messages[state]
+        self.update_button.setText(title)
+        self.update_button.setEnabled(state in {"idle", "error", "update"})
+        self.update_button.setToolTip(tr("下载安装包") if state == "update" else
+                                     tr("无法检查更新，请稍后重试。") if state == "error" else "")
+
+    def open_update(self):
+        if not self.updater.activate():
+            self.show_error(tr("无法打开安装包下载链接。"))
 
     def update_theme_toggle(self):
         target = tr("深色") if self.light else tr("浅色")
@@ -690,6 +728,7 @@ class MainWindow(QMainWindow):
             return
         self.light = selected == "light"
         self.setStyleSheet(LIGHT_STYLE if self.light else STYLE)
+        self.apply_frame_theme()
         self.update_theme_toggle()
         for index, button in enumerate(self.nav_buttons):
             button.setIcon(navigation_icon(index, self.light))
@@ -746,7 +785,7 @@ class MainWindow(QMainWindow):
     def update_selection(self):
         self.preview.set_item(self.selected)
         path = item_path(self.selected)
-        details = KIND_LABELS[self.selected["kind"]] + tr("壁纸")
+        details = tr(KIND_LABELS[self.selected["kind"]]) + tr("壁纸")
         if self.selected["kind"] != "video":
             size = QImageReader(str(path)).size()
             if size.isValid():

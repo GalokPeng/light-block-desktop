@@ -2,7 +2,7 @@
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QIcon, QKeySequence, QPen, QPixmap
-from PySide6.QtWidgets import (QApplication, QComboBox, QFontComboBox, QHBoxLayout,
+from PySide6.QtWidgets import (QApplication, QComboBox, QFontComboBox, QFrame, QHBoxLayout,
                              QPlainTextEdit, QToolButton, QWidget)
 
 from .i18n import tr
@@ -61,14 +61,15 @@ class AnnotationHistory:
         self.future.clear()
 
 
-class TextStyleBar(QWidget):
+class TextStyleBar(QFrame):
     changed = Signal()
 
     def __init__(self, colors):
         super().__init__()
+        self.setObjectName("captureStrip")
         self.loading = False
         row = QHBoxLayout(self)
-        row.setContentsMargins(3, 2, 3, 2)
+        row.setContentsMargins(8, 4, 8, 4)
         row.setSpacing(6)
         self.family = QFontComboBox()
         self.family.setEditable(False)
@@ -250,6 +251,10 @@ class InlineText:
     def layout_editor(self):
         if self.edit is None:
             return
+        _, scale = self.transform(self.hidden)
+        pixels = max(1, round(self.edit["font_size"]*scale))
+        if self.editor.font().pixelSize() != pixels:
+            self.editor.setFont(annotation_font(self.edit, scale))
         area = self.bounds().toRect()
         rect = self.rect_for(dict(self.edit, text=self.editor.toPlainText()), self.hidden).toRect()
         x = max(area.left(), rect.x() - 1)

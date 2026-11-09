@@ -2,14 +2,16 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "buildCommand": null,
-  "installCommand": null,
+  "installCommand": "node --version",
   "outputDirectory": "site/public",
   "trailingSlash": true,
-  "redirects": [
+  "functions": {
+    "api/setup.mjs": { "maxDuration": 80 }
+  },
+  "rewrites": [
     {
       "source": "/download/",
-      "destination": "https://github.com/GalokPeng/light-block-desktop/releases/latest/download/Qingkuai-Setup-x64.exe",
-      "permanent": false
+      "destination": "/api/setup"
     }
   ],
   "headers": [

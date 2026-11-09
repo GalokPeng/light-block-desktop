@@ -13,7 +13,7 @@ from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
-from .i18n import install_qt_translation, tr
+from .i18n import install_qt_translation, set_language, tr
 from .engine import WallpaperEngine
 from .model import APP_NAME, Store, VERSION
 
@@ -36,8 +36,11 @@ def make_icon():
 
 
 class Controller:
-    def __init__(self, app, store, background=False):
+    def __init__(self, app, store, background=False, check_updates=True):
         self.app, self.store = app, store
+        self.apply_language()
+        self.check_updates = check_updates
+        self.release_check = None
         self.window = None
         self.organizer = None
         self.workbench = None
@@ -51,44 +54,8 @@ class Controller:
         self.engine = WallpaperEngine(store, app)
         self.engine.error.connect(self.report_error)
         self.tray = QSystemTrayIcon(self.icon, app)
-        self.tray.setToolTip(tr("轻块桌面 · 双击打开设置"))
-        menu = QMenu()
-        self.menu = menu
-        open_action = QAction(tr("打开轻块桌面设置"), menu)
-        open_action.triggered.connect(self.show_window)
-        menu.addAction(open_action)
-        self.pause_action = QAction(tr("暂停动态壁纸"), menu)
-        self.pause_action.triggered.connect(self.engine.pause)
-        menu.addAction(self.pause_action)
-        self.stop_action = QAction(tr("停止动态壁纸"), menu)
-        self.stop_action.triggered.connect(self.stop)
-        menu.addAction(self.stop_action)
-        self.organizer_action = QAction(tr("开启桌面收纳"), menu)
-        self.organizer_action.setCheckable(True)
-        self.organizer_action.setChecked(store.settings.organizer_enabled)
-        self.organizer_action.toggled.connect(lambda value: self.get_organizer().set_enabled(value))
-        menu.addAction(self.organizer_action)
-        menu.addSeparator()
-        for text, action in ((tr("截屏"), "capture"), (tr("快速启动  Ctrl+Alt+Space"), "launcher"), (tr("剪贴板历史"), "clipboard"), (tr("便签与任务"), "notes")):
-            item = QAction(text, menu)
-            item.triggered.connect(lambda checked=False, a=action: self.get_workbench().invoke(a))
-            menu.addAction(item)
-            if action == "capture":
-                self.capture_action = item
-        self.update_capture_shortcut()
-        self.record_action = QAction(tr("结束录屏  Ctrl+Alt+R"), menu)
-        self.record_action.setEnabled(False)
-        self.record_action.triggered.connect(lambda: self.get_workbench().record())
-        menu.addAction(self.record_action)
-        menu.addSeparator()
-        restore = QAction(tr("恢复 Windows 壁纸"), menu)
-        restore.triggered.connect(self.restore)
-        menu.addAction(restore)
-        menu.addSeparator()
-        exit_action = QAction(tr("退出轻块桌面"), menu)
-        exit_action.triggered.connect(self.request_quit)
-        menu.addAction(exit_action)
-        self.tray.setContextMenu(menu)
+        self.menu = None
+        self.build_tray_menu()
         self.tray.activated.connect(self.activated)
         self.engine.changed.connect(self.update_tray)
         self.tray.show()
@@ -111,6 +78,88 @@ class Controller:
         if store.warning:
             QTimer.singleShot(300, lambda: self.report_error(store.warning))
 
+    def build_tray_menu(self):
+        old_menu = self.menu
+        menu = QMenu()
+        self.menu = menu
+        open_action = QAction(tr("打开轻块桌面设置"), menu)
+        open_action.triggered.connect(self.show_window)
+        menu.addAction(open_action)
+        self.pause_action = QAction(tr("暂停动态壁纸"), menu)
+        self.pause_action.triggered.connect(self.engine.pause)
+        menu.addAction(self.pause_action)
+        self.stop_action = QAction(tr("停止动态壁纸"), menu)
+        self.stop_action.triggered.connect(self.stop)
+        menu.addAction(self.stop_action)
+        self.organizer_action = QAction(tr("开启桌面收纳"), menu)
+        self.organizer_action.setCheckable(True)
+        self.organizer_action.setChecked(self.store.settings.organizer_enabled)
+        self.organizer_action.toggled.connect(lambda value: self.get_organizer().set_enabled(value))
+        menu.addAction(self.organizer_action)
+        menu.addSeparator()
+        for text, action in ((tr("截屏"), "capture"), (tr("快速启动  Ctrl+Alt+Space"), "launcher"), (tr("剪贴板历史"), "clipboard"), (tr("便签与任务"), "notes")):
+            item = QAction(text, menu)
+            item.triggered.connect(lambda checked=False, a=action: self.get_workbench().invoke(a))
+            menu.addAction(item)
+            if action == "capture":
+                self.capture_action = item
+        self.update_capture_shortcut()
+        self.record_action = QAction(tr("结束录屏  Ctrl+Alt+R"), menu)
+        self.record_action.setEnabled(bool(self.workbench and self.workbench.recording))
+        self.record_action.triggered.connect(lambda: self.get_workbench().record())
+        menu.addAction(self.record_action)
+        menu.addSeparator()
+        restore = QAction(tr("恢复 Windows 壁纸"), menu)
+        restore.triggered.connect(self.restore)
+        menu.addAction(restore)
+        menu.addSeparator()
+        exit_action = QAction(tr("退出轻块桌面"), menu)
+        exit_action.triggered.connect(self.request_quit)
+        menu.addAction(exit_action)
+        self.tray.setContextMenu(menu)
+        if old_menu is not None:
+            old_menu.deleteLater()
+
+    def apply_language(self):
+        set_language(self.store.settings.settings_language)
+        self.app.setApplicationDisplayName(tr(APP_NAME))
+        install_qt_translation(self.app)
+
+    def change_language(self, preference):
+        settings = self.store.settings
+        previous = settings.settings_language
+        if previous == preference:
+            return
+        settings.settings_language = preference
+        try:
+            self.store.save()
+        except OSError as exc:
+            settings.settings_language = previous
+            self.report_error(str(exc))
+            return
+        self.apply_language()
+        self.build_tray_menu()
+        self.update_tray()
+        if self.window is not None:
+            old = self.window
+            new = self.make_window()
+            new.restoreGeometry(old.saveGeometry())
+            new.select(old.selected)
+            page = old.pages.currentIndex()
+            new.nav_buttons[page].setChecked(True)
+            new.pages.setCurrentIndex(page)
+            self.window = new
+            old.closed.disconnect(self.window_closed)
+            old.close()
+            new.show()
+            new.activateWindow()
+
+    def updater(self):
+        if self.release_check is None:
+            from .updates import ReleaseCheck
+            self.release_check = ReleaseCheck(self.app)
+        return self.release_check
+
     def activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             self.show_window()
@@ -118,12 +167,16 @@ class Controller:
     def show_window(self):
         self.quit_timer.stop()
         if self.window is None:
-            from .ui import MainWindow
-            self.window = MainWindow(self)
-            self.window.closed.connect(self.window_closed)
+            self.window = self.make_window()
         self.window.showNormal()
         self.window.raise_()
         self.window.activateWindow()
+
+    def make_window(self):
+        from .ui import MainWindow
+        window = MainWindow(self)
+        window.closed.connect(self.window_closed)
+        return window
 
     def window_closed(self):
         self.window = None
@@ -184,8 +237,6 @@ class Controller:
         settings = self.store.settings
         label = shortcut_label(settings.capture_shortcut) if settings.capture_hotkey else ""
         self.capture_action.setText(tr("截屏  {0}").format(label) if label else tr("截屏"))
-        if self.window:
-            self.window.update_capture_hint(label)
 
     def set_capture_shortcut(self, portable):
         from .hotkeys import capture_binding, shortcut_label
@@ -301,8 +352,6 @@ def run():
     os.environ.setdefault("QT_QPA_PLATFORM", "windows:fontengine=freetype")
     app = QApplication(sys.argv[:1])
     app.setApplicationName("StillWallpaper")
-    app.setApplicationDisplayName(tr(APP_NAME))
-    install_qt_translation(app)
     app.setApplicationVersion(VERSION)
     app.setFont(QFont("Microsoft YaHei UI", 9))
     app.setQuitOnLastWindowClosed(False)
@@ -333,7 +382,7 @@ def run():
         return 1
     if args.screenshot:
         store.settings.restore_on_start = False
-    controller = Controller(app, store, background=args.background)
+    controller = Controller(app, store, background=args.background, check_updates=not args.screenshot)
     app.controller = controller
     def new_connection():
         while server.hasPendingConnections():

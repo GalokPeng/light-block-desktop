@@ -4,11 +4,11 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from PySide6.QtCore import QPoint, QPointF, QRect, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QPixmap, QWheelEvent
+from PySide6.QtGui import QColor, QFont, QImage, QPixmap, QWheelEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QToolButton
 
-from still.capture import AnnotationCanvas, PinWindow, next_number
+from still.capture import AnnotationCanvas, PinWindow, next_number, render_operations
 from still.capture_overlay import CaptureOverlay, beside_region, pixel_rect
 from still.desktop_icons import DesktopIconLease
 from still.i18n import tr
@@ -54,9 +54,9 @@ class CaptureWorkflowTests(unittest.TestCase):
         QTest.mouseMove(self.overlay, end)
         QTest.mouseRelease(self.overlay, Qt.MouseButton.LeftButton, pos=end)
 
-    def wheel(self, widget, point, delta):
+    def wheel(self, widget, point, delta, modifiers=Qt.KeyboardModifier.NoModifier):
         event = QWheelEvent(QPointF(point), QPointF(widget.mapToGlobal(point)), QPoint(), QPoint(0, delta),
-                            Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+                            Qt.MouseButton.NoButton, modifiers,
                             Qt.ScrollPhase.NoScrollPhase, False)
         self.app.sendEvent(widget, event)
 
@@ -219,8 +219,20 @@ class CaptureWorkflowTests(unittest.TestCase):
         self.assertFalse(region.intersects(QRect(location, size)))
 
     def test_capture_options_are_selection_only(self):
-        self.assertFalse(self.overlay.color.isEditable())
-        self.assertFalse(self.overlay.stroke.isEditable())
+        self.overlay.selection = QRect(90, 110, 500, 400)
+        self.overlay.confirm_selection()
+        self.overlay.set_tool("rect")
+        shapes = self.overlay.drawing.settings["rect"]
+        self.assertFalse(shapes["dashed"].isEditable())
+        self.assertTrue(shapes["radius"].isVisible())
+        QTest.mouseClick(shapes["ellipse"], Qt.MouseButton.LeftButton)
+        self.assertEqual(self.overlay.tool, "ellipse")
+        self.assertTrue(shapes["radius"].isHidden())
+        self.overlay.set_tool("mosaic_brush")
+        mosaic = self.overlay.drawing.settings["mosaic"]
+        self.assertTrue(mosaic["width"].isVisible())
+        self.assertTrue(mosaic["radius"].isHidden())
+        self.assertTrue(self.overlay.drawing.panels["rect"].isHidden())
         self.overlay.set_tool("text")
         bar = self.overlay.inline.bar
         self.assertFalse(bar.family.isEditable())
@@ -228,6 +240,64 @@ class CaptureWorkflowTests(unittest.TestCase):
         self.assertFalse(bar.color.isEditable())
         bar.family.setCurrentIndex(0)
         self.assertTrue(bar.family.currentFont().family())
+
+    def test_rounded_and_elliptical_markup_preserves_pixels_outside_shape(self):
+        source = QImage(200, 100, QImage.Format.Format_RGB32)
+        source.fill(QColor("#18202a"))
+        marked = render_operations(source, [
+            {"kind": "rect", "points": [(10, 10), (90, 90)], "width": 2, "radius": 25,
+             "dashed": True, "fill": True, "color": "#ffffff"},
+            {"kind": "ellipse", "points": [(110, 10), (190, 90)], "width": 3,
+             "fill": True, "color": "#ff6868"},
+        ])
+        self.assertEqual(marked.pixelColor(10, 10), source.pixelColor(10, 10))
+        self.assertEqual(marked.pixelColor(111, 11), source.pixelColor(111, 11))
+        self.assertNotEqual(marked.pixelColor(50, 50), source.pixelColor(50, 50))
+        self.assertNotEqual(marked.pixelColor(150, 50), source.pixelColor(150, 50))
+        self.assertGreater(len({marked.pixelColor(x, 10).name() for x in range(39, 61)}), 1)
+
+    def test_mosaic_tools_pixelate_only_the_rounded_box_or_brush_path(self):
+        source = QImage(120, 110, QImage.Format.Format_RGB32)
+        for y in range(source.height()):
+            for x in range(source.width()):
+                source.setPixelColor(x, y, QColor(x*2, y*2, 120))
+        marked = render_operations(source, [
+            {"kind": "mosaic", "points": [(12, 10), (58, 55)], "radius": 20, "block_size": 14},
+            {"kind": "mosaic_brush", "points": [(72, 17), (98, 32), (78, 88)], "width": 14, "block_size": 14},
+        ])
+        for point in (QPoint(12, 10), QPoint(94, 80), QPoint(10, 80)):
+            self.assertEqual(marked.pixelColor(point), source.pixelColor(point))
+        for point in (QPoint(23, 32), QPoint(96, 34), QPoint(81, 82)):
+            self.assertNotEqual(marked.pixelColor(point), source.pixelColor(point))
+        self.assertEqual(marked.size(), source.size())
+
+    def test_pin_edits_in_place_and_zoom_keeps_original_export_size(self):
+        image = QImage(180, 100, QImage.Format.Format_RGB32)
+        image.fill(QColor("#304253"))
+        pin = PinWindow(None, image)
+        pin.show()
+        try:
+            before = pin.size()
+            self.wheel(pin, pin.rect().center(), 120, Qt.KeyboardModifier.ControlModifier)
+            self.assertGreater(pin.width(), before.width())
+            pin.start_editing()
+            self.app.processEvents()
+            canvas = pin.canvas
+            self.assertIs(canvas.window(), pin)
+            self.assertTrue(pin.edit_dock.isVisible())
+            point = canvas.image_area.center().toPoint()
+            QTest.mousePress(canvas, Qt.MouseButton.LeftButton, pos=point)
+            QTest.mouseMove(canvas, point+QPoint(25, 15))
+            QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=point+QPoint(25, 15))
+            self.wheel(canvas, point, 120, Qt.KeyboardModifier.ControlModifier)
+            pin.stop_editing()
+            self.assertEqual(pin.current_image().size(), image.size())
+            self.assertNotEqual(pin.current_image(), image)
+            pin.start_editing()
+            canvas.undo()
+            self.assertEqual(pin.current_image(), image)
+        finally:
+            pin.close()
 
     def test_inline_text_can_be_styled_moved_reopened_and_undone(self):
         self.overlay.selection = QRect(90, 110, 500, 400)

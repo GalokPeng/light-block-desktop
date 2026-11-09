@@ -6,7 +6,7 @@
 
 Download Setup or the portable ZIP from [GitHub Releases](https://github.com/GalokPeng/light-block-desktop/releases/latest). Extract the complete ZIP before running the portable app. Both distributions require Windows 10 or 11 x64. The installer follows the Windows display language. The application uses Simplified Chinese for Chinese display languages and English otherwise.
 
-Exit the previous version before upgrading. The app keeps settings in `%LOCALAPPDATA%\StillWallpaper`. If you move from portable to installed, toggle **Start with Windows** in the new copy to update its path. Click the sun or moon to change the settings theme.
+Exit the previous version before upgrading. The app keeps settings in `%LOCALAPPDATA%\StillWallpaper`. If you move from portable to installed, toggle **Start with Windows** in the new copy to update its path. The sun or moon changes the app theme and the Windows frame. The language button beside it offers Follow system, Simplified Chinese, and English. Settings and the tray menu switch immediately. Reopen other tools to use the selected language. When a newer release is available, the sidebar button downloads its Setup.
 
 ## Wallpaper
 
@@ -20,13 +20,15 @@ Enable **Desktop Organizer** to show folder groups and hide native desktop icons
 
 Click the organizer or group title to edit it. Enter or click away to save, and Esc to cancel. Empty titles are supported. Right-click to create a group, add shortcuts or manage a group. You can change icon size and opacity in Settings. Scrolling works inside the group grid. Disabling the organizer or quitting normally restores the previous Windows icon visibility.
 
+The panel starts centered. Right-click and choose **Move panel**, then drag it to a new position. The panel locks again when you release it. Choose **Center panel** to reset. Drag one folder tile onto another to change the order.
+
 In **Notes & Tasks**, choose **Pin to Desktop** to show a note on the desktop. Drag to move it and double-click to edit. Notes, reminders and completion state are stored locally.
 
 ## Screen capture
 
 - **Select**. Press `Ctrl+Alt+A` by default, or set a different global shortcut under **Screen Capture**. Hover to detect a window or drag a region. Use Alt for the whole window. Drag a blue handle to resize, or use the move control to reposition. Right-click to clear the selection. Right-click again to exit.
-- **Annotate**. The toolbar offers text, arrows, lines, rectangles, pen, highlighter, mosaic and numbered markers. Enter text on the canvas. Click away to commit, drag to move, and double-click to edit again. Hover over a supported annotation and scroll to resize it.
-- **Save or pin**. Save PNG, copy to the clipboard, or pin the result above windows. Right-click a pin for its border options. Double-click to close the pin and copy its image.
+- **Annotate**. Select a tool to show its options below the icon row. Rectangles and ellipses support fill, solid and dashed outlines, and adjustable width. Rectangles also support rounded corners. Hold Shift for a square or circle. Mosaic has a rounded selection mode and a brush mode. Enter text directly on the canvas, then drag to move it or double-click to edit again. Scroll over a supported annotation to resize it.
+- **Save or pin**. Save PNG, copy to the clipboard, or pin the result above windows. Use Ctrl + scroll to zoom a pin. Right-click and choose **Edit pinned image** to annotate in place, then click **Finish editing**. Double-click outside edit mode to close the pin and copy its image.
 - **Scrolling capture**. Choose **Scrolling Capture** and scroll within the frame. The preview shows the stitched image. If overlap is lost, scroll back or set it manually. The image limit is 40 megapixels.
 - **Recording**. Choose **Start Recording**. The frame stays on screen. Use the stop control or `Ctrl+Alt+R` to finish. Save or copy MP4 and GIF. With lossless recording enabled, save the original MKV. Recording is silent.
 

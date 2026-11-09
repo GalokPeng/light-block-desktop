@@ -26,11 +26,14 @@ LINES = {
     "undo": [[(9,4),(4,9),(9,14)],[(4,9),(15,9),(19,11),(20,15),(18,19),(14,20),(8,20)]],
     "redo": [[(15,4),(20,9),(15,14)],[(20,9),(9,9),(5,11),(4,15),(6,19),(10,20),(16,20)]],
     "reset": [[(19,5),(19,10),(14,10)],[(19,10),(17,6),(13,4),(8,5),(5,8),(4,13),(6,17),(10,20),(15,19),(19,15)]],
+    "crop": [[(7,2),(7,17),(22,17)],[(2,7),(17,7),(17,22)]],
+    "erase": [[(3,15),(13,5),(20,12),(10,22),(3,15)],[(7,11),(14,18)]],
+    "done": [[(4,12),(9,17),(20,6)]],
 }
 
 
-def capture_icon(key):
-    pixmap = QPixmap(48, 48)
+def capture_icon(key, grouped=False):
+    pixmap = QPixmap(66 if grouped else 48, 48)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.scale(2, 2)
@@ -41,17 +44,24 @@ def capture_icon(key):
         painter.drawPolyline(QPolygonF([QPointF(x, y) for x, y in line]))
     if key == "rect":
         painter.drawRoundedRect(QRectF(4, 5, 16, 14), 1.6, 1.6)
+    elif key == "ellipse":
+        painter.drawEllipse(QRectF(4, 4, 16, 16))
     elif key == "number":
         painter.drawEllipse(QRectF(3, 3, 18, 18))
-    elif key == "mosaic":
+    elif key in {"mosaic", "mosaic_brush"}:
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(color)
         for x, y in ((4,4),(12,4),(8,8),(16,8),(4,12),(12,12),(8,16),(16,16)):
             painter.drawRect(QRectF(x, y, 4, 4))
+        if key == "mosaic_brush":
+            painter.drawEllipse(QRectF(3, 14, 6, 6))
     elif key == "record":
         painter.drawRoundedRect(QRectF(3, 6, 13, 12), 2, 2)
     elif key == "copy":
         painter.drawRoundedRect(QRectF(4, 8, 12, 12), 1, 1)
+    if grouped:
+        painter.setPen(QPen(QColor("#aab3c0"), 1.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawPolyline(QPolygonF([QPointF(24, 11), QPointF(27, 14), QPointF(30, 11)]))
     painter.end()
     pixmap.setDevicePixelRatio(2)
     return QIcon(pixmap)

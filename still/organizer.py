@@ -22,6 +22,7 @@ from .scroll_wheel import MouseHook
 from . import win32
 
 MIME = "application/x-still-collection-items"
+FOLDER_MIME = "application/x-still-collection-folder"
 
 
 class GroupItems(QAbstractListModel):
@@ -186,6 +187,8 @@ class FolderTile(QAbstractButton):
     def __init__(self, shelf, group):
         super().__init__(shelf)
         self.shelf, self.group = shelf, group
+        self.press_point = None
+        self.drop_hover = False
         self.icons = [shelf.manager.icon_for(entry) for entry in group["entries"][:4]]
         self.setFixedSize(116, 114)
         self.update_name()
@@ -206,7 +209,8 @@ class FolderTile(QAbstractButton):
         accent = QColor(COLORS.get(self.group.get("color"), COLORS["mint"]))
         tint = QColor(accent)
         tint.setAlpha(95 if self.isDown() else 64 if self.underMouse() else 30)
-        painter.setPen(QPen(QColor(224, 235, 255, 80 if self.underMouse() else 42), 1))
+        outline = QColor("#9cc5ff") if self.drop_hover else QColor(224, 235, 255, 80 if self.underMouse() else 42)
+        painter.setPen(QPen(outline, 2 if self.drop_hover else 1))
         painter.setBrush(tint)
         painter.drawRoundedRect(plate, 18, 18)
         for n in range(4):
@@ -231,17 +235,74 @@ class FolderTile(QAbstractButton):
         self.update()
         super().leaveEvent(event)
 
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.press_point = event.position().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if (self.press_point is not None and event.buttons() & Qt.MouseButton.LeftButton
+                and (event.position().toPoint()-self.press_point).manhattanLength() >= QApplication.startDragDistance()):
+            self.press_point = None
+            drag = QDrag(self)
+            mime = QMimeData()
+            mime.setData(FOLDER_MIME, self.group["id"].encode("utf-8"))
+            drag.setMimeData(mime)
+            drag.setPixmap(self.grab())
+            drag.setHotSpot(event.position().toPoint())
+            self.setDown(False)
+            drag.exec(Qt.DropAction.MoveAction)
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self.press_point = None
+        super().mouseReleaseEvent(event)
+
+    def folder_source(self, event):
+        source = event.source()
+        if (event.mimeData().hasFormat(FOLDER_MIME) and isinstance(source, FolderTile)
+                and source.shelf is self.shelf and source is not self):
+            return source
+        return None
+
     def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
+        if self.folder_source(event) is not None:
+            self.drop_hover = True
+            self.update()
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
+        elif event.mimeData().hasUrls():
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+
+    def dragMoveEvent(self, event):
+        if self.folder_source(event) is not None:
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
+        elif event.mimeData().hasUrls():
             event.setDropAction(Qt.DropAction.CopyAction)
             event.accept()
 
     def dropEvent(self, event):
+        self.drop_hover = False
+        self.update()
+        source = self.folder_source(event)
+        if source is not None:
+            self.shelf.manager.move_group(source.group["id"], self.group["id"])
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
+            return
         paths = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
         if paths:
             self.shelf.manager.add_paths(self.group, paths)
             event.setDropAction(Qt.DropAction.CopyAction)
             event.accept()
+
+    def dragLeaveEvent(self, event):
+        self.drop_hover = False
+        self.update()
+        super().dragLeaveEvent(event)
 
 
 class ShelfTitle(QAbstractButton):
@@ -312,6 +373,9 @@ class DesktopShelf(QWidget):
         super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowDoesNotAcceptFocus)
         self.manager = manager
         self.group = None
+        self.moving = False
+        self.move_anchor = None
+        self.move_origin = None
         self.title_editor = None
         self.board_columns = 0
         self.board_dirty = True
@@ -392,12 +456,13 @@ class DesktopShelf(QWidget):
         return bool(enabled.value)
 
     def placement(self, width, height, start):
-        area = QApplication.primaryScreen().availableGeometry()
+        area, center = self.location()
         available = QSize(max(250, area.width() - 28), max(180, area.height() - 28))
         # A constant layered HWND avoids reallocating the Windows backing store
         # at either end of a transition. Pixels outside the panel stay transparent.
         host = QRect(QPoint(), QSize(700, 433).boundedTo(available))
-        host.moveCenter(area.center())
+        host.moveCenter(center)
+        host.moveTopLeft(self.clamp_position(host.topLeft(), host.size(), area))
         if self.geometry() != host:
             self.setGeometry(host)
         target = QRect(QPoint(), QSize(width, height).boundedTo(available))
@@ -418,6 +483,20 @@ class DesktopShelf(QWidget):
         self.motion.setEndValue(target)
         self.motion.start()
 
+    def location(self):
+        saved = self.manager.store.settings.organizer_position
+        point = QPoint(*saved) if saved is not None else None
+        screen = QApplication.screenAt(point) if point is not None else None
+        if screen is not None:
+            return screen.availableGeometry(), point
+        area = QApplication.primaryScreen().availableGeometry()
+        return area, area.center()
+
+    @staticmethod
+    def clamp_position(point, size, area):
+        return QPoint(max(area.left(), min(point.x(), area.right()-size.width()+1)),
+                      max(area.top(), min(point.y(), area.bottom()-size.height()+1)))
+
     def stop_transition(self):
         self.motion.stop()
         if self.sprite is not None:
@@ -432,10 +511,58 @@ class DesktopShelf(QWidget):
         self.update()
 
     def eventFilter(self, watched, event):
+        inside = isinstance(watched, QWidget) and (watched is self or self.isAncestorOf(watched))
+        if self.moving and inside and self.move_event(event):
+            return True
         if (self.sprite is not None and event.type() == QEvent.Type.MouseButtonPress
-                and isinstance(watched, QWidget) and (watched is self or self.isAncestorOf(watched))):
+                and inside):
             self.settle()
         return super().eventFilter(watched, event)
+
+    def begin_move(self):
+        self.finish_title_edit()
+        self.collapse_timer.stop()
+        if self.sprite is not None:
+            self.settle()
+        self.moving = True
+        self.move_origin = self.pos()
+        self.body.setCursor(Qt.CursorShape.SizeAllCursor)
+        self.detail.setText(tr("拖动收纳面板"))
+        self.detail.show()
+        QApplication.instance().installEventFilter(self)
+
+    def end_move(self, save=False):
+        if not self.moving:
+            return
+        changed = self.pos() != self.move_origin
+        self.moving = False
+        if self.move_anchor is not None:
+            self.releaseMouse()
+            self.move_anchor = None
+        self.body.unsetCursor()
+        QApplication.instance().removeEventFilter(self)
+        if save and changed:
+            self.manager.set_position(self.geometry().center())
+        else:
+            self.refresh()
+
+    def move_event(self, event):
+        kind = event.type()
+        if kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+            point = event.globalPosition().toPoint()
+            if self.panel_rect.contains(self.mapFromGlobal(point)):
+                self.move_anchor = point-self.pos()
+                self.grabMouse()
+                return True
+        elif kind == QEvent.Type.MouseMove and self.move_anchor is not None:
+            point = event.globalPosition().toPoint()
+            screen = QApplication.screenAt(point) or QApplication.primaryScreen()
+            self.move(self.clamp_position(point-self.move_anchor, self.size(), screen.availableGeometry()))
+            return True
+        elif kind == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton and self.move_anchor is not None:
+            self.end_move(save=True)
+            return True
+        return False
 
     def populate_grid(self):
         size = self.group.get("icon_size", 44)
@@ -521,7 +648,7 @@ class DesktopShelf(QWidget):
             title = self.manager.store.settings.organizer_title
             self.title.setText(tr(title) if title == DEFAULT_ORGANIZER_TITLE else title)
             self.detail.hide()
-            area = QApplication.primaryScreen().availableGeometry()
+            area, _ = self.location()
             columns = min(4, max(1, (area.width()-84)//122), max(1, len(groups)))
             if self.board_dirty or self.board_columns != columns:
                 while self.tiles.count():
@@ -546,7 +673,7 @@ class DesktopShelf(QWidget):
         native.desktop_layer(int(self.winId()))
 
     def check_outside_click(self, event):
-        if self.group is None or QApplication.activePopupWidget() or QApplication.activeModalWidget():
+        if self.moving or self.group is None or QApplication.activePopupWidget() or QApplication.activeModalWidget():
             return
         hit = self.window_at(event.point)
         root = self.root_window(hit, 2) if hit else None
@@ -563,6 +690,12 @@ class DesktopShelf(QWidget):
         super().mousePressEvent(event)
 
     def stop_interactions(self):
+        if self.moving:
+            self.moving = False
+            if self.move_anchor is not None:
+                self.releaseMouse()
+                self.move_anchor = None
+            QApplication.instance().removeEventFilter(self)
         self.finish_title_edit()
         self.click_hook.close()
         self.collapse_timer.stop()
@@ -652,9 +785,30 @@ class DesktopShelf(QWidget):
                 tile.update_name()
                 break
 
+    def reorder_tiles(self):
+        tiles = {tile.group["id"]: tile for tile in
+                 (self.tiles.itemAt(index).widget() for index in range(self.tiles.count()))}
+        groups = self.manager.collections.groups
+        if set(tiles) != {group["id"] for group in groups}:
+            self.refresh()
+            return
+        for tile in tiles.values():
+            self.tiles.removeWidget(tile)
+        for index, group in enumerate(groups):
+            row, column = divmod(index, self.board_columns)
+            self.tiles.addWidget(tiles[group["id"]], row, column)
+
     def show_menu(self, point):
         self.finish_title_edit()
         menu = QMenu(self)
+        if self.moving:
+            menu.addAction(tr("取消移动位置"), self.end_move)
+            menu.exec(point)
+            return
+        menu.addAction(tr("移动位置"), self.begin_move)
+        if self.manager.store.settings.organizer_position is not None:
+            menu.addAction(tr("恢复居中"), lambda: self.manager.set_position(None))
+        menu.addSeparator()
         if self.group:
             group = self.group
             menu.addAction(tr("返回文件夹"), self.overview)
@@ -919,6 +1073,37 @@ class OrganizerManager(QObject):
     def open_settings(self):
         self.controller.show_window()
         self.controller.window.pages.setCurrentIndex(1)
+
+    def set_position(self, point):
+        settings = self.store.settings
+        previous = settings.organizer_position
+        settings.organizer_position = None if point is None else [point.x(), point.y()]
+        try:
+            self.store.save()
+        except OSError as exc:
+            settings.organizer_position = previous
+            self.error.emit(str(exc))
+        if self.shelf is not None:
+            self.shelf.refresh()
+
+    def move_group(self, source_id, target_id):
+        groups = self.collections.groups
+        source = self.collections.find(source_id)
+        target = self.collections.find(target_id)
+        if source is None or target is None or source is target:
+            return
+        original = groups[:]
+        start, end = groups.index(source), groups.index(target)
+        groups.insert(end, groups.pop(start))
+        try:
+            self.collections.write_manifest()
+        except OSError as exc:
+            groups[:] = original
+            self.error.emit(str(exc))
+            return
+        if self.shelf is not None:
+            self.shelf.reorder_tiles()
+        self.changed.emit()
 
     def cleanup(self):
         self.watcher.stop()
