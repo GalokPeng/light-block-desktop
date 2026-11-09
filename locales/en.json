@@ -571,5 +571,11 @@
   "应用仍在等待索引线程安全结束。": "Waiting for the indexer to finish safely.",
   "应用仍在等待文件线程安全结束。": "Waiting for the file worker to finish safely.",
   "移至「{0}」": "Move to “{0}”",
-  "应用程序": "Application"
+  "应用程序": "Application",
+  "01 / 启动": "01 / LAUNCH",
+  "02 / 收藏": "02 / REMEMBER",
+  "03 / 便签": "03 / NOTE",
+  "04 / 整理": "04 / ORGANIZE",
+  "05 / 专注": "05 / FOCUS",
+  "给桌面留一点安静": "A LITTLE CALM, ON YOUR DESKTOP"
 }

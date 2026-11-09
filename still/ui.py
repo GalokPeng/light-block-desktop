@@ -407,7 +407,7 @@ class MainWindow(QMainWindow):
         top = QHBoxLayout()
         titles = QVBoxLayout()
         titles.setSpacing(6)
-        titles.addWidget(label("A LITTLE CALM, ON YOUR DESKTOP", "eyebrow"))
+        titles.addWidget(label(tr("给桌面留一点安静"), "eyebrow"))
         titles.addWidget(label(tr("让桌面，安静地流动。"), "title"))
         top.addLayout(titles)
         top.addStretch()

@@ -29,9 +29,10 @@ def verify_setup(setup, language, title):
         exe = app / "轻块桌面.exe"
         quiet = ("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART")
         lang_arg = (f"/LANG={language}",) if language else ()
+        log = ROOT / "build" / f"setup-{language or 'auto'}.log"
         try:
             subprocess.run((str(setup), *quiet, *lang_arg, "/CURRENTUSER", "/NOICONS", f"/DIR={app}",
-                            f"/LOG={ROOT / 'build' / f'setup-{language or "auto"}.log'}"),
+                            f"/LOG={log}"),
                            check=True, timeout=150)
             display = installed_display_name()
             if not display or not display.startswith(title):

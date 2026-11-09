@@ -35,11 +35,11 @@ class ProductivityPage(QScrollArea):
         grid = QGridLayout()
         grid.setSpacing(16)
         tools = [
-            (tr("快速启动"), tr("搜索开始菜单应用、收纳文件与轻块桌面工具。直接输入算式即可计算并复制结果。"), tr("打开启动器  ↗"), "launcher", "01 / LAUNCH"),
-            (tr("剪贴板历史"), tr("本地保存文字和图片，搜索、固定与再次复制。默认关闭，开启后才开始记录。"), tr("管理剪贴板  ↗"), "clipboard", "02 / REMEMBER"),
-            (tr("便签与任务"), tr("把想法写下来，设置到期提醒、完成状态或贴到桌面。内容自动保存，支持全文搜索。"), tr("打开便签任务  ↗"), "notes", "03 / NOTE"),
-            (tr("文件工作台"), tr("只读预览图片与文本、查看属性、计算校验值。批量重命名前先预览，并保留撤销日志。"), tr("预览与整理文件  ↗"), "files", "04 / ORGANIZE"),
-            (tr("专注工作区"), tr("保存壁纸与分组布局，一键切换工作场景。专注和休息计时、暂停动态壁纸并记录完成情况。"), tr("进入专注工作区  ↗"), "focus", "05 / FOCUS"),
+            (tr("快速启动"), tr("搜索开始菜单应用、收纳文件与轻块桌面工具。直接输入算式即可计算并复制结果。"), tr("打开启动器  ↗"), "launcher", tr("01 / 启动")),
+            (tr("剪贴板历史"), tr("本地保存文字和图片，搜索、固定与再次复制。默认关闭，开启后才开始记录。"), tr("管理剪贴板  ↗"), "clipboard", tr("02 / 收藏")),
+            (tr("便签与任务"), tr("把想法写下来，设置到期提醒、完成状态或贴到桌面。内容自动保存，支持全文搜索。"), tr("打开便签任务  ↗"), "notes", tr("03 / 便签")),
+            (tr("文件工作台"), tr("只读预览图片与文本、查看属性、计算校验值。批量重命名前先预览，并保留撤销日志。"), tr("预览与整理文件  ↗"), "files", tr("04 / 整理")),
+            (tr("专注工作区"), tr("保存壁纸与分组布局，一键切换工作场景。专注和休息计时、暂停动态壁纸并记录完成情况。"), tr("进入专注工作区  ↗"), "focus", tr("05 / 专注")),
         ]
         for index, (title, description, text, action, eyebrow) in enumerate(tools):
             grid.addWidget(card(title, description, text, lambda checked=False, a=action: window.controller.get_workbench().invoke(a), eyebrow), index//2, index%2, 1, 2 if index == 4 else 1)
