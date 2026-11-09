@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/icon.png" width="88" alt="Light Block Desktop icon"></p>
 <h1 align="center">Light Block Desktop</h1>
 <p align="center">Live wallpaper, desktop folders, screen capture and notes for Windows</p>
-<p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases/latest"><strong>Download the latest version</strong></a> · <a href="README.md">简体中文</a> · <a href="CHANGES.md">Changelog</a></p>
+<p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases/latest"><strong>Download the latest version</strong></a> · <a href="https://light-block-desktop.vercel.app/en/">Website</a> · <a href="README.md">简体中文</a> · <a href="CHANGES.md">Changelog</a></p>
 
 ![Wallpaper library and display settings in Light Block Desktop](site/public/media/wallpaper-en.webp)
 

@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/icon.png" width="88" alt="轻块桌面图标"></p>
 <h1 align="center">轻块桌面</h1>
 <p align="center">Windows 动态壁纸、桌面收纳、截屏和便签</p>
-<p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases/latest"><strong>下载最新版</strong></a> · <a href="README.en.md">English</a> · <a href="CHANGES.md">更新日志</a></p>
+<p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases/latest"><strong>下载最新版</strong></a> · <a href="https://light-block-desktop.vercel.app/?lang=zh">产品官网</a> · <a href="README.en.md">English</a> · <a href="CHANGES.md">更新日志</a></p>
 
 ![轻块桌面的壁纸库和显示设置](site/public/media/wallpaper-zh.webp)
 
