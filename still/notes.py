@@ -8,6 +8,7 @@ from PySide6.QtGui import QColor, QCursor, QFont, QPainter
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDateTimeEdit, QHBoxLayout, QLineEdit,
     QListWidget, QListWidgetItem, QMenu, QPlainTextEdit, QVBoxLayout, QWidget)
 
+from .i18n import tr
 from .desktop_windows import desktop_layer, desktop_owner, DesktopWatcher, paint_desktop_panel
 from .productivity_model import utc_now
 
@@ -18,14 +19,14 @@ class NotePin(QWidget):
         self.engine, self.ident = engine, row["id"]
         self.row = row
         self.drag = None
-        self.setWindowTitle("轻块桌面 · 桌面便签")
+        self.setWindowTitle(tr("轻块桌面 · 桌面便签"))
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.resize(290, 240)
         self.layer_timer = QTimer(self)
         self.layer_timer.setSingleShot(True)
         self.layer_timer.timeout.connect(self.position_layer)
-        self.setToolTip("拖动位置 · 双击编辑 · 右键管理")
+        self.setToolTip(tr("拖动位置 · 双击编辑 · 右键管理"))
 
     def position_layer(self):
         desktop_layer(int(self.winId()))
@@ -58,7 +59,7 @@ class NotePin(QWidget):
         painter.drawEllipse(QPoint(23, 29), 4, 4)
         painter.setPen(QColor("#f4f7fc"))
         painter.setFont(QFont("Microsoft YaHei UI", 12, QFont.Weight.DemiBold))
-        title = ("已完成 · " if row["done"] else "") + row["title"]
+        title = (tr("已完成 · ") if row["done"] else "") + row["title"]
         title = painter.fontMetrics().elidedText(title, Qt.TextElideMode.ElideRight, self.width() - 53)
         painter.drawText(34, 12, self.width()-53, 34, Qt.AlignmentFlag.AlignVCenter, title)
         painter.setPen(QColor(210, 226, 244, 48))
@@ -100,9 +101,9 @@ class NotePin(QWidget):
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
-        menu.addAction("编辑便签", lambda: self.engine.edit(self.ident))
-        menu.addAction("标记完成 / 待办", lambda: self.engine.toggle_done(self.ident))
-        menu.addAction("取消贴到桌面", lambda: self.engine.pin(self.ident, False))
+        menu.addAction(tr("编辑便签"), lambda: self.engine.edit(self.ident))
+        menu.addAction(tr("标记完成 / 待办"), lambda: self.engine.toggle_done(self.ident))
+        menu.addAction(tr("取消贴到桌面"), lambda: self.engine.pin(self.ident, False))
         menu.exec(event.globalPos())
 
 
@@ -138,7 +139,7 @@ class NotesEngine(QObject):
 
     def create(self):
         ident = uuid.uuid4().hex
-        self.db.execute("INSERT INTO notes(id,title,body,updated) VALUES(?,?,?,?)", (ident, "新的便签", "", utc_now()))
+        self.db.execute("INSERT INTO notes(id,title,body,updated) VALUES(?,?,?,?)", (ident, tr("新的便签"), "", utc_now()))
         self.changed.emit()
         return ident
 
@@ -146,7 +147,7 @@ class NotesEngine(QObject):
         previous = self.get(ident)
         notified = 0 if previous is None or previous["due"] != due else previous["notified"]
         self.db.execute("UPDATE notes SET title=?,body=?,color=?,done=?,due=?,notified=?,updated=? WHERE id=?",
-                        (title.strip()[:100] or "未命名便签", body, color, int(done), due, notified, utc_now(), ident))
+                        (title.strip()[:100] or tr("未命名便签"), body, color, int(done), due, notified, utc_now(), ident))
         self.schedule()
         if ident in self.pins:
             self.pins[ident].set_note(self.get(ident))
@@ -258,7 +259,7 @@ class NotesEngine(QObject):
         now = utc_now()
         rows = self.db.query("SELECT * FROM notes WHERE due<=? AND done=0 AND notified=0 AND archived=0", (now,))
         for row in rows:
-            self.workbench.controller.tray.showMessage("轻块桌面 · 任务提醒", row["title"]+"\n"+row["body"][:100])
+            self.workbench.controller.tray.showMessage(tr("轻块桌面 · 任务提醒"), row["title"]+"\n"+row["body"][:100])
             self.db.execute("UPDATE notes SET notified=1 WHERE id=?", (row["id"],))
         self.schedule()
         self.changed.emit()
@@ -283,7 +284,7 @@ class NotesWindow(QWidget):
         self.loaded_id = None
         self.dirty = False
         self.updating = False
-        self.setWindowTitle("轻块桌面 · 便签与任务")
+        self.setWindowTitle(tr("轻块桌面 · 便签与任务"))
         self.setObjectName("root")
         self.setWindowIcon(workbench.controller.icon)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -291,17 +292,17 @@ class NotesWindow(QWidget):
         self.resize(980, 650)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 22, 24, 22)
-        outer.addWidget(label("留住想法，也完成它。", "title"))
+        outer.addWidget(label(tr("留住想法，也完成它。"), "title"))
         row = QHBoxLayout()
         self.search = QLineEdit()
-        self.search.setPlaceholderText("搜索标题或正文…")
+        self.search.setPlaceholderText(tr("搜索标题或正文…"))
         self.filter = QComboBox()
-        for text, value in (("全部", -1), ("待办", 0), ("已完成", 1), ("归档", -2)):
+        for text, value in ((tr("全部"), -1), (tr("待办"), 0), (tr("已完成"), 1), (tr("归档"), -2)):
             self.filter.addItem(text, value)
         row.addWidget(self.search, 1)
         row.addWidget(self.filter)
-        row.addWidget(button("＋ 新建便签", self.create, "primary"))
-        row.addWidget(button("归档 / 还原", self.archive))
+        row.addWidget(button(tr("＋ 新建便签"), self.create, "primary"))
+        row.addWidget(button(tr("归档 / 还原"), self.archive))
         outer.addLayout(row)
         body = QHBoxLayout()
         self.list = QListWidget()
@@ -310,17 +311,17 @@ class NotesWindow(QWidget):
         body.addWidget(self.list)
         editor = QVBoxLayout()
         self.title = QLineEdit()
-        self.title.setPlaceholderText("便签标题")
+        self.title.setPlaceholderText(tr("便签标题"))
         self.title.setMaxLength(100)
         self.body = QPlainTextEdit()
-        self.body.setPlaceholderText("写下想法、清单或下一步行动…")
+        self.body.setPlaceholderText(tr("写下想法、清单或下一步行动…"))
         editor.addWidget(self.title)
         editor.addWidget(self.body, 1)
         options = QHBoxLayout()
-        self.done = QCheckBox("已完成")
-        self.pinned = QCheckBox("贴到桌面")
+        self.done = QCheckBox(tr("已完成"))
+        self.pinned = QCheckBox(tr("贴到桌面"))
         self.color = QComboBox()
-        for name, value in (("薄荷", "mint"), ("海蓝", "blue"), ("暖砂", "amber"), ("蔷薇", "rose")):
+        for name, value in ((tr("薄荷"), "mint"), (tr("海蓝"), "blue"), (tr("暖砂"), "amber"), (tr("蔷薇"), "rose")):
             self.color.addItem(name, value)
         options.addWidget(self.done)
         options.addWidget(self.pinned)
@@ -328,14 +329,14 @@ class NotesWindow(QWidget):
         options.addWidget(self.color)
         editor.addLayout(options)
         reminder = QHBoxLayout()
-        self.has_due = QCheckBox("到期提醒")
+        self.has_due = QCheckBox(tr("到期提醒"))
         self.due = QDateTimeEdit(QDateTime.currentDateTime().addSecs(3600))
         self.due.setCalendarPopup(True)
         self.due.setDisplayFormat("yyyy-MM-dd HH:mm")
         reminder.addWidget(self.has_due)
         reminder.addWidget(self.due)
         editor.addLayout(reminder)
-        editor.addWidget(label("自动保存到本机。设置到期提醒或贴到桌面后，关闭设置窗口仍会保留后台。", "muted", True))
+        editor.addWidget(label(tr("自动保存到本机。设置到期提醒或贴到桌面后，关闭设置窗口仍会保留后台。"), "muted", True))
         body.addLayout(editor, 1)
         outer.addLayout(body, 1)
         self.save_timer = QTimer(self)
@@ -365,7 +366,7 @@ class NotesWindow(QWidget):
         rows = self.engine.db.query("SELECT id,title,substr(body,1,80) summary,done FROM notes WHERE (title LIKE ? OR body LIKE ?) AND archived=? AND (?<0 OR done=?) ORDER BY updated DESC LIMIT 500",
                                    (query, query, int(mode == -2), mode, mode))
         for row in rows:
-            item = QListWidgetItem(("已完成 · " if row["done"] else "")+row["title"]+"\n"+row["summary"].replace("\n", " ")[:55])
+            item = QListWidgetItem((tr("已完成 · ") if row["done"] else "")+row["title"]+"\n"+row["summary"].replace("\n", " ")[:55])
             item.setData(Qt.ItemDataRole.UserRole, row["id"])
             self.list.addItem(item)
             if row["id"] == self.selected:
@@ -411,7 +412,7 @@ class NotesWindow(QWidget):
         self.dirty = False
         item = self.list.currentItem()
         if item and item.data(Qt.ItemDataRole.UserRole) == self.selected:
-            item.setText(("已完成 · " if self.done.isChecked() else "")+self.title.text()+"\n"+self.body.toPlainText().replace("\n", " ")[:55])
+            item.setText((tr("已完成 · ") if self.done.isChecked() else "")+self.title.text()+"\n"+self.body.toPlainText().replace("\n", " ")[:55])
 
     def pin(self, value):
         if self.selected and not self.updating:

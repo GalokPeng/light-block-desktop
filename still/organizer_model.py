@@ -8,6 +8,8 @@ import stat
 from pathlib import Path
 import uuid
 
+from .i18n import tr
+
 COLORS = {"mint": "#a6e4ca", "blue": "#9ac8ff", "violet": "#cbb7f7", "amber": "#f5d18e", "rose": "#efb5c5"}
 SYSTEM_ENTRIES = {"computer": ("此电脑", "shell:MyComputerFolder"),
                   "recycle": ("回收站", "shell:RecycleBinFolder"),
@@ -22,7 +24,19 @@ DESKTOP_CATEGORIES = (
     ("archives", "压缩包与安装包", "amber", (".zip", ".7z", ".rar", ".gz", ".tar", ".msi", ".msix", ".iso")),
     ("other", "其他文件", "violet", ()),
 )
+CATEGORY_NAMES = {key: name for key, name, _, _ in DESKTOP_CATEGORIES}
 SUFFIX_CATEGORY = {suffix: key for key, _, _, extensions in DESKTOP_CATEGORIES for suffix in extensions}
+
+
+def group_name(group):
+    name = group["name"]
+    return tr(name) if name == CATEGORY_NAMES.get(group.get("auto_category")) else name
+
+
+def entry_name(entry):
+    name = entry["name"]
+    default = SYSTEM_ENTRIES.get(entry.get("system"))
+    return tr(name) if default and name == default[0] else name
 
 
 def identifier():
@@ -50,7 +64,7 @@ class Collections:
         self.groups[:] = [g for g in self.groups if isinstance(g, dict) and isinstance(g.get("id"), str)]
         for group in self.groups:
             if not isinstance(group.get("name"), str):
-                group["name"] = "未命名分组"
+                group["name"] = tr("未命名分组")
             group.setdefault("entries", [])
             if not isinstance(group["entries"], list):
                 group["entries"] = []
@@ -79,7 +93,7 @@ class Collections:
                     damaged = self.manifest.with_name("collections.damaged-"+identifier()[:8]+".json")
                     if self.manifest.exists():
                         self.manifest.replace(damaged)
-                    self.store.warning = "收纳清单已从独立备份恢复。"
+                    self.store.warning = tr("收纳清单已从独立备份恢复。")
                 return
             except (OSError, ValueError, TypeError, AttributeError):
                 continue
@@ -135,7 +149,7 @@ class Collections:
                     self.groups.append(group)
                 group["entries"].append(entry)
                 known.add(entry["id"])
-                self.store.warning = "已从独立文件凭据恢复收纳项目。"
+                self.store.warning = tr("已从独立文件凭据恢复收纳项目。")
             except (OSError, ValueError, KeyError, TypeError):
                 continue
 
@@ -146,7 +160,9 @@ class Collections:
     def find(self, ident):
         return next((g for g in self.groups if g["id"] == ident), None)
 
-    def create(self, name="新的分组", color="mint", rect=None, save=True):
+    def create(self, name=None, color="mint", rect=None, save=True):
+        if name is None:
+            name = tr("新的分组")
         group = {"id": identifier(), "name": name.strip()[:40], "color": color if color in COLORS else "mint",
                  "rect": rect or [100 + len(self.groups)*32, 100 + len(self.groups)*32, 350, 300],
                  "icon_size": 44, "collapsed": False, "locked": False, "entries": []}
@@ -202,13 +218,13 @@ class Collections:
         paths = [Path(path).absolute() for path in paths]
         for path in paths:
             if not path.exists():
-                raise FileNotFoundError(f"找不到：{path.name}")
+                raise FileNotFoundError(tr("找不到：{0}").format(path.name))
         added = []
         existing = {os.path.normcase(e["target"]) for e in group["entries"]}
         for path in paths:
             path = Path(path).absolute()
             if not path.exists():
-                raise FileNotFoundError(f"找不到：{path.name}")
+                raise FileNotFoundError(tr("找不到：{0}").format(path.name))
             if os.path.normcase(str(path)) in existing:
                 continue
             entry = {"id": identifier(), "name": path.stem if path.suffix.lower() in {".lnk", ".url", ".exe"} else path.name,
@@ -245,10 +261,10 @@ class Collections:
         for path in paths:
             source = Path(path).absolute()
             if source.parent.resolve() not in allowed:
-                errors.append(f"{source.name}：只能收纳桌面目录中的直接项目。")
+                errors.append(tr("{0}：只能收纳桌面目录中的直接项目。").format(source.name))
                 continue
             if not source.exists() or source.is_symlink():
-                errors.append(f"{source.name}：项目不存在或是文件系统链接，请改用添加入口。")
+                errors.append(tr("{0}：项目不存在或是文件系统链接，请改用添加入口。").format(source.name))
                 continue
             target = unique_path(destination / source.name)
             entry = {"id": identifier(), "name": source.stem if source.suffix.lower() in {".lnk", ".url", ".exe"} else source.name,
@@ -266,9 +282,9 @@ class Collections:
                 try:
                     self._receipt(group, entry, "stored")
                 except OSError as exc:
-                    errors.append(f"{source.name}：文件已收纳；冗余凭据更新失败，独立清单仍会记录：{exc}")
+                    errors.append(tr("{0}：文件已收纳；冗余凭据更新失败，独立清单仍会记录：{1}").format(source.name, exc))
             except OSError as exc:
-                errors.append(f"{source.name}：{exc}。原项目保留；可改用添加入口。")
+                errors.append(tr("{0}：{1}。原项目保留；可改用添加入口。").format(source.name, exc))
             finally:
                 self.store.settings.organizer_pending.remove(journal)
                 self.store.save()
@@ -277,13 +293,13 @@ class Collections:
     def restore_entry(self, group, entry, keep_reference=False):
         if entry.get("managed"):
             if not self._valid_managed_target(entry):
-                raise OSError("收纳路径不在受管目录中，已取消还原。")
+                raise OSError(tr("收纳路径不在受管目录中，已取消还原。"))
             source = Path(entry["target"])
             original = Path(entry["original_path"])
             if not source.exists():
-                raise FileNotFoundError(f"收纳文件不存在：{source.name}")
+                raise FileNotFoundError(tr("收纳文件不存在：{0}").format(source.name))
             if not original.parent.is_dir():
-                raise FileNotFoundError("原桌面目录已不可用，文件仍保留在收纳目录。")
+                raise FileNotFoundError(tr("原桌面目录已不可用，文件仍保留在收纳目录。"))
             target = unique_path(original)
             # Restore journal makes a crash between rename and config save recoverable.
             reference = {"id": entry["id"], "name": entry["name"], "target": str(target), "managed": False}
@@ -327,7 +343,7 @@ class Collections:
         for journal in list(pending):
             if not isinstance(journal, dict) or not isinstance(journal.get("entry"), dict):
                 pending.remove(journal)
-                self.store.warning = "已隔离无法识别的收纳日志；文件凭据仍独立保留。"
+                self.store.warning = tr("已隔离无法识别的收纳日志；文件凭据仍独立保留。")
                 continue
             group = self.find(journal.get("group_id"))
             entry = journal.get("entry", {})
@@ -343,5 +359,5 @@ class Collections:
                 group["entries"].append(entry)
             pending.remove(journal)
         if pending:
-            self.store.warning = "有收纳日志无法自动恢复，项目仍保留在 organizer_files 目录。"
+            self.store.warning = tr("有收纳日志无法自动恢复，项目仍保留在 organizer_files 目录。")
         self.store.save()

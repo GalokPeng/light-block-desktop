@@ -27,7 +27,7 @@ $portable = Join-Path $dist "Qingkuai-v$version-Windows-x64"
 $output = Join-Path $root 'release'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 
-foreach ($file in @('LICENSE', 'README.md', 'CHANGES.md', 'THIRD_PARTY_NOTICES.md', 'TEST_REPORT.md')) {
+foreach ($file in @('LICENSE', 'README.md', 'README.en.md', 'CHANGES.md', 'THIRD_PARTY_NOTICES.md', 'TEST_REPORT.md')) {
     Copy-Item -LiteralPath (Join-Path $root $file) -Destination $portable
 }
 & $PythonPath tools/release.py smoke

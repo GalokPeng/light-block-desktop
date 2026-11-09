@@ -12,6 +12,7 @@ from PySide6.QtCore import QObject, QProcess, QRect, Qt, QTimer, Signal
 from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout,
     QLabel, QLineEdit, QProgressBar, QPushButton, QSpinBox, QVBoxLayout, QWidget)
 
+from .i18n import tr
 from .model import ROOT
 
 
@@ -19,7 +20,7 @@ def ffmpeg_path():
     bundled = ROOT / "runtime" / "ffmpeg.exe"
     path = str(bundled) if bundled.is_file() else shutil.which("ffmpeg")
     if not path:
-        raise FileNotFoundError("录屏和导出需要 FFmpeg。请安装支持 gdigrab、libx264 和 ffv1 的 Windows 版 FFmpeg 并加入 PATH。")
+        raise FileNotFoundError(tr("录屏和导出需要 FFmpeg。请安装支持 gdigrab、libx264 和 ffv1 的 Windows 版 FFmpeg 并加入 PATH。"))
     return path
 
 
@@ -34,9 +35,9 @@ def parse_media_info(text):
 def video_commands(source, output, start, duration, crop, mode, fps=12, gif_width=0, palette=None):
     source, output = Path(source), Path(output)
     if source.resolve() == output.resolve():
-        raise ValueError("输出文件必须与原文件不同。")
+        raise ValueError(tr("输出文件必须与原文件不同。"))
     if duration is not None and duration <= 0:
-        raise ValueError("结束时间必须晚于开始时间。")
+        raise ValueError(tr("结束时间必须晚于开始时间。"))
     filters = []
     x, y, width, height = crop
     if width > 0 and height > 0:
@@ -52,7 +53,7 @@ def video_commands(source, output, start, duration, crop, mode, fps=12, gif_widt
             filters.append(f"scale={int(gif_width)}:-1:flags=lanczos")
         chain = ",".join(filters)
         if palette is None:
-            raise ValueError("GIF 导出需要独立调色板临时文件。")
+            raise ValueError(tr("GIF 导出需要独立调色板临时文件。"))
         return [common + seek + ["-vf", chain+",palettegen=stats_mode=diff", "-frames:v", "1", str(palette)],
                 common + seek + ["-i", str(palette), "-lavfi", f"[0:v]{chain}[v];[v][1:v]paletteuse=dither=sierra2_4a",
                                  "-an", "-loop", "0", "-progress", "pipe:1", str(output)]]
@@ -122,7 +123,7 @@ class FFmpegJob(QObject):
             return
         if self.cancelled or code != 0 or status != QProcess.ExitStatus.NormalExit:
             self.running = False
-            self.finished.emit(False, "操作已取消。" if self.cancelled else self.errors[-3000:] or "媒体任务失败。")
+            self.finished.emit(False, tr("操作已取消。") if self.cancelled else self.errors[-3000:] or tr("媒体任务失败。"))
             return
         self.index += 1
         if self.index < self.total:
@@ -131,7 +132,7 @@ class FFmpegJob(QObject):
         else:
             self.running = False
             self.progress.emit(100)
-            self.finished.emit(True, "完成")
+            self.finished.emit(True, tr("完成"))
 
     def process_error(self, error):
         if error == QProcess.ProcessError.FailedToStart and self.running:
@@ -161,16 +162,16 @@ class Recorder(QObject):
 
     def start(self, rect, destination, lossless=False, fps=24):
         if self.active:
-            raise RuntimeError("已有录屏正在进行。")
+            raise RuntimeError(tr("已有录屏正在进行。"))
         destination = Path(destination)
         if destination.exists():
-            raise FileExistsError("该输出文件已存在，请选择另一个名称。")
+            raise FileExistsError(tr("该输出文件已存在，请选择另一个名称。"))
         destination.parent.mkdir(parents=True, exist_ok=True)
         self.destination = destination
         self.partial = destination.with_name(".Still-recording-"+uuid.uuid4().hex[:8]+destination.suffix)
         width, height = rect.width(), rect.height()
         if width < 2 or height < 2:
-            raise ValueError("录屏选区太小。")
+            raise ValueError(tr("录屏选区太小。"))
         args = ["-hide_banner", "-n", "-f", "gdigrab", "-framerate", str(fps), "-draw_mouse", "1",
                 "-offset_x", str(rect.x()), "-offset_y", str(rect.y()), "-video_size", f"{width}x{height}", "-i", "desktop", "-an"]
         if lossless:
@@ -209,9 +210,9 @@ class Recorder(QObject):
                 os.rename(self.partial, self.destination)
                 self.completed.emit(str(self.destination))
             except OSError as exc:
-                self.error.emit(f"录屏保留在 {self.partial}：{exc}")
+                self.error.emit(tr("录屏保留在 {0}：{1}").format(self.partial, exc))
         else:
-            self.error.emit("录屏未正常完成。临时文件若已生成会保留。\n"+self.errors[-2000:])
+            self.error.emit(tr("录屏未正常完成。临时文件若已生成会保留。\n")+self.errors[-2000:])
         self.changed.emit()
 
     def shutdown(self):
@@ -230,7 +231,7 @@ class MediaStudio(QWidget):
         super().__init__()
         from .ui import STYLE, button, label
         self.workbench = workbench
-        self.setWindowTitle("轻块桌面 · 视频裁剪与 GIF 导出")
+        self.setWindowTitle(tr("轻块桌面 · 视频裁剪与 GIF 导出"))
         self.setObjectName("root")
         self.setWindowIcon(workbench.controller.icon)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -247,67 +248,67 @@ class MediaStudio(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(25, 23, 25, 23)
         outer.setSpacing(16)
-        outer.addWidget(label("让每个片段，刚刚好。", "title"))
-        outer.addWidget(label("时间截取 · 画面裁剪 · 视频转 GIF · 独立导出，保留原素材", "muted", True))
+        outer.addWidget(label(tr("让每个片段，刚刚好。"), "title"))
+        outer.addWidget(label(tr("时间截取 · 画面裁剪 · 视频转 GIF · 独立导出，保留原素材"), "muted", True))
         row = QHBoxLayout()
         self.source = QLineEdit()
         self.source.setReadOnly(True)
-        self.source.setPlaceholderText("选择视频或 GIF 文件")
+        self.source.setPlaceholderText(tr("选择视频或 GIF 文件"))
         row.addWidget(self.source, 1)
-        self.browse = button("选择素材…", self.choose)
+        self.browse = button(tr("选择素材…"), self.choose)
         row.addWidget(self.browse)
         outer.addLayout(row)
-        self.details = label("尚未选择素材", "muted", True)
+        self.details = label(tr("尚未选择素材"), "muted", True)
         outer.addWidget(self.details)
         form = QFormLayout()
         self.mode = QComboBox()
-        for name, key in (("高画质 MP4", "mp4"), ("动态 GIF（最多 256 色）", "gif"), ("无损 MKV（文件较大）", "lossless")):
+        for name, key in ((tr("高画质 MP4"), "mp4"), (tr("动态 GIF（最多 256 色）"), "gif"), (tr("无损 MKV（文件较大）"), "lossless")):
             self.mode.addItem(name, key)
-        form.addRow("导出格式", self.mode)
+        form.addRow(tr("导出格式"), self.mode)
         self.start_time, self.end_time = QDoubleSpinBox(), QDoubleSpinBox()
         for spin in (self.start_time, self.end_time):
             spin.setDecimals(3)
             spin.setRange(0, 86400)
-            spin.setSuffix(" 秒")
+            spin.setSuffix(tr(" 秒"))
         times = QHBoxLayout()
         times.addWidget(self.start_time)
-        times.addWidget(QLabel("至"))
+        times.addWidget(QLabel(tr("至")))
         times.addWidget(self.end_time)
-        form.addRow("时间范围", times)
+        form.addRow(tr("时间范围"), times)
         crop_row = QHBoxLayout()
         self.crop = [QSpinBox() for _ in range(4)]
-        for name, spin in zip(("X", "Y", "宽", "高"), self.crop):
+        for name, spin in zip(("X", "Y", tr("宽"), tr("高")), self.crop):
             spin.setRange(0, 32768)
             spin.setPrefix(name+" ")
             crop_row.addWidget(spin)
-        form.addRow("画面裁剪", crop_row)
+        form.addRow(tr("画面裁剪"), crop_row)
         self.fps = QSpinBox()
         self.fps.setRange(1, 30)
         self.fps.setValue(12)
-        form.addRow("GIF 帧率", self.fps)
+        form.addRow(tr("GIF 帧率"), self.fps)
         self.gif_width = QComboBox()
-        for name, value in (("保持源分辨率", 0), ("宽 320 px", 320), ("宽 640 px", 640), ("宽 960 px", 960)):
+        for name, value in ((tr("保持源分辨率"), 0), (tr("宽 320 px"), 320), (tr("宽 640 px"), 640), (tr("宽 960 px"), 960)):
             self.gif_width.addItem(name, value)
-        form.addRow("GIF 尺寸", self.gif_width)
+        form.addRow(tr("GIF 尺寸"), self.gif_width)
         outer.addLayout(form)
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         outer.addWidget(self.progress)
-        self.message = label("GIF 使用两次流式处理，不把整段视频帧缓存在内存里。", "muted", True)
+        self.message = label(tr("GIF 使用两次流式处理，不把整段视频帧缓存在内存里。"), "muted", True)
         outer.addWidget(self.message)
         actions = QHBoxLayout()
-        self.cancel_button = button("取消任务", self.job.cancel)
+        self.cancel_button = button(tr("取消任务"), self.job.cancel)
         self.cancel_button.setEnabled(False)
         actions.addWidget(self.cancel_button)
         actions.addStretch()
-        self.export = button("导出新文件…", self.run, "primary")
+        self.export = button(tr("导出新文件…"), self.run, "primary")
         self.export.setEnabled(False)
         actions.addWidget(self.export)
         outer.addLayout(actions)
         outer.addStretch()
 
     def choose(self):
-        path, _ = QFileDialog.getOpenFileName(self, "选择素材", "", "视频和 GIF (*.mp4 *.mkv *.mov *.webm *.avi *.m4v *.gif);;所有文件 (*)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("选择素材"), "", tr("视频和 GIF (*.mp4 *.mkv *.mov *.webm *.avi *.m4v *.gif);;所有文件 (*)"))
         if path:
             if self.metadata.state() != QProcess.ProcessState.NotRunning:
                 self.metadata.blockSignals(True)
@@ -329,13 +330,13 @@ class MediaStudio(QWidget):
     def metadata_error(self, error):
         if error == QProcess.ProcessError.FailedToStart:
             self.browse.setEnabled(True)
-            self.details.setText("素材探测无法启动："+self.metadata.errorString())
+            self.details.setText(tr("素材探测无法启动：")+self.metadata.errorString())
 
     def metadata_finished(self, *_):
         self.browse.setEnabled(True)
         self.info = parse_media_info(bytes(self.metadata.readAllStandardError()).decode("utf-8", "replace"))
         info = self.info
-        self.details.setText(f"{info['width']} × {info['height']} px  ·  {info['duration']:.3f} 秒")
+        self.details.setText(tr("{0} × {1} px  ·  {2:.3f} 秒").format(info['width'], info['height'], info['duration']))
         self.start_time.setValue(0)
         self.end_time.setValue(info["duration"])
         for spin, value in zip(self.crop, (0, 0, info["width"], info["height"])):
@@ -348,7 +349,7 @@ class MediaStudio(QWidget):
         mode = self.mode.currentData()
         suffix = ".gif" if mode == "gif" else ".mkv" if mode == "lossless" else ".mp4"
         source = Path(self.source.text())
-        output, _ = QFileDialog.getSaveFileName(self, "导出新文件", str(source.with_name(source.stem+"_Still"+suffix)), "媒体文件 (*"+suffix+")")
+        output, _ = QFileDialog.getSaveFileName(self, tr("导出新文件"), str(source.with_name(source.stem+"_Still"+suffix)), tr("媒体文件 (*")+suffix+")")
         if not output:
             return
         output = Path(output)
@@ -356,14 +357,14 @@ class MediaStudio(QWidget):
             output = output.with_suffix(suffix)
         try:
             if output.exists():
-                raise FileExistsError("输出文件已存在，请使用新名称；原素材不会被覆盖。")
+                raise FileExistsError(tr("输出文件已存在，请使用新名称；原素材不会被覆盖。"))
             if self.end_time.value() > self.info["duration"]+0.05:
-                raise ValueError("结束时间超出素材长度。")
+                raise ValueError(tr("结束时间超出素材长度。"))
             x, y, width, height = [spin.value() for spin in self.crop]
             if not width or not height or x+width > self.info["width"] or y+height > self.info["height"]:
-                raise ValueError("裁剪区域必须完整位于原画面内。")
+                raise ValueError(tr("裁剪区域必须完整位于原画面内。"))
             if mode == "mp4" and (width % 2 or height % 2):
-                raise ValueError("MP4 裁剪宽高请使用偶数；无损 MKV 可保留奇数尺寸。")
+                raise ValueError(tr("MP4 裁剪宽高请使用偶数；无损 MKV 可保留奇数尺寸。"))
             self.temporary = tempfile.TemporaryDirectory(prefix="still-export-")
             self.destination = output
             self.partial = output.with_name(".Still-export-"+uuid.uuid4().hex[:8]+suffix)
@@ -373,7 +374,7 @@ class MediaStudio(QWidget):
             self.browse.setEnabled(False)
             self.export.setEnabled(False)
             self.cancel_button.setEnabled(True)
-            self.message.setText("处理中…原素材保持不变。")
+            self.message.setText(tr("处理中…原素材保持不变。"))
         except (OSError, ValueError) as exc:
             self.workbench.error(str(exc))
 
@@ -387,9 +388,9 @@ class MediaStudio(QWidget):
         if success:
             try:
                 os.rename(self.partial, self.destination)
-                self.message.setText("已导出："+str(self.destination))
+                self.message.setText(tr("已导出：")+str(self.destination))
             except OSError as exc:
-                self.message.setText(f"导出完成，文件保留在 {self.partial}：{exc}")
+                self.message.setText(tr("导出完成，文件保留在 {0}：{1}").format(self.partial, exc))
         else:
             self.partial.unlink(missing_ok=True)
             self.message.setText(message)

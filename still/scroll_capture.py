@@ -4,6 +4,7 @@ from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer
 from PySide6.QtGui import QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
+from .i18n import tr
 from .scroll_match import ScrollMatch, match_scroll
 
 
@@ -15,7 +16,7 @@ def estimate_scroll(previous, current):
 def append_frame(composite, previous, current, overlap=None):
     match = match_scroll(previous, current) if overlap is None else ScrollMatch(current.height() - overlap)
     if match is None:
-        raise ValueError("暂未找到接缝，往回滚一小段即可继续匹配。")
+        raise ValueError(tr("暂未找到接缝，往回滚一小段即可继续匹配。"))
     return stitch_frame(composite, current, match), match.shift
 
 
@@ -25,7 +26,7 @@ def stitch_frame(composite, current, match):
         return composite
     shift = min(shift, current.height())
     if composite.width()*(composite.height()+shift) > 40000000:
-        raise ValueError("已达到长图尺寸上限，请保存当前长图后继续。")
+        raise ValueError(tr("已达到长图尺寸上限，请保存当前长图后继续。"))
     result = QImage(composite.width(), composite.height()+shift, QImage.Format.Format_ARGB32)
     painter = QPainter(result)
     painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
@@ -68,7 +69,7 @@ class ScrollCapture(QWidget):
         self.preview_timer.setSingleShot(True)
         self.preview_timer.setInterval(75)
         self.preview_timer.timeout.connect(self.update_thumbnail)
-        self.setWindowTitle("轻块桌面 · 滚动长截图")
+        self.setWindowTitle(tr("轻块桌面 · 滚动长截图"))
         self.setObjectName("root")
         self.setWindowIcon(workbench.controller.icon)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -77,31 +78,31 @@ class ScrollCapture(QWidget):
         self.setFixedWidth(310)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 14, 15, 14)
-        layout.addWidget(label("滚动长截图", "section"))
-        self.hint = label("在蓝框内向下滚动，自动采集并拼接。", "muted", True)
+        layout.addWidget(label(tr("滚动长截图"), "section"))
+        self.hint = label(tr("在蓝框内向下滚动，自动采集并拼接。"), "muted", True)
         layout.addWidget(self.hint)
         self.thumbnail = QLabel()
         self.thumbnail.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.thumbnail.setStyleSheet("background:#202a36;border:1px solid #384858;border-radius:8px;")
         layout.addWidget(self.thumbnail)
-        self.status = label("已采集 1 屏", "muted", True)
+        self.status = label(tr("已采集 1 屏"), "muted", True)
         layout.addWidget(self.status)
         row = QHBoxLayout()
-        row.addWidget(button("采集下一屏", self.capture_next, "primary"))
-        self.undo_button = button("撤销", self.undo_append)
+        row.addWidget(button(tr("采集下一屏"), self.capture_next, "primary"))
+        self.undo_button = button(tr("撤销"), self.undo_append)
         self.undo_button.setEnabled(False)
         row.addWidget(self.undo_button)
-        row.addWidget(button("完成", self.finish))
+        row.addWidget(button(tr("完成"), self.finish))
         layout.addLayout(row)
         manual = QHBoxLayout()
-        manual.addWidget(label("重叠 px"))
+        manual.addWidget(label(tr("重叠 px")))
         self.overlap = QComboBox()
         self.overlap.setEditable(False)
         for value in range(image.height()):
             self.overlap.addItem(str(value), value)
         self.overlap.setCurrentIndex(image.height()//2)
         manual.addWidget(self.overlap)
-        self.manual_button = button("手动拼接", self.manual)
+        self.manual_button = button(tr("手动拼接"), self.manual)
         self.manual_button.setEnabled(False)
         manual.addWidget(self.manual_button)
         layout.addLayout(manual)
@@ -120,7 +121,7 @@ class ScrollCapture(QWidget):
         self.move(position)
         self.wheel = ScrollWheel(self.capture_rect, self.wheel_down)
         if not self.wheel.start():
-            self.hint.setText("滚轮监听不可用，可用「采集下一屏」。")
+            self.hint.setText(tr("滚轮监听不可用，可用「采集下一屏」。"))
 
     def wheel_down(self):
         self.wheel_timer.start()
@@ -150,7 +151,7 @@ class ScrollCapture(QWidget):
 
     def auto_capture(self):
         if not self.capture_excluded and self.overlaps_capture():
-            self.hint.setText("请移开预览面板，或点击「采集下一屏」。")
+            self.hint.setText(tr("请移开预览面板，或点击「采集下一屏」。"))
             return
         self.capture_next()
 
@@ -167,7 +168,7 @@ class ScrollCapture(QWidget):
     def grab_next(self):
         if not self.screen or self.screen not in self.workbench.controller.app.screens():
             self.show()
-            self.status.setText("原显示器已断开，请重新开始选区。")
+            self.status.setText(tr("原显示器已断开，请重新开始选区。"))
             return
         from . import win32
         origin_x, origin_y = win32.target_monitor(self.screen.name())["rect"][:2]
@@ -177,13 +178,13 @@ class ScrollCapture(QWidget):
         if not self.isVisible():
             self.show()
         if image.size() != self.previous.size():
-            self.status.setText("捕获尺寸变化，请重新选择区域。")
+            self.status.setText(tr("捕获尺寸变化，请重新选择区域。"))
             return
         self.pending = image
         try:
             match = match_scroll(self.previous, image)
             if match is None:
-                raise ValueError("暂未找到接缝，往回滚一小段即可继续匹配。")
+                raise ValueError(tr("暂未找到接缝，往回滚一小段即可继续匹配。"))
             if match.shift:
                 self.accept_frame(image, match)
             else:
@@ -196,7 +197,7 @@ class ScrollCapture(QWidget):
 
     def show_count(self):
         self.status.setText(
-            f"已采集 {self.pages} 屏 · {self.composite.width()} × {self.composite.height()} px"
+            tr("已采集 {0} 屏 · {1} × {2} px").format(self.pages, self.composite.width(), self.composite.height())
         )
 
     def queue_thumbnail(self):
@@ -243,7 +244,7 @@ class ScrollCapture(QWidget):
             self.last_append = None
             self.manual_button.setEnabled(True)
             self.undo_button.setEnabled(False)
-            self.status.setText("已撤销最后一屏，可调整重叠高度后重新拼接。")
+            self.status.setText(tr("已撤销最后一屏，可调整重叠高度后重新拼接。"))
             self.queue_thumbnail()
 
     def closeEvent(self, event):

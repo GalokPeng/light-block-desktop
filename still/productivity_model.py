@@ -12,6 +12,8 @@ import sqlite3
 import string
 import uuid
 
+from .i18n import tr
+
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
@@ -71,17 +73,17 @@ class ToolsDB:
         if not row:
             return
         if not row[0]["pinned"] and self.query("SELECT COUNT(*) n FROM clipboard WHERE pinned=1")[0]["n"] >= 20:
-            raise ValueError("最多固定 20 项，以保持历史记录容量可控。")
+            raise ValueError(tr("最多固定 20 项，以保持历史记录容量可控。"))
         self.execute("UPDATE clipboard SET pinned=1-pinned WHERE id=?", (ident,))
 
 
 def calculate(expression):
     """Arithmetic only; no eval, calls, names, attributes or unbounded powers."""
     if len(expression) > 120:
-        raise ValueError("表达式过长。")
+        raise ValueError(tr("表达式过长。"))
     tree = ast.parse(expression, mode="eval")
     if len(list(ast.walk(tree))) > 50:
-        raise ValueError("表达式过于复杂。")
+        raise ValueError(tr("表达式过于复杂。"))
     def visit(node):
         if isinstance(node, ast.Expression):
             return visit(node.body)
@@ -98,11 +100,11 @@ def calculate(expression):
             elif isinstance(node.op, ast.FloorDiv): result = a//b
             elif isinstance(node.op, ast.Mod): result = a%b
             elif isinstance(node.op, ast.Pow) and abs(b) <= 16: result = a**b
-            else: raise ValueError("不支持该运算。")
+            else: raise ValueError(tr("不支持该运算。"))
         else:
-            raise ValueError("仅支持数字和基本算术。")
+            raise ValueError(tr("仅支持数字和基本算术。"))
         if isinstance(result, complex) or abs(result) > 1e100:
-            raise ValueError("结果超出范围。")
+            raise ValueError(tr("结果超出范围。"))
         return result
     return visit(tree)
 
@@ -112,10 +114,10 @@ def rename_preview(paths, pattern):
     for _, field, spec, conversion in parsed:
         if field is not None and (field not in {"name", "ext", "n"} or conversion or
                                   (spec and not (field == "n" and re.fullmatch(r"0?\d{1,2}d?", spec)))):
-            raise ValueError("命名模板仅支持 {name}、{ext} 和 {n:03}。")
+            raise ValueError(tr("命名模板仅支持 {name}、{ext} 和 {n:03}。"))
     sources = [Path(p).absolute() for p in paths]
     if len(set(os.path.normcase(str(p)) for p in sources)) != len(sources):
-        raise ValueError("输入项目重复。")
+        raise ValueError(tr("输入项目重复。"))
     names, targets = [], set()
     source_keys = {os.path.normcase(str(path)) for path in sources}
     for index, source in enumerate(sources, 1):
@@ -124,13 +126,13 @@ def rename_preview(paths, pattern):
         name = pattern.format(name=source.name if source.is_dir() else source.stem,
                               ext="" if source.is_dir() else source.suffix, n=index)
         if not name or name != name.rstrip(" .") or re.search(r'[<>:"/\\|?*\x00-\x1f]', name) or name in {".", ".."}:
-            raise ValueError("文件名包含无效字符或结尾空格/句点。")
+            raise ValueError(tr("文件名包含无效字符或结尾空格/句点。"))
         if re.fullmatch(r"(?i)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?", name):
-            raise ValueError("文件名是 Windows 保留名称。")
+            raise ValueError(tr("文件名是 Windows 保留名称。"))
         target = source.with_name(name)
         key = os.path.normcase(str(target))
         if key in targets or (target.exists() and key not in source_keys):
-            raise FileExistsError(f"目标重名：{name}")
+            raise FileExistsError(tr("目标重名：{0}").format(name))
         targets.add(key)
         names.append((source, target))
     return names
@@ -170,10 +172,10 @@ class RenameJournal:
         source_keys = {os.path.normcase(str(a)) for a,b in pairs}
         target_keys = [os.path.normcase(str(b)) for a,b in pairs]
         if len(source_keys) != len(pairs) or len(set(target_keys)) != len(pairs):
-            raise ValueError("来源或目标存在重复名称。")
+            raise ValueError(tr("来源或目标存在重复名称。"))
         for source, target in pairs:
             if not source.exists() or source.is_symlink() or source.parent != target.parent:
-                raise ValueError("重命名只支持同一目录中的现有普通项目。")
+                raise ValueError(tr("重命名只支持同一目录中的现有普通项目。"))
             if target.exists() and os.path.normcase(str(target)) not in source_keys:
                 raise FileExistsError(target)
         ident = uuid.uuid4().hex
@@ -181,7 +183,7 @@ class RenameJournal:
         records = [{"source": str(a), "target": str(b), "temp": str(a.with_name(".Still-rename-"+uuid.uuid4().hex)),
                     "identity": self.identity(a), "rescue": []} for a,b in pairs]
         if len({tuple(item["identity"]) for item in records}) != len(records):
-            raise ValueError("本批文件包含同一文件的多个硬链接，请分开重命名；文件保持原样。")
+            raise ValueError(tr("本批文件包含同一文件的多个硬链接，请分开重命名；文件保持原样。"))
         data = {"id":ident,"state":"pending","phase":"staging","created":utc_now(),"records":records}
         if undo_of:
             data["undo_of"] = undo_of
@@ -202,7 +204,7 @@ class RenameJournal:
             except (OSError,ValueError) as recovery:
                 data["state"]="recovery_needed"
                 self._save(file,data)
-                raise OSError(f"重命名中断，文件已记录；请在文件工作台点击“恢复中断任务”：{recovery}") from exc
+                raise OSError(tr("重命名中断，文件已记录；请在文件工作台点击“恢复中断任务”：{0}").format(recovery)) from exc
             raise
 
     def _locate(self, item):
@@ -214,7 +216,7 @@ class RenameJournal:
                     return path
             except OSError:
                 pass
-        raise FileNotFoundError("无法定位原文件，请查看恢复记录："+item["source"])
+        raise FileNotFoundError(tr("无法定位原文件，请查看恢复记录：")+item["source"])
 
     def _restore(self, file, data):
         located=[(item,self._locate(item)) for item in data["records"]]
@@ -222,7 +224,7 @@ class RenameJournal:
         for item,path in located:
             original=Path(item["source"])
             if original.exists() and os.path.normcase(str(original)) not in moving:
-                raise FileExistsError("原名称被其他文件占用，已保留所有文件："+str(original))
+                raise FileExistsError(tr("原名称被其他文件占用，已保留所有文件：")+str(original))
         staged=[]
         for item,path in located:
             rescue=path.with_name(".Still-restore-"+uuid.uuid4().hex)
@@ -245,10 +247,10 @@ class RenameJournal:
     def recover(self, file):
         file=Path(file)
         if file.parent.resolve()!=self.directory.resolve():
-            raise ValueError("不属于当前恢复记录目录。")
+            raise ValueError(tr("不属于当前恢复记录目录。"))
         data=json.loads(file.read_text(encoding="utf-8"))
         if data.get("state") not in {"pending","recovering","recovery_needed"}:
-            raise ValueError("该任务无需恢复。")
+            raise ValueError(tr("该任务无需恢复。"))
         self._restore(file,data)
 
     @staticmethod
@@ -264,15 +266,15 @@ class RenameJournal:
         file = Path(file)
         data = json.loads(file.read_text(encoding="utf-8"))
         if data["state"] != "committed":
-            raise ValueError("该记录无法撤销。")
+            raise ValueError(tr("该记录无法撤销。"))
         if data.get("undo_of") or any(record.get("undo_of") == data["id"] and record.get("state") == "committed" for _,record in self.records()):
-            raise ValueError("该操作已撤销。")
+            raise ValueError(tr("该操作已撤销。"))
         pairs = [(Path(item["target"]), Path(item["source"])) for item in data["records"]]
         if any(self.identity(item["target"]) != item.get("identity") for item in data["records"]):
-            raise ValueError("目标文件已被替换，已取消撤销。")
+            raise ValueError(tr("目标文件已被替换，已取消撤销。"))
         target_keys = {os.path.normcase(str(a)) for a,b in pairs}
         if any(not a.exists() or (b.exists() and os.path.normcase(str(b)) not in target_keys) for a,b in pairs):
-            raise ValueError("文件已移动或原名称已被占用，已取消撤销，文件保留。")
+            raise ValueError(tr("文件已移动或原名称已被占用，已取消撤销，文件保留。"))
         undo_file = self.apply(pairs, undo_of=data["id"])
         data["state"] = "undone"
         self._save(file, data)

@@ -1,4 +1,4 @@
-﻿#ifndef AppVersion
+#ifndef AppVersion
   #error Pass /DAppVersion=X.Y.Z
 #endif
 #ifndef AppDir
@@ -10,11 +10,11 @@
 
 [Setup]
 AppId={{3CD16B31-077E-4CE9-BB01-578642D94876}
-AppName=轻块桌面
+AppName={cm:AppTitle}
 AppVersion={#AppVersion}
 AppPublisher=Light Block Desktop
 DefaultDirName={localappdata}\Programs\Light Block Desktop
-DefaultGroupName=轻块桌面
+DefaultGroupName={cm:AppTitle}
 UninstallDisplayIcon={app}\轻块桌面.exe
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
@@ -23,26 +23,42 @@ MinVersion=10.0
 OutputDir={#OutputDir}
 OutputBaseFilename=Qingkuai-v{#AppVersion}-Setup-x64
 SetupIconFile=..\assets\still.ico
-LicenseFile=..\LICENSE
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+DisableWelcomePage=no
 CloseApplications=yes
 RestartApplications=no
 AllowNoIcons=yes
+LanguageDetectionMethod=uilanguage
+ShowLanguageDialog=no
+UsePreviousLanguage=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "chinesesimplified"; MessagesFile: "compiler:Default.isl,ChineseSimplified.isl"
+Name: "chinesetraditional"; MessagesFile: "compiler:Default.isl,ChineseTraditional.isl"
+
+[CustomMessages]
+english.AppTitle=Light Block Desktop
+english.CreateDesktopIcon=Create a desktop shortcut
+english.LaunchApp=Launch Light Block Desktop
+chinesesimplified.AppTitle=轻块桌面
+chinesesimplified.CreateDesktopIcon=创建桌面快捷方式
+chinesesimplified.LaunchApp=启动轻块桌面
+chinesetraditional.AppTitle=輕塊桌面
+chinesetraditional.CreateDesktopIcon=建立桌面捷徑
+chinesetraditional.LaunchApp=啟動輕塊桌面
 
 [Tasks]
-Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
 
 [Files]
 Source: "{#AppDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\轻块桌面"; Filename: "{app}\轻块桌面.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\轻块桌面"; Filename: "{app}\轻块桌面.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{group}\{cm:AppTitle}"; Filename: "{app}\轻块桌面.exe"; WorkingDir: "{app}"
+Name: "{autodesktop}\{cm:AppTitle}"; Filename: "{app}\轻块桌面.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\轻块桌面.exe"; Description: "Launch 轻块桌面"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\轻块桌面.exe"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent

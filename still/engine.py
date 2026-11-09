@@ -9,6 +9,7 @@ from PySide6.QtCore import QAbstractNativeEventFilter, QObject, Qt, QTimer, QUrl
 from PySide6.QtGui import QImageReader
 from PySide6.QtWidgets import QWidget
 
+from .i18n import tr
 from . import win32
 from .model import Store, item_path
 
@@ -55,7 +56,7 @@ class WallpaperEngine(QObject):
         self.current_screen = ""
         self.active = None
         self.manual_pause = False
-        self.reason = "尚未应用壁纸"
+        self.reason = tr("尚未应用壁纸")
         self.state = "idle"
         self.tick = QTimer(self)
         self.tick.setInterval(2000)
@@ -108,13 +109,13 @@ class WallpaperEngine(QObject):
     def apply(self, item: dict):
         path = item_path(item)
         if not path.is_file():
-            raise FileNotFoundError("原文件已移动或删除，请重新导入。")
+            raise FileNotFoundError(tr("原文件已移动或删除，请重新导入。"))
         fit = self.store.settings.fit
         if item["kind"] == "image":
             reader = QImageReader(str(path))
             reader.setAutoTransform(True)
             if not reader.canRead():
-                raise ValueError("无法读取这张图片，请检查文件内容。")
+                raise ValueError(tr("无法读取这张图片，请检查文件内容。"))
             # Windows reads these originals directly. Other supported formats use
             # a full-resolution lossless PNG; no JPEG encoding or thumbnail input.
             native_path = path
@@ -124,13 +125,13 @@ class WallpaperEngine(QObject):
                     raise ValueError(reader.errorString())
                 native_path = self.store.directory / "native-wallpaper.png"
                 if not image.save(str(native_path), "PNG"):
-                    raise OSError("无法写入原分辨率 PNG。")
+                    raise OSError(tr("无法写入原分辨率 PNG。"))
                 del image
             self._remember_original()
             win32.set_wallpaper(str(native_path), fit)
             self._release()
             self.active = item
-            self.reason, self.state = "Windows 原生静态壁纸 · 无后台解码", "static"
+            self.reason, self.state = tr("Windows 原生静态壁纸 · 无后台解码"), "static"
         else:
             monitor = win32.target_monitor(self.store.settings.screen)
             worker = win32.desktop_worker()
@@ -168,7 +169,7 @@ class WallpaperEngine(QObject):
             self.current_screen = self.store.settings.screen
             self.render_rect = monitor["rect"]
             self.manual_pause = False
-            self.reason, self.state = "正在读取原文件…", "loading"
+            self.reason, self.state = tr("正在读取原文件…"), "loading"
             candidate.show()
             win32.position(int(candidate.winId()), worker, monitor["rect"])
             player.setSource(QUrl.fromLocalFile(str(path)))
@@ -186,18 +187,18 @@ class WallpaperEngine(QObject):
         from PySide6.QtMultimedia import QMediaPlayer
         logging.info("Media status: %s; hasVideo=%s", status.name, player.hasVideo())
         if status == QMediaPlayer.MediaStatus.LoadedMedia and not player.hasVideo():
-            self._media_error(player, "所选文件没有视频轨道。")
+            self._media_error(player, tr("所选文件没有视频轨道。"))
 
     def _media_error(self, player, text):
         if player is not self.player:
             return
-        kind = "GIF" if self.active and self.active["kind"] == "gif" else "视频"
+        kind = "GIF" if self.active and self.active["kind"] == "gif" else tr("视频")
         self._release()
         self.active = None
         self.store.settings.active_id = ""
         self.store.save()
-        self.reason, self.state = "播放失败 · 已回到 Windows 桌面", "error"
-        self.error.emit(f"{kind}播放失败：{text}\n请检查文件是否完整；解码支持取决于媒体格式和显卡驱动。")
+        self.reason, self.state = tr("播放失败 · 已回到 Windows 桌面"), "error"
+        self.error.emit(tr("{0}播放失败：{1}\n请检查文件是否完整；解码支持取决于媒体格式和显卡驱动。").format(kind, text))
         self.changed.emit()
 
     def pause(self):
@@ -217,24 +218,24 @@ class WallpaperEngine(QObject):
             item = self.active
             self._release()
             self.active = None
-            self.reason, self.state = "桌面层已重建，请重新应用壁纸", "error"
+            self.reason, self.state = tr("桌面层已重建，请重新应用壁纸"), "error"
             self.changed.emit()
-            self.error.emit("Explorer 桌面层已重建。打开设置，重新应用壁纸即可。")
+            self.error.emit(tr("Explorer 桌面层已重建。打开设置，重新应用壁纸即可。"))
             return
         if monitor["rect"] != self.render_rect:
             win32.position(int(self.surface.winId()), self.worker, monitor["rect"])
             self.render_rect = monitor["rect"]
         reason = ""
         if self.manual_pause:
-            reason = "已手动暂停"
+            reason = tr("已手动暂停")
         elif self.events.locked or win32.desktop_locked():
-            reason = "锁屏时自动暂停"
+            reason = tr("锁屏时自动暂停")
         elif self.events.display_off:
-            reason = "显示器关闭时自动暂停"
+            reason = tr("显示器关闭时自动暂停")
         elif settings.battery_pause and win32.on_battery():
-            reason = "电池供电时自动暂停"
+            reason = tr("电池供电时自动暂停")
         elif settings.fullscreen_pause and win32.fullscreen_on(monitor["rect"]):
-            reason = "全屏应用运行中 · 自动暂停"
+            reason = tr("全屏应用运行中 · 自动暂停")
         if self.player:
             from PySide6.QtMultimedia import QMediaPlayer
             if reason and self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
@@ -242,7 +243,7 @@ class WallpaperEngine(QObject):
             elif not reason and self.player.playbackState() == QMediaPlayer.PlaybackState.PausedState:
                 self.player.play()
         state = "paused" if reason else "playing"
-        message = reason or ("GIF 壁纸播放中 · 原文件直读" if self.active["kind"] == "gif" else "视频壁纸播放中 · 原文件直读")
+        message = reason or (tr("GIF 壁纸播放中 · 原文件直读") if self.active["kind"] == "gif" else tr("视频壁纸播放中 · 原文件直读"))
         if (self.state, self.reason) != (state, message):
             self.state, self.reason = state, message
             logging.info("Playback policy: %s / %s", state, message)
@@ -253,7 +254,7 @@ class WallpaperEngine(QObject):
         self.active = None
         self.store.settings.active_id = ""
         self.store.save()
-        self.reason, self.state = "动态壁纸已停止 · Windows 桌面已显示", "idle"
+        self.reason, self.state = tr("动态壁纸已停止 · Windows 桌面已显示"), "idle"
         self.changed.emit()
 
     def restore_original(self):
@@ -261,7 +262,7 @@ class WallpaperEngine(QObject):
         if original is not None:
             win32.set_wallpaper(original["path"], original=original)
         self.stop()
-        self.reason = "已恢复原来的 Windows 壁纸" if original else "已显示 Windows 壁纸"
+        self.reason = tr("已恢复原来的 Windows 壁纸") if original else tr("已显示 Windows 壁纸")
         self.changed.emit()
 
     def cleanup(self):

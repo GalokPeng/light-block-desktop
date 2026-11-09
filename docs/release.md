@@ -1,6 +1,6 @@
 # Windows 构建与发布
 
-发布版本取自 `still/model.py` 中的 `VERSION`，例如 `0.4.5`。PyInstaller 的文件版本、便携包目录、Setup 文件名和 GitHub 标签都由它生成。
+发布版本取自 `still/model.py` 中的 `VERSION`，例如 `0.5.0`。PyInstaller 的文件版本、便携包目录、Setup 文件名和 GitHub 标签都由它生成。
 
 ## 本地验证
 
@@ -15,9 +15,9 @@ python tools/run_tests.py --desktop
 .\tools\release.ps1
 ```
 
-`release/` 包含 Setup、免安装 ZIP、同一提交的源码 ZIP 和 SHA-256。Setup 默认按当前用户安装，卸载保留应用配置目录。便携版移到安装版后，如已有自启动，可以在新版重新开启自启动以更新路径。安装包未签名。录屏和媒体导出需要单独安装带 `gdigrab`、`libx264` 和 `ffv1` 的 FFmpeg，并让 `ffmpeg.exe` 在 PATH 中可用。
+`release/` 包含 Setup、免安装 ZIP、同一提交的源码 ZIP 和 SHA-256。Setup 默认按当前用户安装，卸载保留应用配置目录。便携版移到安装版后，如已有自启动，可以在新版重新开启自启动以更新路径。安装包未签名。安装向导跟随 Windows 显示语言，并支持英文、简体中文和繁体中文。录屏和媒体导出需要单独安装带 `gdigrab`、`libx264` 和 `ffv1` 的 FFmpeg，并让 `ffmpeg.exe` 在 PATH 中可用。
 
-没有已安装版本的测试机上可执行 `python tools/test_setup.py`，在隔离目录检查安装、启动、卸载和配置保留。
+没有已安装版本的测试机上可执行 `python tools/test_setup.py`，在隔离目录检查自动选语言及中英文安装、启动、卸载和配置保留。
 
 ## GitHub 首次接入
 

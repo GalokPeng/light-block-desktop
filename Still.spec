@@ -1,6 +1,7 @@
 # Build from the project directory: python -m PyInstaller --noconfirm Still.spec
 from pathlib import Path
 from runpy import run_path
+from importlib.util import find_spec
 import os
 
 root = Path(SPECPATH)
@@ -10,7 +11,10 @@ resource = metadata['windows_version_file'](root, version)
 ffmpeg = os.environ.get('STILL_FFMPEG')
 if ffmpeg and not Path(ffmpeg).is_file():
     raise SystemExit('STILL_FFMPEG must point to an existing ffmpeg.exe.')
+qt_translations = Path(find_spec('PySide6').origin).parent / 'translations'
 resources = [(str(root / 'assets'), 'assets'), (str(root / 'licenses'), 'licenses'),
+             (str(root / 'locales'), 'locales'),
+             (str(qt_translations / 'qtbase_zh_CN.qm'), 'PySide6/translations'),
              (str(root / 'LICENSE'), '.'), (str(root / 'THIRD_PARTY_NOTICES.md'), '.')]
 if ffmpeg:
     resources.append((ffmpeg, 'runtime'))

@@ -13,9 +13,11 @@ from PySide6.QtWidgets import (QAbstractButton, QAbstractItemView, QApplication,
     QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListView, QMenu, QPushButton,
     QScrollArea, QSizePolicy, QStackedWidget, QStyle, QVBoxLayout, QWidget)
 
+from .i18n import tr
+from .model import DEFAULT_ORGANIZER_TITLE
 from . import desktop_windows as native
 from .desktop_icons import DesktopIconLease
-from .organizer_model import COLORS, Collections
+from .organizer_model import entry_name, group_name, COLORS, Collections
 from .scroll_wheel import MouseHook
 from . import win32
 
@@ -49,7 +51,7 @@ class GroupItems(QAbstractListModel):
         row = index.row()
         entry = self.entries[row]
         if role == Qt.ItemDataRole.DisplayRole:
-            return entry["name"]
+            return entry_name(entry)
         if role == Qt.ItemDataRole.ToolTipRole:
             return entry["target"]
         if role == Qt.ItemDataRole.TextAlignmentRole:
@@ -163,16 +165,16 @@ class IconGrid(QListView):
             return
         entry = self.items.entries[item.row()]
         menu = QMenu(self)
-        menu.addAction("打开", lambda: self.panel.manager.launch(entry))
+        menu.addAction(tr("打开"), lambda: self.panel.manager.launch(entry))
         if not entry.get("system"):
-            menu.addAction("在文件夹中显示", lambda: native.reveal_file(entry["target"]))
-        menu.addAction("更改显示名称…", lambda: self.panel.manager.rename_entry(self.panel.group, entry))
+            menu.addAction(tr("在文件夹中显示"), lambda: native.reveal_file(entry["target"]))
+        menu.addAction(tr("更改显示名称…"), lambda: self.panel.manager.rename_entry(self.panel.group, entry))
         menu.addSeparator()
         for group in self.panel.manager.collections.groups:
             if group["id"] != self.panel.group["id"]:
-                menu.addAction("移至「" + group["name"] + "」", lambda checked=False, g=group: self.transfer(entry, g))
+                menu.addAction(tr("移至「{0}」").format(group_name(group)), lambda checked=False, g=group: self.transfer(entry, g))
         menu.addSeparator()
-        menu.addAction("还原到原桌面" if entry.get("managed") else "移除快捷入口", lambda: self.panel.manager.remove_entry(self.panel.group, entry))
+        menu.addAction(tr("还原到原桌面") if entry.get("managed") else tr("移除快捷入口"), lambda: self.panel.manager.remove_entry(self.panel.group, entry))
         menu.exec(self.mapToGlobal(point))
 
     def transfer(self, entry, group):
@@ -192,8 +194,8 @@ class FolderTile(QAbstractButton):
         self.clicked.connect(lambda: shelf.open_group(group["id"]))
 
     def update_name(self):
-        name = self.group["name"] or "未命名分组"
-        self.setToolTip(f"{name} · {len(self.group['entries'])} 个项目")
+        name = group_name(self.group) or tr("未命名分组")
+        self.setToolTip(tr("{0} · {1} 个项目").format(name, len(self.group['entries'])))
         self.setAccessibleName(name)
         self.update()
 
@@ -216,7 +218,7 @@ class FolderTile(QAbstractButton):
                 painter.setBrush(QColor(232, 240, 255, 23))
                 painter.drawRoundedRect(QRectF(x+3, y+3, 22, 22), 7, 7)
         painter.setPen(QColor("#f4f7fc"))
-        title = painter.fontMetrics().elidedText(self.group["name"], Qt.TextElideMode.ElideRight, 110)
+        title = painter.fontMetrics().elidedText(group_name(self.group), Qt.TextElideMode.ElideRight, 110)
         painter.drawText(QRect(3, 81, 110, 21), Qt.AlignmentFlag.AlignHCenter, title)
         painter.setPen(QColor("#c5d2df"))
         painter.drawText(QRect(3, 101, 110, 13), Qt.AlignmentFlag.AlignHCenter, str(len(self.group["entries"])))
@@ -248,8 +250,8 @@ class ShelfTitle(QAbstractButton):
         self.setFixedHeight(30)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.setAccessibleName("编辑收纳标题")
-        self.setToolTip("点击修改名称")
+        self.setAccessibleName(tr("编辑收纳标题"))
+        self.setToolTip(tr("点击修改名称"))
         self.setCursor(Qt.CursorShape.IBeamCursor)
 
     def sizeHint(self):
@@ -280,8 +282,8 @@ class ShelfTitleEditor(QLineEdit):
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.shelf, self.group_id = shelf, group_id
         self.setMaxLength(40)
-        self.setAccessibleName("收纳名称")
-        self.setPlaceholderText("留空可隐藏名称")
+        self.setAccessibleName(tr("收纳名称"))
+        self.setPlaceholderText(tr("留空可隐藏名称"))
         self.setStyleSheet("QLineEdit { background:#253247; color:#f4f7fc; font:600 19px 'Microsoft YaHei UI';"
                            " border:1px solid #91cbb6; border-radius:6px; padding:0 4px;"
                            " selection-background-color:#456e66; }")
@@ -313,7 +315,7 @@ class DesktopShelf(QWidget):
         self.title_editor = None
         self.board_columns = 0
         self.board_dirty = True
-        self.setWindowTitle("轻块桌面 · 桌面收纳")
+        self.setWindowTitle(tr("轻块桌面 · 桌面收纳"))
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setWindowOpacity(.68)
@@ -355,7 +357,7 @@ class DesktopShelf(QWidget):
         layout.setContentsMargins(19, 16, 19, 15)
         layout.setSpacing(9)
         header = QHBoxLayout()
-        self.back = QPushButton("返回")
+        self.back = QPushButton(tr("返回"))
         self.back.clicked.connect(self.overview)
         header.addWidget(self.back)
         self.title = ShelfTitle()
@@ -503,8 +505,8 @@ class DesktopShelf(QWidget):
             self.group = self.manager.collections.find(self.group["id"])
         if self.group:
             self.back.show()
-            self.title.setText(self.group["name"])
-            self.detail.setText(f"{len(self.group['entries'])} 个项目")
+            self.title.setText(group_name(self.group))
+            self.detail.setText(tr("{0} 个项目").format(len(self.group['entries'])))
             self.detail.show()
             if self.grid_group != self.group["id"]:
                 self.populate_grid()
@@ -516,7 +518,8 @@ class DesktopShelf(QWidget):
                 self.grid.items.set_entries(())
             self.back.hide()
             groups = self.manager.collections.groups
-            self.title.setText(self.manager.store.settings.organizer_title)
+            title = self.manager.store.settings.organizer_title
+            self.title.setText(tr(title) if title == DEFAULT_ORGANIZER_TITLE else title)
             self.detail.hide()
             area = QApplication.primaryScreen().availableGeometry()
             columns = min(4, max(1, (area.width()-84)//122), max(1, len(groups)))
@@ -642,7 +645,7 @@ class DesktopShelf(QWidget):
 
     def update_group_name(self, group):
         if self.group is group:
-            self.title.setText(group["name"])
+            self.title.setText(group_name(group))
         for index in range(self.tiles.count()):
             tile = self.tiles.itemAt(index).widget()
             if tile.group is group:
@@ -654,18 +657,18 @@ class DesktopShelf(QWidget):
         menu = QMenu(self)
         if self.group:
             group = self.group
-            menu.addAction("返回文件夹", self.overview)
-            menu.addAction("添加应用或文件…", lambda: self.manager.choose_files(group))
-            menu.addAction("添加文件夹…", lambda: self.manager.choose_folder(group))
-            menu.addAction("重命名分组", self.edit_title)
-            menu.addAction("按名称排序", lambda: self.manager.sort(group))
+            menu.addAction(tr("返回文件夹"), self.overview)
+            menu.addAction(tr("添加应用或文件…"), lambda: self.manager.choose_files(group))
+            menu.addAction(tr("添加文件夹…"), lambda: self.manager.choose_folder(group))
+            menu.addAction(tr("重命名分组"), self.edit_title)
+            menu.addAction(tr("按名称排序"), lambda: self.manager.sort(group))
         else:
-            menu.addAction("同步桌面分类", lambda: self.manager.sync_desktop())
-            menu.addAction("编辑收纳标题", self.edit_title)
-        menu.addAction("添加新分组", self.manager.create_group)
-        menu.addAction("打开收纳设置", self.manager.open_settings)
+            menu.addAction(tr("同步桌面分类"), lambda: self.manager.sync_desktop())
+            menu.addAction(tr("编辑收纳标题"), self.edit_title)
+        menu.addAction(tr("添加新分组"), self.manager.create_group)
+        menu.addAction(tr("打开收纳设置"), self.manager.open_settings)
         menu.addSeparator()
-        menu.addAction("关闭收纳并恢复桌面", lambda: self.manager.set_enabled(False))
+        menu.addAction(tr("关闭收纳并恢复桌面"), lambda: self.manager.set_enabled(False))
         menu.exec(point)
 
 
@@ -756,7 +759,7 @@ class OrganizerManager(QObject):
                     except OSError as exc:
                         errors.append(str(exc))
         if errors:
-            self.error.emit("部分旧版文件仍在收纳目录。\\n"+"\\n".join(errors[:8]))
+            self.error.emit(tr("部分旧版文件仍在收纳目录。\\n")+"\\n".join(errors[:8]))
 
     def close_shelf(self):
         shelf, self.shelf = self.shelf, None
@@ -821,11 +824,11 @@ class OrganizerManager(QObject):
             self.error.emit(str(exc))
 
     def choose_files(self, group):
-        paths, _ = QFileDialog.getOpenFileNames(None, "添加应用或文件入口 · 保留原文件", "", "所有文件 (*)")
+        paths, _ = QFileDialog.getOpenFileNames(None, tr("添加应用或文件入口 · 保留原文件"), "", tr("所有文件 (*)"))
         self.add_paths(group, paths)
 
     def choose_folder(self, group):
-        path = QFileDialog.getExistingDirectory(None, "添加文件夹入口")
+        path = QFileDialog.getExistingDirectory(None, tr("添加文件夹入口"))
         if path:
             self.add_paths(group, [path])
 
@@ -853,7 +856,7 @@ class OrganizerManager(QObject):
             self.error.emit(str(exc))
 
     def rename(self, group):
-        name, accepted = QInputDialog.getText(None, "重命名分组", "分组名称", text=group["name"])
+        name, accepted = QInputDialog.getText(None, tr("重命名分组"), tr("分组名称"), text=group_name(group))
         if accepted:
             self.rename_group(group, name)
 
@@ -861,7 +864,7 @@ class OrganizerManager(QObject):
         name = text.strip()[:40]
         settings = self.store.settings
         previous = settings.organizer_title
-        if name == previous:
+        if name == (tr(previous) if previous == DEFAULT_ORGANIZER_TITLE else previous):
             return
         settings.organizer_title = name
         try:
@@ -876,7 +879,7 @@ class OrganizerManager(QObject):
     def rename_group(self, group, text):
         name = text.strip()[:40]
         previous = group["name"]
-        if name == previous:
+        if name == group_name(group):
             return
         group["name"] = name
         try:
@@ -890,7 +893,7 @@ class OrganizerManager(QObject):
         self.changed.emit()
 
     def rename_entry(self, group, entry):
-        name, accepted = QInputDialog.getText(None, "更改显示名称", "不会重命名原文件", text=entry["name"])
+        name, accepted = QInputDialog.getText(None, tr("更改显示名称"), tr("不会重命名原文件"), text=entry_name(entry))
         if accepted and name.strip():
             entry["name"] = name.strip()[:80]
             self.store.save()
@@ -902,7 +905,7 @@ class OrganizerManager(QObject):
         self.refresh()
 
     def sort(self, group):
-        group["entries"].sort(key=lambda e: e["name"].casefold())
+        group["entries"].sort(key=lambda e: entry_name(e).casefold())
         self.store.save()
         self.refresh()
 

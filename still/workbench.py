@@ -10,6 +10,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
+from .i18n import tr
 from .productivity_model import ToolsDB
 
 
@@ -100,7 +101,7 @@ class Workbench(QObject):
             elif action == "clipboard_image":
                 image = QApplication.clipboard().image()
                 if image.isNull():
-                    raise ValueError("剪贴板中没有图片。")
+                    raise ValueError(tr("剪贴板中没有图片。"))
                 self.edit_image(image)
         except (OSError, ValueError, RuntimeError) as exc:
             self.error(str(exc))
@@ -197,15 +198,15 @@ class Workbench(QObject):
         store = self.controller.store
         directory = Path(store.settings.capture_directory or store.directory)
         name = "Still_"+datetime.now().strftime("%Y%m%d_%H%M%S")+".png"
-        path, _ = QFileDialog.getSaveFileName(None, "保存截图", str(directory/name), "PNG 图片 (*.png)")
+        path, _ = QFileDialog.getSaveFileName(None, tr("保存截图"), str(directory/name), tr("PNG 图片 (*.png)"))
         if path:
             path = Path(path)
             if path.suffix.lower() != ".png":
                 path = path.with_suffix(".png")
                 if path.exists():
-                    raise FileExistsError("该 PNG 路径已有文件，请选择另一个名称。")
+                    raise FileExistsError(tr("该 PNG 路径已有文件，请选择另一个名称。"))
             if not image.save(str(path), "PNG"):
-                raise OSError("截图保存失败，请检查路径和剩余空间。")
+                raise OSError(tr("截图保存失败，请检查路径和剩余空间。"))
             store.settings.capture_directory = str(path.parent)
             store.save()
 
@@ -293,7 +294,7 @@ class Workbench(QObject):
         active = self.recording
         self.controller.record_action.setEnabled(active)
         self.controller.configure_hotkeys()
-        self.controller.tray.setToolTip("轻块桌面 · 录屏中，Ctrl+Alt+R 停止" if active else "轻块桌面")
+        self.controller.tray.setToolTip(tr("轻块桌面 · 录屏中，Ctrl+Alt+R 停止") if active else tr("轻块桌面"))
         self.changed.emit()
 
     def record_completed(self, path):
@@ -380,10 +381,10 @@ class Workbench(QObject):
         if self.indexer is not None and self.indexer.isRunning():
             self.indexer.requestInterruption()
             if not self.indexer.wait():
-                raise RuntimeError("应用仍在等待索引线程安全结束。")
+                raise RuntimeError(tr("应用仍在等待索引线程安全结束。"))
         for thread in self.background_threads:
             if isValid(thread) and thread.isRunning():
                 thread.requestInterruption()
                 if not thread.wait():
-                    raise RuntimeError("应用仍在等待文件线程安全结束。")
+                    raise RuntimeError(tr("应用仍在等待文件线程安全结束。"))
         self.db.connection.close()

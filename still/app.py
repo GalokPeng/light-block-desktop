@@ -13,6 +13,7 @@ from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
+from .i18n import install_qt_translation, tr
 from .engine import WallpaperEngine
 from .model import APP_NAME, Store, VERSION
 
@@ -50,41 +51,41 @@ class Controller:
         self.engine = WallpaperEngine(store, app)
         self.engine.error.connect(self.report_error)
         self.tray = QSystemTrayIcon(self.icon, app)
-        self.tray.setToolTip("轻块桌面 · 双击打开设置")
+        self.tray.setToolTip(tr("轻块桌面 · 双击打开设置"))
         menu = QMenu()
         self.menu = menu
-        open_action = QAction("打开轻块桌面设置", menu)
+        open_action = QAction(tr("打开轻块桌面设置"), menu)
         open_action.triggered.connect(self.show_window)
         menu.addAction(open_action)
-        self.pause_action = QAction("暂停动态壁纸", menu)
+        self.pause_action = QAction(tr("暂停动态壁纸"), menu)
         self.pause_action.triggered.connect(self.engine.pause)
         menu.addAction(self.pause_action)
-        self.stop_action = QAction("停止动态壁纸", menu)
+        self.stop_action = QAction(tr("停止动态壁纸"), menu)
         self.stop_action.triggered.connect(self.stop)
         menu.addAction(self.stop_action)
-        self.organizer_action = QAction("开启桌面收纳", menu)
+        self.organizer_action = QAction(tr("开启桌面收纳"), menu)
         self.organizer_action.setCheckable(True)
         self.organizer_action.setChecked(store.settings.organizer_enabled)
         self.organizer_action.toggled.connect(lambda value: self.get_organizer().set_enabled(value))
         menu.addAction(self.organizer_action)
         menu.addSeparator()
-        for text, action in (("截屏", "capture"), ("快速启动  Ctrl+Alt+Space", "launcher"), ("剪贴板历史", "clipboard"), ("便签与任务", "notes")):
+        for text, action in ((tr("截屏"), "capture"), (tr("快速启动  Ctrl+Alt+Space"), "launcher"), (tr("剪贴板历史"), "clipboard"), (tr("便签与任务"), "notes")):
             item = QAction(text, menu)
             item.triggered.connect(lambda checked=False, a=action: self.get_workbench().invoke(a))
             menu.addAction(item)
             if action == "capture":
                 self.capture_action = item
         self.update_capture_shortcut()
-        self.record_action = QAction("结束录屏  Ctrl+Alt+R", menu)
+        self.record_action = QAction(tr("结束录屏  Ctrl+Alt+R"), menu)
         self.record_action.setEnabled(False)
         self.record_action.triggered.connect(lambda: self.get_workbench().record())
         menu.addAction(self.record_action)
         menu.addSeparator()
-        restore = QAction("恢复 Windows 壁纸", menu)
+        restore = QAction(tr("恢复 Windows 壁纸"), menu)
         restore.triggered.connect(self.restore)
         menu.addAction(restore)
         menu.addSeparator()
-        exit_action = QAction("退出轻块桌面", menu)
+        exit_action = QAction(tr("退出轻块桌面"), menu)
         exit_action.triggered.connect(self.request_quit)
         menu.addAction(exit_action)
         self.tray.setContextMenu(menu)
@@ -148,7 +149,7 @@ class Controller:
                 recorder.stop()
             if self.workbench.threads_running() or (recorder is not None and recorder.active):
                 self.quit_timer.start()
-                self.tray.showMessage("轻块桌面", "正在保存录屏并结束文件任务，完成后退出。")
+                self.tray.showMessage(tr("轻块桌面"), tr("正在保存录屏并结束文件任务，完成后退出。"))
                 return
         self.app.quit()
 
@@ -182,7 +183,7 @@ class Controller:
         from .hotkeys import shortcut_label
         settings = self.store.settings
         label = shortcut_label(settings.capture_shortcut) if settings.capture_hotkey else ""
-        self.capture_action.setText(f"截屏  {label}" if label else "截屏")
+        self.capture_action.setText(tr("截屏  {0}").format(label) if label else tr("截屏"))
         if self.window:
             self.window.update_capture_hint(label)
 
@@ -192,7 +193,7 @@ class Controller:
         settings = self.store.settings
         previous = settings.capture_shortcut
         if settings.capture_hotkey and not self.ensure_hotkeys().replace_capture(portable):
-            raise ValueError(f"无法注册 {shortcut_label(portable)}。它可能已被系统或其他应用占用。")
+            raise ValueError(tr("无法注册 {0}。它可能已被系统或其他应用占用。").format(shortcut_label(portable)))
         settings.capture_shortcut = portable
         try:
             self.store.save()
@@ -211,11 +212,11 @@ class Controller:
         failed = self.ensure_hotkeys().configure(settings.hotkeys_enabled, recording, capture)
         self.update_capture_shortcut()
         if failed:
-            text = "快捷键已被其他应用占用："+"、".join(failed)+"。仍可从界面或托盘使用。"
+            text = tr("快捷键已被其他应用占用：")+"、".join(failed)+tr("。仍可从界面或托盘使用。")
             if self.window:
                 self.window.show_notice(text)
             else:
-                self.tray.showMessage("轻块桌面", text)
+                self.tray.showMessage(tr("轻块桌面"), text)
 
     def cleanup(self):
         self.closing = True
@@ -244,8 +245,8 @@ class Controller:
         dynamic = self.engine.surface is not None
         self.pause_action.setEnabled(dynamic)
         self.stop_action.setEnabled(dynamic)
-        self.pause_action.setText("继续动态壁纸" if self.engine.manual_pause else "暂停动态壁纸")
-        self.tray.setToolTip("轻块桌面 · "+self.engine.reason)
+        self.pause_action.setText(tr("继续动态壁纸") if self.engine.manual_pause else tr("暂停动态壁纸"))
+        self.tray.setToolTip(tr("轻块桌面 · ")+self.engine.reason)
 
     def restore_last(self):
         item = self.store.find(self.store.settings.active_id)
@@ -282,25 +283,26 @@ class Controller:
         if self.window is not None and self.window.isVisible() and not self.window.isMinimized():
             self.window.show_error(text)
         else:
-            self.tray.showMessage("轻块桌面", text, QSystemTrayIcon.MessageIcon.Warning, 8000)
+            self.tray.showMessage(tr("轻块桌面"), text, QSystemTrayIcon.MessageIcon.Warning, 8000)
 
 
 def run():
-    parser = argparse.ArgumentParser(description="轻块桌面 桌面工作台 v"+VERSION)
+    parser = argparse.ArgumentParser(description=tr("轻块桌面 桌面工作台 v")+VERSION)
     parser.add_argument("--background", action="store_true", help="Start quietly in the tray")
     parser.add_argument("--quit", action="store_true", help="Quit the running instance for this configuration")
     parser.add_argument("--data-dir", type=Path, help="Override local config directory")
     parser.add_argument("--screenshot", type=Path, help="Capture the settings window, then exit; no wallpaper applied")
     args = parser.parse_args()
     if sys.platform != "win32":
-        raise SystemExit("轻块桌面 v"+VERSION+" 目前仅支持 Windows 10 / 11。")
+        raise SystemExit(tr("轻块桌面 v")+VERSION+tr(" 目前仅支持 Windows 10 / 11。"))
     # Qt's DirectWrite fallback database can map hundreds of installed fonts.
     # FreeType keeps normal multilingual fallback without that idle mapping cost.
     # Respect an explicit platform override (including offscreen QA).
     os.environ.setdefault("QT_QPA_PLATFORM", "windows:fontengine=freetype")
     app = QApplication(sys.argv[:1])
     app.setApplicationName("StillWallpaper")
-    app.setApplicationDisplayName(APP_NAME)
+    app.setApplicationDisplayName(tr(APP_NAME))
+    install_qt_translation(app)
     app.setApplicationVersion(VERSION)
     app.setFont(QFont("Microsoft YaHei UI", 9))
     app.setQuitOnLastWindowClosed(False)
@@ -311,7 +313,7 @@ def run():
         logging.error("Unhandled exception", exc_info=(exc_type, value, tb))
         # Keep playback exceptions visible, without crashing out of a Qt callback.
         if hasattr(app, "controller"):
-            app.controller.report_error(f"操作未完成：{value}。详细信息已记录在 still.log。")
+            app.controller.report_error(tr("操作未完成：{0}。详细信息已记录在 still.log。").format(value))
     sys.excepthook = exception_hook
     # One instance per user/config directory. A second launch opens settings.
     import hashlib
@@ -327,7 +329,7 @@ def run():
     server = QLocalServer(app)
     QLocalServer.removeServer(server_name)
     if not server.listen(server_name):
-        QMessageBox.critical(None, "轻块桌面", "无法创建本地实例通道。")
+        QMessageBox.critical(None, tr("轻块桌面"), tr("无法创建本地实例通道。"))
         return 1
     if args.screenshot:
         store.settings.restore_on_start = False

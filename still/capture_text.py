@@ -5,6 +5,8 @@ from PySide6.QtGui import QColor, QFont, QFontMetricsF, QIcon, QKeySequence, QPe
 from PySide6.QtWidgets import (QApplication, QComboBox, QFontComboBox, QHBoxLayout,
                              QPlainTextEdit, QToolButton, QWidget)
 
+from .i18n import tr
+
 TEXT_SIZES = (8, 10, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40, 48, 56, 64, 80, 96, 120, 160)
 
 
@@ -83,13 +85,13 @@ class TextStyleBar(QWidget):
             swatch = QPixmap(13, 13)
             swatch.fill(QColor(value))
             self.color.addItem(QIcon(swatch), name, value)
-        for widget, name in ((self.family, "文字字体"), (self.size, "文字大小"), (self.color, "文字颜色")):
+        for widget, name in ((self.family, tr("文字字体")), (self.size, tr("文字大小")), (self.color, tr("文字颜色"))):
             widget.setAccessibleName(name)
             widget.setToolTip(name)
             row.addWidget(widget)
         self.effects = {}
-        for name, mark, description in (("bold", "B", "加粗"), ("italic", "I", "斜体"),
-                                        ("underline", "U", "下划线")):
+        for name, mark, description in (("bold", "B", tr("加粗")), ("italic", "I", tr("斜体")),
+                                        ("underline", "U", tr("下划线"))):
             button = QToolButton()
             button.setText(mark)
             button.setToolTip(description)
@@ -133,8 +135,8 @@ class TextInput(QPlainTextEdit):
         super().__init__(host)
         self.finish = finish
         self.resize_on_wheel = resize_on_wheel
-        self.setAccessibleName("截图文字输入")
-        self.setPlaceholderText("输入文字")
+        self.setAccessibleName(tr("截图文字输入"))
+        self.setPlaceholderText(tr("输入文字"))
         self.document().setDocumentMargin(0)
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)

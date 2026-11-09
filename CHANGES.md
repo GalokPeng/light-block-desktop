@@ -1,3 +1,12 @@
+# v0.5.0 · 中英文界面与安装向导 / Bilingual app and Setup
+
+- 程序启动时按 Windows 显示语言切换简体中文与英文。覆盖设置、托盘、收纳、截屏、录屏与效率工具。
+- Setup 自动匹配简体中文、繁体中文或英文。升级沿用旧版配置，默认安装路径保持兼容。
+- 更新中英文 README 和使用指南，新增真实程序界面演示、GitHub Star 趋势和双语产品官网源码。
+- The app follows the Windows display language for its Settings, tray, organizer, capture and productivity tools.
+- Setup automatically selects English, Simplified Chinese or Traditional Chinese and preserves existing settings.
+- Added bilingual guides, privacy-safe screenshots, GitHub Star history and a bilingual product site.
+
 # v0.4.5 · MIT 源码与 Windows Setup
 
 - 应用源码改用 MIT，Qt 绑定迁到 PySide6。沿用旧版设置、壁纸库和收纳清单。

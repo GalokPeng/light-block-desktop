@@ -6,6 +6,7 @@ from ctypes import wintypes as W
 from PySide6.QtCore import QAbstractNativeEventFilter, QObject, Qt, Signal
 from PySide6.QtGui import QKeySequence
 
+from .i18n import tr
 from . import win32
 
 
@@ -30,7 +31,7 @@ def shortcut_label(portable):
 def capture_binding(portable):
     sequence = QKeySequence.fromString(portable, QKeySequence.SequenceFormat.PortableText)
     if sequence.count() != 1:
-        raise ValueError("请按下一组截屏快捷键。")
+        raise ValueError(tr("请按下一组截屏快捷键。"))
     combination = sequence[0]
     key, modifiers = combination.key(), combination.keyboardModifiers()
     flags = 0
@@ -42,9 +43,9 @@ def capture_binding(portable):
             flags |= flag
     function = Qt.Key.Key_F1 <= key <= Qt.Key.Key_F24
     if key == Qt.Key.Key_F12:
-        raise ValueError("F12 由 Windows 保留，请选择其他快捷键。")
+        raise ValueError(tr("F12 由 Windows 保留，请选择其他快捷键。"))
     if not flags & (MOD_CTRL | MOD_ALT | MOD_WIN) and not (function or key == Qt.Key.Key_Print):
-        raise ValueError("请使用带 Ctrl、Alt 或 Win 的组合键，或选用功能键。")
+        raise ValueError(tr("请使用带 Ctrl、Alt 或 Win 的组合键，或选用功能键。"))
     if function:
         vk = 0x70 + key - Qt.Key.Key_F1
     elif modifiers & Qt.KeyboardModifier.KeypadModifier:
@@ -65,9 +66,9 @@ def capture_binding(portable):
     else:
         vk = None
     if vk is None:
-        raise ValueError("这个按键无法注册为 Windows 全局快捷键。")
+        raise ValueError(tr("这个按键无法注册为 Windows 全局快捷键。"))
     if flags == (MOD_CTRL | MOD_ALT) and any(vk == item[0] for item in OTHER_KEYS.values()):
-        raise ValueError("该组合键已用于轻块桌面的其他功能，请选择另一组。")
+        raise ValueError(tr("该组合键已用于轻块桌面的其他功能，请选择另一组。"))
     return flags, vk
 
 

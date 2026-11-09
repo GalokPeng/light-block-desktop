@@ -8,11 +8,12 @@ from PySide6.QtWidgets import (QAbstractButton, QApplication, QButtonGroup, QChe
     QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton,
     QScrollArea, QSizePolicy, QStackedWidget, QToolButton, QVBoxLayout, QWidget)
 
+from .i18n import display_language, tr
 from . import win32
-from .model import APP_NAME, ASSETS, FITS, VERSION, item_path
+from .model import APP_NAME, ASSETS, FITS, VERSION, item_name, item_path
 
 ACCENT = "#a6e4ca"
-KIND_LABELS = {"image": "静态", "gif": "GIF", "video": "视频"}
+KIND_LABELS = {"image": tr("静态"), "gif": "GIF", "video": tr("视频")}
 
 
 def navigation_icon(index, light=False):
@@ -311,19 +312,19 @@ class Preview(QWidget):
             return
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(15, 24, 33, 160))
-        p.drawRoundedRect(QRectF(18, 18, 116, 27), 13, 13)
+        p.drawRoundedRect(QRectF(18, 18, 152 if display_language() == "en" else 116, 27), 13, 13)
         p.setPen(QColor("#f0f7f4"))
         p.setFont(QFont("Microsoft YaHei UI", 9))
-        p.drawText(QRectF(18, 18, 116, 27), Qt.AlignmentFlag.AlignCenter, KIND_LABELS[self.item["kind"]]+"  /  原文件")
+        p.drawText(QRectF(18, 18, 152 if display_language() == "en" else 116, 27), Qt.AlignmentFlag.AlignCenter, KIND_LABELS[self.item["kind"]]+tr("  /  原文件"))
         p.setFont(QFont("Microsoft YaHei UI", 20, QFont.Weight.Medium))
-        p.drawText(QRectF(24, self.height()-83, self.width()-48, 38), Qt.AlignmentFlag.AlignVCenter, self.item["name"][:26])
+        p.drawText(QRectF(24, self.height()-83, self.width()-48, 38), Qt.AlignmentFlag.AlignVCenter, p.fontMetrics().elidedText(item_name(self.item), Qt.TextElideMode.ElideRight, self.width() - 48))
         p.setFont(QFont("Microsoft YaHei UI", 9))
         p.setPen(QColor("#c7d4dd"))
-        subtitle = "让每一次回到桌面，都有一点不同。"
+        subtitle = tr("让每一次回到桌面，都有一点不同。")
         if self.item["kind"] == "gif":
-            subtitle = "GIF 动态预览 · 应用后在桌面循环播放"
+            subtitle = tr("GIF 动态预览 · 应用后在桌面循环播放")
         elif self.item["kind"] == "video":
-            subtitle = "封面预览 · 应用后在桌面播放，保持静音"
+            subtitle = tr("封面预览 · 应用后在桌面播放，保持静音")
         p.drawText(QRectF(24, self.height()-43, self.width()-48, 23), Qt.AlignmentFlag.AlignVCenter, subtitle)
 
 
@@ -338,7 +339,7 @@ class WallpaperCard(QAbstractButton):
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip(str(item_path(item)))
-        self.setAccessibleName(item["name"]+"，"+KIND_LABELS[item["kind"]])
+        self.setAccessibleName(item_name(item)+", "+KIND_LABELS[item["kind"]])
 
     def paintEvent(self, _):
         p = QPainter(self)
@@ -365,7 +366,7 @@ class WallpaperCard(QAbstractButton):
         p.restore()
         p.setFont(QFont("Microsoft YaHei UI", 9))
         p.setPen(QColor("#26343b" if self.light else "#e9edf0"))
-        p.drawText(QRectF(12, 97, self.width()-58, 22), Qt.AlignmentFlag.AlignVCenter, self.fontMetrics().elidedText(self.item["name"], Qt.TextElideMode.ElideRight, self.width()-65))
+        p.drawText(QRectF(12, 97, self.width()-58, 22), Qt.AlignmentFlag.AlignVCenter, self.fontMetrics().elidedText(item_name(self.item), Qt.TextElideMode.ElideRight, self.width()-65))
         p.setPen(QColor("#53666c" if self.light else "#9baabb"))
         p.setFont(QFont("Microsoft YaHei UI", 8))
         p.drawText(QRectF(self.width()-46, 97, 35, 22), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, KIND_LABELS[self.item["kind"]])
@@ -385,7 +386,7 @@ class MainWindow(QMainWindow):
         self.filter_kind = "all"
         self.cards = []
         self.light = self.store.settings.settings_theme == "light"
-        self.setWindowTitle(f"{APP_NAME} · {VERSION}")
+        self.setWindowTitle(f"{tr(APP_NAME)} · {VERSION}")
         self.setWindowIcon(controller.icon)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setAcceptDrops(True)
@@ -407,7 +408,7 @@ class MainWindow(QMainWindow):
         titles = QVBoxLayout()
         titles.setSpacing(6)
         titles.addWidget(label("A LITTLE CALM, ON YOUR DESKTOP", "eyebrow"))
-        titles.addWidget(label("让桌面，安静地流动。", "title"))
+        titles.addWidget(label(tr("让桌面，安静地流动。"), "title"))
         top.addLayout(titles)
         top.addStretch()
         self.theme_toggle = QToolButton()
@@ -418,9 +419,9 @@ class MainWindow(QMainWindow):
         self.theme_toggle.clicked.connect(self.change_theme)
         self.update_theme_toggle()
         top.addWidget(self.theme_toggle)
-        add = button("＋  导入壁纸", self.primary_action, "primary")
+        add = button(tr("＋  导入壁纸"), self.primary_action, "primary")
         self.header_action = add
-        add.setToolTip("导入图片、GIF 或视频  Ctrl+O")
+        add.setToolTip(tr("导入图片、GIF 或视频  Ctrl+O"))
         add.setMinimumWidth(124)
         top.addWidget(add)
         outer.addLayout(top)
@@ -462,7 +463,7 @@ class MainWindow(QMainWindow):
     def _sidebar(self):
         side = QFrame()
         side.setObjectName("sidebar")
-        side.setFixedWidth(184)
+        side.setFixedWidth(224 if display_language() == "en" else 184)
         layout = QVBoxLayout(side)
         layout.setContentsMargins(16, 28, 16, 20)
         layout.setSpacing(7)
@@ -471,18 +472,18 @@ class MainWindow(QMainWindow):
         brand.addWidget(Logo())
         text = QVBoxLayout()
         text.setSpacing(1)
-        name = label(APP_NAME, "section")
+        name = label(tr(APP_NAME), "section", True)
         text.addWidget(name)
-        text.addWidget(label("桌面工作台", "muted"))
+        text.addWidget(label(tr("桌面工作台"), "muted"))
         brand.addLayout(text)
         brand.addStretch()
         layout.addLayout(brand)
         layout.addSpacing(33)
-        layout.addWidget(label("  工作空间", "muted"))
+        layout.addWidget(label(tr("  工作空间"), "muted"))
         layout.addSpacing(5)
         group = QButtonGroup(self)
         self.nav_buttons = []
-        for index, title in enumerate(("壁纸库", "桌面收纳", "截屏", "效率工具", "播放与性能", "关于")):
+        for index, title in enumerate((tr("壁纸库"), tr("桌面收纳"), tr("截屏"), tr("效率工具"), tr("播放与性能"), tr("关于"))):
             b = button(title, lambda checked=False, n=index: self.pages.setCurrentIndex(n), "nav")
             b.setIcon(navigation_icon(index, self.light))
             b.setIconSize(QSize(18, 18))
@@ -497,7 +498,7 @@ class MainWindow(QMainWindow):
         tip = QVBoxLayout(hint)
         tip.setContentsMargins(13, 14, 13, 14)
         tip.setSpacing(8)
-        tip.addWidget(label("留一点，给专注。"))
+        tip.addWidget(label(tr("留一点，给专注。")))
         self.capture_hint = label("", "muted", True)
         from .hotkeys import shortcut_label
         settings = self.store.settings
@@ -518,12 +519,12 @@ class MainWindow(QMainWindow):
         self.preview = Preview()
         left.addWidget(self.preview, 4)
         toolbar = QHBoxLayout()
-        self.card_count = label("我的壁纸", "section")
+        self.card_count = label(tr("我的壁纸"), "section")
         toolbar.addWidget(self.card_count)
         toolbar.addStretch()
         group = QButtonGroup(self)
         self.filter_buttons = {}
-        for kind, text in (("all", "全部"), ("image", "静态"), ("gif", "GIF"), ("video", "视频")):
+        for kind, text in (("all", tr("全部")), ("image", tr("静态")), ("gif", "GIF"), ("video", tr("视频"))):
             b = button(text, lambda checked=False, k=kind: self.set_filter(k), "pill")
             b.setCheckable(True)
             b.setChecked(kind == "all")
@@ -532,7 +533,7 @@ class MainWindow(QMainWindow):
             toolbar.addWidget(b)
         left.addLayout(toolbar)
         self.search = QLineEdit()
-        self.search.setPlaceholderText("搜索壁纸名称，或拖入本地文件…")
+        self.search.setPlaceholderText(tr("搜索壁纸名称，或拖入本地文件…"))
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh_cards)
         left.addWidget(self.search)
@@ -558,56 +559,56 @@ class MainWindow(QMainWindow):
         v = QVBoxLayout(panel)
         v.setContentsMargins(19, 21, 19, 19)
         v.setSpacing(11)
-        v.addWidget(label("壁纸设置", "section"))
+        v.addWidget(label(tr("壁纸设置"), "section"))
         self.meta = label("", "muted", True)
         v.addWidget(self.meta)
         v.addSpacing(8)
-        v.addWidget(label("显示方式", "muted"))
+        v.addWidget(label(tr("显示方式"), "muted"))
         self.fit = QComboBox()
-        self.fit.setAccessibleName("壁纸显示方式")
+        self.fit.setAccessibleName(tr("壁纸显示方式"))
         for key, text in FITS.items():
-            self.fit.addItem(text, key)
+            self.fit.addItem(tr(text), key)
         self.fit.setCurrentIndex(list(FITS).index(self.store.settings.fit))
         self.fit.currentIndexChanged.connect(self.fit_changed)
         v.addWidget(self.fit)
-        v.addWidget(label("动态壁纸的显示器", "muted"))
+        v.addWidget(label(tr("动态壁纸的显示器"), "muted"))
         self.screen = QComboBox()
-        self.screen.setAccessibleName("动态壁纸显示器")
-        self.screen.addItem("主显示器", "")
+        self.screen.setAccessibleName(tr("动态壁纸显示器"))
+        self.screen.addItem(tr("主显示器"), "")
         for index, s in enumerate(win32.monitors(), 1):
-            self.screen.addItem(f"显示器 {index}  ·  {s['rect'][2]} × {s['rect'][3]}", s["name"])
+            self.screen.addItem(tr("显示器 {0}  ·  {1} × {2}").format(index, s['rect'][2], s['rect'][3]), s["name"])
         self.screen.setCurrentIndex(max(0, self.screen.findData(self.store.settings.screen)))
         self.screen.currentIndexChanged.connect(self.screen_changed)
         v.addWidget(self.screen)
-        v.addWidget(label("静态壁纸跟随 Windows，\n动态壁纸在所选单屏播放。", "muted", True))
+        v.addWidget(label(tr("静态壁纸跟随 Windows，\n动态壁纸在所选单屏播放。"), "muted", True))
         v.addSpacing(12)
         startup_row = QHBoxLayout()
-        startup_row.addWidget(label("开机自启动"))
+        startup_row.addWidget(label(tr("开机自启动")))
         startup_row.addStretch()
         self.startup = Toggle(win32.startup_enabled())
-        self.startup.setAccessibleName("开机自启动")
-        self.startup.setToolTip("登录 Windows 后静默启动并恢复上次的壁纸")
+        self.startup.setAccessibleName(tr("开机自启动"))
+        self.startup.setToolTip(tr("登录 Windows 后静默启动并恢复上次的壁纸"))
         self.startup.toggled.connect(self.startup_changed)
         startup_row.addWidget(self.startup)
         v.addLayout(startup_row)
-        v.addWidget(label("登录后恢复上次的壁纸", "muted"))
+        v.addWidget(label(tr("登录后恢复上次的壁纸"), "muted"))
         v.addSpacing(12)
         quality = QFrame()
         quality.setObjectName("surface")
         box = QVBoxLayout(quality)
         box.setContentsMargins(12, 12, 12, 12)
-        box.addWidget(label("原文件 · 不重新压缩"))
-        box.addWidget(label("预览缩略图仅用于浏览。\n壁纸播放始终读取原文件。", "muted", True))
+        box.addWidget(label(tr("原文件 · 不重新压缩")))
+        box.addWidget(label(tr("预览缩略图仅用于浏览。\n壁纸播放始终读取原文件。"), "muted", True))
         v.addWidget(quality)
         v.addStretch()
-        self.remove_button = button("从壁纸库移除", self.remove_selected, "text")
+        self.remove_button = button(tr("从壁纸库移除"), self.remove_selected, "text")
         v.addWidget(self.remove_button)
-        self.apply_button = button("应用到桌面  →", self.apply_selected, "primary")
+        self.apply_button = button(tr("应用到桌面  →"), self.apply_selected, "primary")
         self.apply_button.setMinimumHeight(42)
         v.addWidget(self.apply_button)
-        self.pause_button = button("暂停动态壁纸", self.engine.pause)
+        self.pause_button = button(tr("暂停动态壁纸"), self.engine.pause)
         v.addWidget(self.pause_button)
-        v.addWidget(button("恢复 Windows 壁纸", self.restore, "text"))
+        v.addWidget(button(tr("恢复 Windows 壁纸"), self.restore, "text"))
         return panel
 
     def _performance(self):
@@ -620,12 +621,12 @@ class MainWindow(QMainWindow):
         v = QVBoxLayout(card)
         v.setContentsMargins(26, 24, 26, 24)
         v.setSpacing(20)
-        v.addWidget(label("把资源留给正在做的事", "section"))
-        v.addWidget(label("暂停时保留当前画面，条件解除后自动继续。策略每 2 秒检查一次。", "muted", True))
+        v.addWidget(label(tr("把资源留给正在做的事"), "section"))
+        v.addWidget(label(tr("暂停时保留当前画面，条件解除后自动继续。策略每 2 秒检查一次。"), "muted", True))
         for key, title, description in (
-            ("fullscreen_pause", "全屏时暂停", "游戏、演示或全屏视频占据壁纸所在屏幕时，暂停动态壁纸。"),
-            ("battery_pause", "电池供电时暂停", "笔记本断开电源后暂停动态壁纸，接通电源后恢复。"),
-            ("restore_on_start", "启动后恢复壁纸", "恢复上次应用的壁纸；开机自启时不会弹出设置窗口。"),
+            ("fullscreen_pause", tr("全屏时暂停"), tr("游戏、演示或全屏视频占据壁纸所在屏幕时，暂停动态壁纸。")),
+            ("battery_pause", tr("电池供电时暂停"), tr("笔记本断开电源后暂停动态壁纸，接通电源后恢复。")),
+            ("restore_on_start", tr("启动后恢复壁纸"), tr("恢复上次应用的壁纸；开机自启时不会弹出设置窗口。")),
         ):
             item = QVBoxLayout()
             item.setSpacing(6)
@@ -635,18 +636,15 @@ class MainWindow(QMainWindow):
             item.addWidget(check)
             item.addWidget(label(description, "muted", True))
             v.addLayout(item)
-        v.addWidget(label("始终启用：静音播放 · 不抢焦点 · 锁屏与熄屏暂停", "eyebrow", True))
+        v.addWidget(label(tr("始终启用：静音播放 · 不抢焦点 · 锁屏与熄屏暂停"), "eyebrow", True))
         layout.addWidget(card)
         note = QFrame()
         note.setObjectName("panel")
         n = QVBoxLayout(note)
         n.setContentsMargins(26, 22, 26, 22)
-        n.addWidget(label("关于画质和内存", "section"))
+        n.addWidget(label(tr("关于画质和内存"), "section"))
         n.addSpacing(8)
-        n.addWidget(label("GIF 与视频均由 Qt / FFmpeg 直接读取原文件，并使用相同的原生画面输出；硬件加速由后端根据设备选择。"
-                         "静态图交给 Windows，设置窗口关闭后释放预览控件。\n\n"
-                         "不修改你的原文件、不转码视频、不降低源分辨率。“填充屏幕”可能裁剪边缘；“完整显示”保留整张画面。"
-                         "内存仍受分辨率、编码、驱动和 Python / Qt 基础开销影响。此版以普通 SDR 内容为目标，HDR 与色彩管理未验证。", "muted", True))
+        n.addWidget(label(tr("GIF 与视频均由 Qt / FFmpeg 直接读取原文件，并使用相同的原生画面输出；硬件加速由后端根据设备选择。静态图交给 Windows，设置窗口关闭后释放预览控件。\n\n不修改你的原文件、不转码视频、不降低源分辨率。“填充屏幕”可能裁剪边缘；“完整显示”保留整张画面。内存仍受分辨率、编码、驱动和 Python / Qt 基础开销影响。此版以普通 SDR 内容为目标，HDR 与色彩管理未验证。"), "muted", True))
         layout.addWidget(note)
         layout.addStretch()
         return page
@@ -661,23 +659,23 @@ class MainWindow(QMainWindow):
         c.setContentsMargins(30, 30, 30, 30)
         c.setSpacing(18)
         c.addWidget(Logo())
-        c.addWidget(label(f"{APP_NAME}  /  v{VERSION}", "title"))
-        c.addWidget(label("给桌面一点风景，给工作一点安静。", "section"))
-        c.addWidget(label("纯属个人娱乐，有BUG随便提issues，自己用得不顺就改改", "muted", True))
-        c.addWidget(button("打开配置与日志文件夹  ↗", self.open_data_folder))
-        c.addWidget(label("所有壁纸与设置均在本机处理。无账户、无广告、无遥测。", "eyebrow", True))
+        c.addWidget(label(f"{tr(APP_NAME)}  /  v{VERSION}", "title"))
+        c.addWidget(label(tr("给桌面一点风景，给工作一点安静。"), "section"))
+        c.addWidget(label(tr("纯属个人娱乐，有BUG随便提issues，自己用得不顺就改改"), "muted", True))
+        c.addWidget(button(tr("打开配置与日志文件夹  ↗"), self.open_data_folder))
+        c.addWidget(label(tr("所有壁纸与设置均在本机处理。无账户、无广告、无遥测。"), "eyebrow", True))
         v.addWidget(card)
         v.addStretch()
         return page
 
     def update_capture_hint(self, shortcut):
-        self.capture_hint.setText(f"{shortcut} 截屏\n关闭设置后仍可使用。" if shortcut else "可从截屏页面或托盘打开截屏。")
+        self.capture_hint.setText(tr("{0} 截屏\n关闭设置后仍可使用。").format(shortcut) if shortcut else tr("可从截屏页面或托盘打开截屏。"))
 
     def update_theme_toggle(self):
-        target = "深色" if self.light else "浅色"
+        target = tr("深色") if self.light else tr("浅色")
         self.theme_toggle.setIcon(theme_icon(self.light))
-        self.theme_toggle.setToolTip(f"切换为{target}主题")
-        self.theme_toggle.setAccessibleName(f"切换为{target}主题")
+        self.theme_toggle.setToolTip(tr("切换为{0}主题").format(target))
+        self.theme_toggle.setAccessibleName(tr("切换为{0}主题").format(target))
 
     def change_theme(self):
         settings = self.store.settings
@@ -707,7 +705,7 @@ class MainWindow(QMainWindow):
         if 0 <= index < len(self.nav_buttons):
             self.nav_buttons[index].setChecked(True)
         self.header_action.setVisible(index < 4)
-        self.header_action.setText(("＋  导入壁纸", "＋  新建分组", "区域截图", "快速启动")[min(index, 3)])
+        self.header_action.setText((tr("＋  导入壁纸"), tr("＋  新建分组"), tr("区域截图"), tr("快速启动"))[min(index, 3)])
 
     def primary_action(self):
         index = self.pages.currentIndex()
@@ -726,8 +724,8 @@ class MainWindow(QMainWindow):
         self.cards = []
         query = self.search.text().strip().casefold()
         items = [i for i in self.store.items if (self.filter_kind == "all" or i["kind"] == self.filter_kind)
-                 and query in i["name"].casefold()]
-        self.card_count.setText(f"我的壁纸  {len(self.store.items):02d}")
+                 and query in item_name(i).casefold()]
+        self.card_count.setText(tr("我的壁纸  {0:02d}").format(len(self.store.items)))
         for index, item in enumerate(items):
             card = WallpaperCard(item, self.light)
             card.setChecked(item["id"] == self.selected["id"])
@@ -737,7 +735,7 @@ class MainWindow(QMainWindow):
         for col in range(3):
             self.grid.setColumnStretch(col, 1)
         if not items:
-            self.grid.addWidget(label("这里还没有壁纸。试试导入文件或调整筛选条件。", "muted", True), 0, 0, 1, 3)
+            self.grid.addWidget(label(tr("这里还没有壁纸。试试导入文件或调整筛选条件。"), "muted", True), 0, 0, 1, 3)
 
     def select(self, item):
         self.selected = item
@@ -748,7 +746,7 @@ class MainWindow(QMainWindow):
     def update_selection(self):
         self.preview.set_item(self.selected)
         path = item_path(self.selected)
-        details = KIND_LABELS[self.selected["kind"]] + "壁纸"
+        details = KIND_LABELS[self.selected["kind"]] + tr("壁纸")
         if self.selected["kind"] != "video":
             size = QImageReader(str(path)).size()
             if size.isValid():
@@ -756,7 +754,7 @@ class MainWindow(QMainWindow):
         if path.exists():
             details += f"\n{path.stat().st_size / 1048576:.1f} MB  ·  {path.suffix[1:].upper()}"
         else:
-            details += "\n原文件不存在，请重新导入"
+            details += tr("\n原文件不存在，请重新导入")
         self.meta.setText(details)
         self.remove_button.setVisible(not self.selected.get("builtin"))
         # Dynamic media share QVideoWidget, which has no 1:1 mode.
@@ -769,12 +767,12 @@ class MainWindow(QMainWindow):
     def fit_changed(self):
         self.store.settings.fit = self.fit.currentData()
         self.store.save()
-        self.show_notice("显示方式已保存，点击“应用到桌面”生效。")
+        self.show_notice(tr("显示方式已保存，点击“应用到桌面”生效。"))
 
     def screen_changed(self):
         self.store.settings.screen = self.screen.currentData()
         self.store.save()
-        self.show_notice("显示器已保存，点击“应用到桌面”生效。")
+        self.show_notice(tr("显示器已保存，点击“应用到桌面”生效。"))
 
     def option_changed(self, key, value):
         setattr(self.store.settings, key, value)
@@ -784,7 +782,7 @@ class MainWindow(QMainWindow):
     def startup_changed(self, value):
         try:
             win32.set_startup(value)
-            self.show_notice("已启用：登录 Windows 后静默启动。" if value else "已关闭开机自启动。")
+            self.show_notice(tr("已启用：登录 Windows 后静默启动。") if value else tr("已关闭开机自启动。"))
         except OSError as exc:
             self.startup.blockSignals(True)
             self.startup.setChecked(not value)
@@ -794,14 +792,14 @@ class MainWindow(QMainWindow):
     def apply_selected(self):
         try:
             self.engine.apply(self.selected)
-            self.show_notice(f"已应用「{self.selected['name']}」 · 可关闭窗口，继续使用电脑。")
+            self.show_notice(tr("已应用「{0}」 · 可关闭窗口，继续使用电脑。").format(item_name(self.selected)))
         except (OSError, ValueError, RuntimeError) as exc:
             self.show_error(str(exc))
 
     def restore(self):
         try:
             self.engine.restore_original()
-            self.show_notice("已恢复 Windows 壁纸。")
+            self.show_notice(tr("已恢复 Windows 壁纸。"))
         except OSError as exc:
             self.show_error(str(exc))
 
@@ -814,11 +812,11 @@ class MainWindow(QMainWindow):
         self.selected = self.store.items[0]
         self.refresh_cards()
         self.update_selection()
-        self.show_notice("已从壁纸库移除，原文件保留。")
+        self.show_notice(tr("已从壁纸库移除，原文件保留。"))
 
     def import_dialog(self):
-        paths, _ = QFileDialog.getOpenFileNames(self, "导入壁纸 · 原文件不会被移动或修改", "",
-            "壁纸文件 (*.png *.jpg *.jpeg *.bmp *.webp *.tif *.tiff *.gif *.mp4 *.mkv *.mov *.webm *.avi *.m4v);;所有文件 (*)")
+        paths, _ = QFileDialog.getOpenFileNames(self, tr("导入壁纸 · 原文件不会被移动或修改"), "",
+            tr("壁纸文件 (*.png *.jpg *.jpeg *.bmp *.webp *.tif *.tiff *.gif *.mp4 *.mkv *.mov *.webm *.avi *.m4v);;所有文件 (*)"))
         self.import_files(paths)
 
     def import_files(self, paths):
@@ -829,7 +827,7 @@ class MainWindow(QMainWindow):
                 from .model import media_kind
                 kind = media_kind(p)
                 if kind != "video" and not QImageReader(str(p)).canRead():
-                    raise ValueError("无法解码图片")
+                    raise ValueError(tr("无法解码图片"))
                 imported.append(self.store.add(p))
             except (OSError, ValueError) as exc:
                 errors.append(f"{Path(path).name}: {exc}")
@@ -841,9 +839,9 @@ class MainWindow(QMainWindow):
             self.refresh_cards()
             self.update_selection()
             self.pages.setCurrentIndex(0)
-            self.show_notice(f"已导入 {len(imported)} 个文件。移动原文件后需要重新导入。")
+            self.show_notice(tr("已导入 {0} 个文件。移动原文件后需要重新导入。").format(len(imported)))
         if errors:
-            self.show_error("部分文件未导入：\n"+"\n".join(errors[:8]))
+            self.show_error(tr("部分文件未导入：\n")+"\n".join(errors[:8]))
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls() and any(u.isLocalFile() for u in event.mimeData().urls()):
@@ -859,13 +857,13 @@ class MainWindow(QMainWindow):
         self.message_timer.start(6500)
 
     def show_error(self, text):
-        QMessageBox.warning(self, "轻块桌面", text)
+        QMessageBox.warning(self, tr("轻块桌面"), text)
 
     def refresh_status(self):
         self.status_label.setText("●  "+self.engine.reason)
-        self.memory.setText(f"本进程内存  {win32.memory_mb():.0f} MB")
+        self.memory.setText(tr("本进程内存  {0:.0f} MB").format(win32.memory_mb()))
         self.pause_button.setEnabled(self.engine.surface is not None)
-        self.pause_button.setText("继续动态壁纸" if self.engine.manual_pause else "暂停动态壁纸")
+        self.pause_button.setText(tr("继续动态壁纸") if self.engine.manual_pause else tr("暂停动态壁纸"))
 
     def open_data_folder(self):
         from PySide6.QtCore import QUrl

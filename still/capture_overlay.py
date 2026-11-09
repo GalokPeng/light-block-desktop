@@ -9,6 +9,7 @@ from PySide6.QtGui import QColor, QCursor, QFontMetrics, QIcon, QKeySequence, QP
 from PySide6.QtWidgets import (QApplication, QComboBox, QFormLayout, QFrame, QHBoxLayout,
                              QMenu, QToolButton, QVBoxLayout, QWidget, QWidgetAction)
 
+from .i18n import tr
 from . import win32
 from .capture import (DRAW_COLORS, DRAW_TOOLS, STROKE_SIZES, AnnotationSizer, choose_number,
                       next_number, paint_operation, render_operations)
@@ -115,10 +116,10 @@ class CaptureOverlay(QWidget):
         self.mode = mode
         self.snapshot = screen.grabWindow(0)
         if self.snapshot.isNull():
-            raise OSError("无法读取当前屏幕，请检查显示器后重试。")
+            raise OSError(tr("无法读取当前屏幕，请检查显示器后重试。"))
         self.ratio = self.snapshot.devicePixelRatio()
         self.monitor = win32.target_monitor(screen.name())
-        self.setWindowTitle("轻块桌面 · 截图选区")
+        self.setWindowTitle(tr("轻块桌面 · 截图选区"))
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)
         self.setGeometry(screen.geometry())
@@ -164,14 +165,14 @@ class CaptureOverlay(QWidget):
         picker.setContentsMargins(0, 0, 0, 0)
         picker.setSpacing(3)
         self.pick_controls = {}
-        for key, title, smart in (("smart", "智能窗口", True), ("rect", "手动选区", False)):
+        for key, title, smart in (("smart", tr("智能窗口"), True), ("rect", tr("手动选区"), False)):
             item = self.icon_button(key, title, lambda checked=False, value=smart: self.set_smart(value))
             item.setCheckable(True)
             item.setChecked(smart)
             self.pick_controls[smart] = item
             picker.addWidget(item)
-        picker.addWidget(self.icon_button("full", "当前屏幕", self.select_full))
-        picker.addWidget(self.icon_button("cancel", "取消 · Esc", self.close))
+        picker.addWidget(self.icon_button("full", tr("当前屏幕"), self.select_full))
+        picker.addWidget(self.icon_button("cancel", tr("取消 · Esc"), self.close))
         bar.addWidget(self.picker)
 
         self.actions = QWidget()
@@ -190,29 +191,29 @@ class CaptureOverlay(QWidget):
         form_layout.setContentsMargins(12, 8, 12, 8)
         self.color = QComboBox()
         self.color.setEditable(False)
-        self.color.setAccessibleName("标注颜色")
+        self.color.setAccessibleName(tr("标注颜色"))
         for value, name in DRAW_COLORS:
             swatch = QPixmap(14, 14)
             swatch.fill(QColor(value))
             self.color.addItem(QIcon(swatch), name, value)
-        form_layout.addRow("颜色", self.color)
+        form_layout.addRow(tr("颜色"), self.color)
         self.stroke = QComboBox()
         self.stroke.setEditable(False)
-        self.stroke.setAccessibleName("画笔大小")
+        self.stroke.setAccessibleName(tr("画笔大小"))
         for value in STROKE_SIZES:
             self.stroke.addItem(f"{value} px", value)
         self.stroke.setCurrentIndex(self.stroke.findData(4))
-        form_layout.addRow("粗细", self.stroke)
+        form_layout.addRow(tr("粗细"), self.stroke)
         style_action = QWidgetAction(options)
         style_action.setDefaultWidget(form)
         options.addAction(style_action)
-        row.addWidget(self.icon_button("style", "颜色与粗细", menu=options))
+        row.addWidget(self.icon_button("style", tr("颜色与粗细"), menu=options))
         self.divider(row)
-        row.addWidget(self.icon_button("undo", "撤销 · Ctrl+Z", self.undo))
-        row.addWidget(self.icon_button("redo", "重做", self.redo))
+        row.addWidget(self.icon_button("undo", tr("撤销 · Ctrl+Z"), self.undo))
+        row.addWidget(self.icon_button("redo", tr("重做"), self.redo))
         self.divider(row)
-        for action, title in (("longshot", "滚轮长截图"), ("record", "开始录屏"), ("pin", "贴图"),
-                              ("save", "保存 PNG"), ("cancel", "取消 · Esc"), ("copy", "复制 · Ctrl+C")):
+        for action, title in (("longshot", tr("滚轮长截图")), ("record", tr("开始录屏")), ("pin", tr("贴图")),
+                              ("save", tr("保存 PNG")), ("cancel", tr("取消 · Esc")), ("copy", tr("复制 · Ctrl+C"))):
             callback = self.close if action == "cancel" else lambda checked=False, value=action: self.commit(value)
             item = self.icon_button(action, title, callback)
             if mode == action or mode == "capture" and action == "copy":
@@ -229,12 +230,12 @@ class CaptureOverlay(QWidget):
         side = QVBoxLayout(self.side_tools)
         side.setContentsMargins(0, 0, 0, 0)
         side.setSpacing(5)
-        self.move_tool = self.icon_button("move", "拖动选区", lambda: self.set_tool("move"))
+        self.move_tool = self.icon_button("move", tr("拖动选区"), lambda: self.set_tool("move"))
         self.move_tool.setCheckable(True)
         self.move_tool.setChecked(True)
         side.addWidget(self.move_tool)
-        side.addWidget(self.icon_button("full", "选中当前屏幕", self.select_full))
-        side.addWidget(self.icon_button("reset", "重新选区", self.reset_selection))
+        side.addWidget(self.icon_button("full", tr("选中当前屏幕"), self.select_full))
+        side.addWidget(self.icon_button("reset", tr("重新选区"), self.reset_selection))
         self.side_tools.adjustSize()
         self.side_tools.hide()
         self.actions.hide()
@@ -315,7 +316,7 @@ class CaptureOverlay(QWidget):
             if menu and len(tools) > 1:
                 menu.addAction(capture_icon(key), labels[key], lambda checked=False, tool=key: self.set_tool(tool))
         if first == "number":
-            menu.addAction("重计序号…", self.reset_number)
+            menu.addAction(tr("重计序号…"), self.reset_number)
         layout.addWidget(control)
 
     def set_smart(self, enabled):
@@ -441,8 +442,8 @@ class CaptureOverlay(QWidget):
                 painter.setPen(QColor("#ffffff"))
                 painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, text)
         if self.selection.isEmpty() and self.gesture != "new":
-            hint = ("悬停识别窗口 · Alt 选整个窗口 · 拖动自由选区 · 右键退出" if self.mode_smart
-                    else "拖动选取区域 · 右键退出")
+            hint = (tr("悬停识别窗口 · Alt 选整个窗口 · 拖动自由选区 · 右键退出") if self.mode_smart
+                    else tr("拖动选取区域 · 右键退出"))
             width = min(self.width() - 16, QFontMetrics(painter.font()).horizontalAdvance(hint) + 20)
             badge = QRect((self.width() - width) // 2, self.toolbar.geometry().bottom() + 7, width, 24)
             painter.setPen(Qt.PenStyle.NoPen)

@@ -11,13 +11,14 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QHBoxLayout
     QSizeGrip, QVBoxLayout, QWidget)
 
 
+from .i18n import tr
 from .capture_text import TEXT_SIZES, AnnotationHistory, InlineText, annotation_font
 
 
-DRAW_TOOLS = (("pen", "画笔"), ("highlight", "高亮"), ("arrow", "箭头"), ("line", "直线"),
-              ("rect", "矩形"), ("text", "文字"), ("number", "序号"), ("mosaic", "马赛克"))
-DRAW_COLORS = (("#ff6868", "珊瑚红"), ("#a6e4ca", "薄荷绿"), ("#ffd382", "暖金"),
-               ("#68adff", "海盐蓝"), ("#ffffff", "白色"), ("#151515", "黑色"))
+DRAW_TOOLS = (("pen", tr("画笔")), ("highlight", tr("高亮")), ("arrow", tr("箭头")), ("line", tr("直线")),
+              ("rect", tr("矩形")), ("text", tr("文字")), ("number", tr("序号")), ("mosaic", tr("马赛克")))
+DRAW_COLORS = (("#ff6868", tr("珊瑚红")), ("#a6e4ca", tr("薄荷绿")), ("#ffd382", tr("暖金")),
+               ("#68adff", tr("海盐蓝")), ("#ffffff", tr("白色")), ("#151515", tr("黑色")))
 STROKE_SIZES = (1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24, 32, 36)
 NUMBER_SIZES = (12, 16, 20, 22, 26, 32, 40, 48, 60, 72, 90, 120, 160)
 
@@ -33,7 +34,7 @@ def next_number(operations):
 
 def choose_number(parent, current):
     choices = [str(number) for number in range(1, 10000)]
-    value, accepted = QInputDialog.getItem(parent, "重计序号", "下一次标记从几开始", choices,
+    value, accepted = QInputDialog.getItem(parent, tr("重计序号"), tr("下一次标记从几开始"), choices,
                                            min(current-1, len(choices)-1), False)
     return int(value) if accepted else None
 
@@ -383,7 +384,7 @@ class CaptureEditor(QWidget):
         from .ui import STYLE, button, label
         self.workbench = workbench
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.setWindowTitle("轻块桌面 · 截图工作室")
+        self.setWindowTitle(tr("轻块桌面 · 截图工作室"))
         self.setObjectName("root")
         self.setWindowIcon(workbench.controller.icon)
         self.setStyleSheet(STYLE)
@@ -391,9 +392,9 @@ class CaptureEditor(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 18, 20, 18)
         toolbar = QHBoxLayout()
-        toolbar.addWidget(label("截图工作室", "section"))
+        toolbar.addWidget(label(tr("截图工作室"), "section"))
         self.mode = QComboBox()
-        for key, name in (*DRAW_TOOLS, ("crop", "裁剪")):
+        for key, name in (*DRAW_TOOLS, ("crop", tr("裁剪"))):
             self.mode.addItem(name, key)
         toolbar.addWidget(self.mode)
         color = QComboBox()
@@ -401,7 +402,7 @@ class CaptureEditor(QWidget):
             color.addItem(name, value)
         toolbar.addWidget(color)
         self.stroke = QComboBox()
-        for value, name in ((3, "细线"), (6, "中线"), (12, "粗线")):
+        for value, name in ((3, tr("细线")), (6, tr("中线")), (12, tr("粗线"))):
             self.stroke.addItem(name, value)
         toolbar.addWidget(self.stroke)
         toolbar.addStretch()
@@ -412,15 +413,15 @@ class CaptureEditor(QWidget):
         color.currentIndexChanged.connect(lambda: setattr(self.canvas, "color", color.currentData()))
         self.stroke.currentIndexChanged.connect(lambda: setattr(self.canvas, "stroke_width", self.stroke.currentData()))
         bottom = QHBoxLayout()
-        bottom.addWidget(button("撤销", self.canvas.undo))
-        bottom.addWidget(button("重做", self.canvas.redo))
-        bottom.addWidget(button("序号重计", self.reset_number))
+        bottom.addWidget(button(tr("撤销"), self.canvas.undo))
+        bottom.addWidget(button(tr("重做"), self.canvas.redo))
+        bottom.addWidget(button(tr("序号重计"), self.reset_number))
         self.size_label = label("", "muted")
         bottom.addWidget(self.size_label)
         bottom.addStretch()
-        bottom.addWidget(button("复制", self.copy))
-        bottom.addWidget(button("贴到屏幕", lambda: workbench.pin(self.canvas.result())))
-        bottom.addWidget(button("保存 PNG…", self.save, "primary"))
+        bottom.addWidget(button(tr("复制"), self.copy))
+        bottom.addWidget(button(tr("贴到屏幕"), lambda: workbench.pin(self.canvas.result())))
+        bottom.addWidget(button(tr("保存 PNG…"), self.save, "primary"))
         outer.addLayout(bottom)
         self.canvas.changed.connect(self.update_size)
         self.update_size()
@@ -440,21 +441,21 @@ class CaptureEditor(QWidget):
 
     def copy(self):
         QApplication.clipboard().setImage(self.canvas.result())
-        self.size_label.setText("已复制到剪贴板")
+        self.size_label.setText(tr("已复制到剪贴板"))
 
     def save(self):
         from datetime import datetime
         image = self.canvas.result()
         filename = "Still_"+datetime.now().strftime("%Y%m%d_%H%M%S")+".png"
         folder = self.workbench.controller.store.settings.capture_directory
-        path, _ = QFileDialog.getSaveFileName(self, "保存截图", str(Path(folder or self.workbench.controller.store.directory) / filename), "PNG 图片 (*.png)")
+        path, _ = QFileDialog.getSaveFileName(self, tr("保存截图"), str(Path(folder or self.workbench.controller.store.directory) / filename), tr("PNG 图片 (*.png)"))
         if path:
             if not image.save(path, "PNG"):
-                self.workbench.error("截图保存失败，请检查路径和剩余空间。")
+                self.workbench.error(tr("截图保存失败，请检查路径和剩余空间。"))
             else:
                 self.workbench.controller.store.settings.capture_directory = str(Path(path).parent)
                 self.workbench.controller.store.save()
-                self.size_label.setText("已保存 PNG")
+                self.size_label.setText(tr("已保存 PNG"))
 
 
 class PinWindow(QWidget):
@@ -465,7 +466,7 @@ class PinWindow(QWidget):
         self.border_visible = True
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setWindowTitle("轻块桌面 · 贴图")
+        self.setWindowTitle(tr("轻块桌面 · 贴图"))
         self.setMinimumSize(100, 70)
         screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
         area = screen.availableGeometry()
@@ -519,9 +520,9 @@ class PinWindow(QWidget):
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
-        menu.addAction("复制图片", lambda: QApplication.clipboard().setImage(self.image))
-        menu.addAction("隐藏边框" if self.border_visible else "显示边框", self.toggle_border)
-        menu.addAction("打开编辑器", lambda: self.workbench.edit_image(self.image))
-        menu.addAction("恢复不透明", lambda: self.setWindowOpacity(1.0))
-        menu.addAction("关闭贴图", self.close)
+        menu.addAction(tr("复制图片"), lambda: QApplication.clipboard().setImage(self.image))
+        menu.addAction(tr("隐藏边框") if self.border_visible else tr("显示边框"), self.toggle_border)
+        menu.addAction(tr("打开编辑器"), lambda: self.workbench.edit_image(self.image))
+        menu.addAction(tr("恢复不透明"), lambda: self.setWindowOpacity(1.0))
+        menu.addAction(tr("关闭贴图"), self.close)
         menu.exec(event.globalPos())

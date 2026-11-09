@@ -7,6 +7,8 @@ from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QObject, Qt, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication, QCheckBox, QHBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 
+from .i18n import tr
+
 
 def excluded_from_history():
     """Honor Windows clipboard history exclusion formats before reading data."""
@@ -74,7 +76,7 @@ class ClipboardEngine(QObject):
             buffer.open(QIODevice.OpenModeFlag.WriteOnly)
             image.save(buffer, "PNG")
             payload = bytes(buffer.data())
-            self.workbench.db.add_clip("image", f"图片 {image.width()} × {image.height()}", payload)
+            self.workbench.db.add_clip("image", tr("图片 {0} × {1}").format(image.width(), image.height()), payload)
         elif mime.hasText() and mime.text().strip():
             self.workbench.db.add_clip("text", mime.text())
         else:
@@ -103,34 +105,34 @@ class ClipboardWindow(QWidget):
         from .ui import STYLE, button, label
         self.workbench, self.engine = workbench, workbench.clipboard()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.setWindowTitle("轻块桌面 · 剪贴板历史")
+        self.setWindowTitle(tr("轻块桌面 · 剪贴板历史"))
         self.setObjectName("root")
         self.setWindowIcon(workbench.controller.icon)
         self.setStyleSheet(STYLE+"QListWidget{background:#182331;border:0;border-radius:10px;} QListWidget::item{padding:12px;border-bottom:1px solid #2c394a;} QListWidget::item:selected{background:#365447;}")
         self.resize(760, 590)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(23, 21, 23, 21)
-        layout.addWidget(label("复制过的灵感，随时找回来。", "title"))
-        self.enabled = QCheckBox("启用本地剪贴板记录（默认关闭）")
+        layout.addWidget(label(tr("复制过的灵感，随时找回来。"), "title"))
+        self.enabled = QCheckBox(tr("启用本地剪贴板记录（默认关闭）"))
         self.enabled.setChecked(self.engine.enabled)
         self.enabled.toggled.connect(self.engine.set_enabled)
         layout.addWidget(self.enabled)
-        layout.addWidget(label("内容仅存本机。应用声明禁止历史记录的内容会跳过；单项上限 5 MB，总内容约 32 MB。", "muted", True))
+        layout.addWidget(label(tr("内容仅存本机。应用声明禁止历史记录的内容会跳过；单项上限 5 MB，总内容约 32 MB。"), "muted", True))
         self.search = QLineEdit()
-        self.search.setPlaceholderText("搜索历史文本…")
+        self.search.setPlaceholderText(tr("搜索历史文本…"))
         self.search.textChanged.connect(self.refresh)
         layout.addWidget(self.search)
         self.history = QListWidget()
         self.history.itemDoubleClicked.connect(lambda _: self.copy())
         layout.addWidget(self.history, 1)
         row = QHBoxLayout()
-        row.addWidget(button("记录当前内容", self.engine.capture))
-        row.addWidget(button("固定 / 取消固定", self.pin))
-        row.addWidget(button("清空未固定项", self.clear))
+        row.addWidget(button(tr("记录当前内容"), self.engine.capture))
+        row.addWidget(button(tr("固定 / 取消固定"), self.pin))
+        row.addWidget(button(tr("清空未固定项"), self.clear))
         row.addStretch()
-        row.addWidget(button("复制所选", self.copy, "primary"))
+        row.addWidget(button(tr("复制所选"), self.copy, "primary"))
         layout.addLayout(row)
-        self.status = label("双击复制，切回目标应用粘贴。", "muted")
+        self.status = label(tr("双击复制，切回目标应用粘贴。"), "muted")
         layout.addWidget(self.status)
         self.engine.changed.connect(self.refresh)
         self.refresh()
@@ -150,7 +152,7 @@ class ClipboardWindow(QWidget):
     def copy(self):
         if self.selected_id() is not None:
             self.engine.copy(self.selected_id())
-            self.status.setText("已复制，切回应用即可粘贴。")
+            self.status.setText(tr("已复制，切回应用即可粘贴。"))
 
     def pin(self):
         if self.selected_id() is not None:

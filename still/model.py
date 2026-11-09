@@ -7,7 +7,9 @@ import uuid
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
-VERSION = "0.4.5"
+from .i18n import tr
+
+VERSION = "0.5.0"
 APP_NAME = "轻块桌面"
 DEFAULT_ORGANIZER_TITLE = "桌面收纳"
 DEFAULT_CAPTURE_SHORTCUT = "Ctrl+Alt+A"
@@ -26,7 +28,7 @@ def media_kind(path: Path) -> str:
         return "image"
     if ext in VIDEO_EXT:
         return "video"
-    raise ValueError(f"不支持 {ext or '无扩展名'} 文件，请导入图片、GIF 或视频。")
+    raise ValueError(tr("不支持 {0} 文件，请导入图片、GIF 或视频。").format(ext or tr("无扩展名")))
 
 
 def bundled_items() -> list[dict]:
@@ -37,6 +39,10 @@ def bundled_items() -> list[dict]:
         {"id": "builtin:motion", "path": "motion.mp4", "name": "光的呼吸", "kind": "video", "builtin": True},
         {"id": "builtin:ripple", "path": "ripple.gif", "name": "微光涟漪", "kind": "gif", "builtin": True},
     ]
+
+
+def item_name(item: dict) -> str:
+    return tr(item["name"]) if item.get("builtin") else item["name"]
 
 
 def item_path(item: dict) -> Path:
@@ -88,11 +94,11 @@ class Store:
             try:
                 data = json.loads(self.file.read_text(encoding="utf-8"))
                 if not isinstance(data, dict):
-                    raise ValueError("设置不是 JSON 对象")
+                    raise ValueError(tr("设置不是 JSON 对象"))
                 allowed = {f.name for f in fields(Settings)}
                 self.settings = Settings(**{k: v for k, v in data.items() if k in allowed})
                 if not isinstance(self.settings.library, list):
-                    raise ValueError("壁纸库格式不正确")
+                    raise ValueError(tr("壁纸库格式不正确"))
                 self.settings.library = [i for i in self.settings.library if isinstance(i, dict)
                                          and isinstance(i.get("path"), str) and isinstance(i.get("id"), str)
                                          and i.get("kind") in {"image", "gif", "video"}]
@@ -107,7 +113,7 @@ class Store:
             except (ValueError, TypeError, OSError) as exc:
                 backup = self.directory / f"settings.damaged-{uuid.uuid4().hex[:8]}.json"
                 self.file.replace(backup)
-                self.warning = f"设置文件已备份并重建：{exc}"
+                self.warning = tr("设置文件已备份并重建：{0}").format(exc)
                 self.settings = Settings()
 
     @property
@@ -127,7 +133,7 @@ class Store:
     def add(self, path: Path) -> dict:
         path = path.resolve(strict=True)
         if not path.is_file():
-            raise ValueError("请选择一个文件。")
+            raise ValueError(tr("请选择一个文件。"))
         kind = media_kind(path)
         existing = next((i for i in self.items if item_path(i).resolve() == path), None)
         if existing:

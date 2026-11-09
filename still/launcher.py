@@ -7,7 +7,9 @@ from PySide6.QtCore import QFileInfo, QThread, Qt, Signal
 from PySide6.QtGui import QCursor, QKeySequence, QShortcut
 from PySide6.QtWidgets import QApplication, QFileIconProvider, QLineEdit, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 
+from .i18n import tr
 from .desktop_windows import open_target, start_menu_folders
+from .organizer_model import entry_name, group_name
 from .productivity_model import calculate
 
 
@@ -25,7 +27,7 @@ class AppIndexer(QThread):
                     if path.suffix.lower() not in {".lnk", ".url", ".appref-ms"} or str(path).casefold() in known:
                         continue
                     known.add(str(path).casefold())
-                    entries.append({"name": path.stem, "target": str(path), "kind": "应用"})
+                    entries.append({"name": path.stem, "target": str(path), "kind": tr("应用程序")})
                     if len(entries) >= 10000:
                         self.indexed.emit(entries)
                         return
@@ -37,7 +39,7 @@ class Launcher(QWidget):
         super().__init__(None, Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         from .ui import STYLE, label
         self.workbench = workbench
-        self.setWindowTitle("轻块桌面 · 快速启动")
+        self.setWindowTitle(tr("轻块桌面 · 快速启动"))
         self.setObjectName("root")
         self.setWindowIcon(workbench.controller.icon)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -46,13 +48,13 @@ class Launcher(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 18)
         self.search = QLineEdit()
-        self.search.setPlaceholderText("搜索应用、分组文件，或直接计算 24 × 60")
+        self.search.setPlaceholderText(tr("搜索应用、分组文件，或直接计算 24 × 60"))
         self.search.setClearButtonEnabled(True)
         layout.addWidget(self.search)
         self.results = QListWidget()
         self.results.setSpacing(3)
         layout.addWidget(self.results, 1)
-        self.status = label("输入关键词搜索 · ↑↓ 选择 · Enter 打开 · Esc 关闭", "muted")
+        self.status = label(tr("输入关键词搜索 · ↑↓ 选择 · Enter 打开 · Esc 关闭"), "muted")
         layout.addWidget(self.status)
         self.provider = QFileIconProvider()
         self.search.textChanged.connect(self.filter)
@@ -62,17 +64,17 @@ class Launcher(QWidget):
         QShortcut(QKeySequence("Down"), self, lambda: self.navigate(1))
         QShortcut(QKeySequence("Up"), self, lambda: self.navigate(-1))
         self.commands = [
-            {"name": "截图工作室", "kind": "轻块桌面工具", "action": "capture"},
-            {"name": "录制屏幕 / 停止录屏", "kind": "轻块桌面工具", "action": "record"},
-            {"name": "视频裁剪与 GIF 导出", "kind": "轻块桌面工具", "action": "media"},
-            {"name": "剪贴板历史", "kind": "轻块桌面工具", "action": "clipboard"},
-            {"name": "便签与任务", "kind": "轻块桌面工具", "action": "notes"},
-            {"name": "文件工作台", "kind": "轻块桌面工具", "action": "files"},
-            {"name": "专注工作区", "kind": "轻块桌面工具", "action": "focus"},
+            {"name": tr("截图工作室"), "kind": tr("轻块桌面工具"), "action": "capture"},
+            {"name": tr("录制屏幕 / 停止录屏"), "kind": tr("轻块桌面工具"), "action": "record"},
+            {"name": tr("视频裁剪与 GIF 导出"), "kind": tr("轻块桌面工具"), "action": "media"},
+            {"name": tr("剪贴板历史"), "kind": tr("轻块桌面工具"), "action": "clipboard"},
+            {"name": tr("便签与任务"), "kind": tr("轻块桌面工具"), "action": "notes"},
+            {"name": tr("文件工作台"), "kind": tr("轻块桌面工具"), "action": "files"},
+            {"name": tr("专注工作区"), "kind": tr("轻块桌面工具"), "action": "focus"},
         ]
         self.entries = list(workbench.app_index)
         if not workbench.app_index:
-            self.status.setText("正在建立开始菜单索引…")
+            self.status.setText(tr("正在建立开始菜单索引…"))
             workbench.ensure_app_index()
         workbench.apps_indexed.connect(self.index_ready)
         self.filter()
@@ -95,13 +97,13 @@ class Launcher(QWidget):
             try:
                 expression = query.replace("×", "*").replace("÷", "/")
                 result = calculate(expression)
-                item = QListWidgetItem(f"=  {result}    ·    Enter 复制结果")
+                item = QListWidgetItem(tr("=  {0}    ·    Enter 复制结果").format(result))
                 item.setData(Qt.ItemDataRole.UserRole, {"result": str(result)})
                 self.results.addItem(item)
             except (ValueError, SyntaxError, ZeroDivisionError, OverflowError):
                 pass
         collections = self.workbench.controller.get_organizer().collections
-        files = [{"name": e["name"], "target": e["target"], "kind": g["name"]} for g in collections.groups for e in g["entries"]]
+        files = [{"name": entry_name(e), "target": e["target"], "kind": group_name(g)} for g in collections.groups for e in g["entries"]]
         candidates = self.commands + files + self.entries
         tokens = query.casefold().split()
         matched = [entry for entry in candidates if all(token in entry["name"].casefold() for token in tokens)]
@@ -114,7 +116,7 @@ class Launcher(QWidget):
             self.results.addItem(item)
         if self.results.count():
             self.results.setCurrentRow(0)
-        self.status.setText(f"{len(self.entries)} 个开始菜单应用 · ↑↓ 选择 · Enter 打开 · Esc 关闭")
+        self.status.setText(tr("{0} 个开始菜单应用 · ↑↓ 选择 · Enter 打开 · Esc 关闭").format(len(self.entries)))
 
     def navigate(self, delta):
         if self.results.count():

@@ -7,6 +7,7 @@ import uuid
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QInputDialog, QSpinBox, QVBoxLayout, QWidget
 
+from .i18n import tr
 from .productivity_model import utc_now
 
 
@@ -99,12 +100,12 @@ class FocusEngine(QObject):
             self.deadline = datetime.now(timezone.utc)+timedelta(minutes=self.break_minutes)
             self.db.execute("UPDATE focus_sessions SET state='resting',deadline=? WHERE id=?", (self.deadline.isoformat(), self.ident))
             self.timer.start(self.break_minutes*60*1000)
-            self.workbench.controller.tray.showMessage("轻块桌面 · 专注完成", f"做得很好，休息 {self.break_minutes} 分钟。")
+            self.workbench.controller.tray.showMessage(tr("轻块桌面 · 专注完成"), tr("做得很好，休息 {0} 分钟。").format(self.break_minutes))
         else:
             self.db.execute("UPDATE focus_sessions SET state='completed' WHERE id=?", (self.ident,))
             self.stage, self.deadline = "idle", None
             self.set_background(False)
-            self.workbench.controller.tray.showMessage("轻块桌面 · 计时结束", "休息结束，可以开始下一轮。")
+            self.workbench.controller.tray.showMessage(tr("轻块桌面 · 计时结束"), tr("休息结束，可以开始下一轮。"))
         self.changed.emit()
 
     def save_profile(self, name):
@@ -158,7 +159,7 @@ class FocusWindow(QWidget):
         super().__init__()
         from .ui import STYLE, button, label
         self.workbench, self.engine = workbench, workbench.focus()
-        self.setWindowTitle("轻块桌面 · 专注工作区")
+        self.setWindowTitle(tr("轻块桌面 · 专注工作区"))
         self.setObjectName("root")
         self.setWindowIcon(workbench.controller.icon)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -167,42 +168,42 @@ class FocusWindow(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(30, 27, 30, 27)
         outer.setSpacing(19)
-        outer.addWidget(label("把此刻，留给重要的事。", "title"))
-        outer.addWidget(label("工作区快照 · 专注与休息 · 动态壁纸暂停 · 本地专注记录", "muted", True))
+        outer.addWidget(label(tr("把此刻，留给重要的事。"), "title"))
+        outer.addWidget(label(tr("工作区快照 · 专注与休息 · 动态壁纸暂停 · 本地专注记录"), "muted", True))
         self.clock = label("25:00")
         self.clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.clock.setStyleSheet("font:600 68px 'Segoe UI';color:#b7e9d4;padding:20px;")
         outer.addWidget(self.clock, 1)
         row = QHBoxLayout()
-        row.addWidget(label("专注"))
+        row.addWidget(label(tr("专注")))
         self.minutes = QSpinBox()
         self.minutes.setRange(1, 180)
         self.minutes.setValue(25)
-        self.minutes.setSuffix(" 分钟")
+        self.minutes.setSuffix(tr(" 分钟"))
         row.addWidget(self.minutes)
-        row.addWidget(label("休息"))
+        row.addWidget(label(tr("休息")))
         self.rest = QSpinBox()
         self.rest.setRange(0, 60)
         self.rest.setValue(5)
-        self.rest.setSuffix(" 分钟")
+        self.rest.setSuffix(tr(" 分钟"))
         row.addWidget(self.rest)
-        self.pause = QCheckBox("专注时暂停动态壁纸")
+        self.pause = QCheckBox(tr("专注时暂停动态壁纸"))
         self.pause.setChecked(True)
         row.addWidget(self.pause)
         outer.addLayout(row)
         actions = QHBoxLayout()
-        actions.addWidget(button("开始专注", lambda: self.engine.start(self.minutes.value(), self.rest.value(), self.pause.isChecked()), "primary"))
-        actions.addWidget(button("结束本轮", self.engine.stop))
+        actions.addWidget(button(tr("开始专注"), lambda: self.engine.start(self.minutes.value(), self.rest.value(), self.pause.isChecked()), "primary"))
+        actions.addWidget(button(tr("结束本轮"), self.engine.stop))
         outer.addLayout(actions)
         profiles = QHBoxLayout()
         self.profiles = QComboBox()
         profiles.addWidget(self.profiles, 1)
-        profiles.addWidget(button("应用工作区", self.apply))
-        profiles.addWidget(button("保存当前工作区…", self.save_profile))
+        profiles.addWidget(button(tr("应用工作区"), self.apply))
+        profiles.addWidget(button(tr("保存当前工作区…"), self.save_profile))
         outer.addLayout(profiles)
         self.stats = label("", "muted", True)
         outer.addWidget(self.stats)
-        outer.addWidget(label("工作区保存壁纸和已有分组的位置；不会替换分组内容或移动文件。", "muted", True))
+        outer.addWidget(label(tr("工作区保存壁纸和已有分组的位置；不会替换分组内容或移动文件。"), "muted", True))
         self.tick = QTimer(self)
         self.tick.setInterval(1000)
         self.tick.timeout.connect(self.update_clock)
@@ -217,12 +218,12 @@ class FocusWindow(QWidget):
         if ident:
             self.profiles.setCurrentIndex(max(0, self.profiles.findData(ident)))
         stats = self.engine.db.query("SELECT COUNT(*) n,COALESCE(SUM(duration),0) seconds FROM focus_sessions WHERE state IN ('completed','resting')")[0]
-        self.stats.setText(f"累计完成 {stats['n']} 轮专注 · {stats['seconds']//60} 分钟")
+        self.stats.setText(tr("累计完成 {0} 轮专注 · {1} 分钟").format(stats['n'], stats['seconds'] // 60))
         self.update_clock()
 
     def update_clock(self):
         seconds = int(self.engine.remaining()) if self.engine.active else self.minutes.value()*60
-        self.clock.setText(("休息  " if self.engine.stage == "rest" else "")+f"{seconds//60:02d}:{seconds%60:02d}")
+        self.clock.setText((tr("休息  ") if self.engine.stage == "rest" else "")+f"{seconds//60:02d}:{seconds%60:02d}")
 
     def showEvent(self, event):
         self.tick.start()
@@ -233,7 +234,7 @@ class FocusWindow(QWidget):
         super().hideEvent(event)
 
     def save_profile(self):
-        name, accepted = QInputDialog.getText(self, "保存工作区", "名称，例如“深度工作”")
+        name, accepted = QInputDialog.getText(self, tr("保存工作区"), tr("名称，例如“深度工作”"))
         if accepted and name.strip():
             self.engine.save_profile(name.strip())
 

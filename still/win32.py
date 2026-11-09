@@ -9,6 +9,8 @@ import subprocess
 import sys
 import winreg
 
+from .i18n import tr
+
 user32 = C.WinDLL("user32", use_last_error=True)
 kernel32 = C.WinDLL("kernel32", use_last_error=True)
 dwmapi = C.WinDLL("dwmapi", use_last_error=True)
@@ -74,7 +76,7 @@ def monitors() -> list[dict]:
 def target_monitor(name: str = "") -> dict:
     screens = monitors()
     if not screens:
-        raise OSError("无法获取显示器信息。")
+        raise OSError(tr("无法获取显示器信息。"))
     return next((s for s in screens if s["name"] == name), next((s for s in screens if s["primary"]), screens[0]))
 
 
@@ -82,7 +84,7 @@ def desktop_worker() -> int:
     """Explorer's undocumented WorkerW topology: never fall back to an overlay."""
     progman = FindWindow("Progman", None)
     if not progman:
-        raise OSError("未找到 Windows Explorer 桌面，请稍后重试。")
+        raise OSError(tr("未找到 Windows Explorer 桌面，请稍后重试。"))
     result = C.c_size_t()
     SendMessageTimeout(progman, 0x052C, 0xD, 0, 0x2, 1000, C.byref(result))
     SendMessageTimeout(progman, 0x052C, 0xD, 1, 0x2, 1000, C.byref(result))
@@ -101,7 +103,7 @@ def desktop_worker() -> int:
     worker = FindWindowEx(progman, None, "WorkerW", None)
     if worker and not FindWindowEx(worker, None, "SHELLDLL_DefView", None):
         return worker
-    raise OSError("当前 Explorer 桌面层结构不兼容，已取消动态壁纸；可继续使用静态壁纸。")
+    raise OSError(tr("当前 Explorer 桌面层结构不兼容，已取消动态壁纸；可继续使用静态壁纸。"))
 
 
 def attach(hwnd: int, parent: int, rect: tuple[int, int, int, int]):
@@ -115,7 +117,7 @@ def attach(hwnd: int, parent: int, rect: tuple[int, int, int, int]):
     if not previous and error:
         raise C.WinError(error)
     if GetParent(hwnd) != parent:
-        raise OSError("无法挂接桌面层。")
+        raise OSError(tr("无法挂接桌面层。"))
     position(hwnd, parent, rect)
 
 
@@ -142,7 +144,7 @@ def current_wallpaper() -> dict:
 
 def set_wallpaper(path: str, fit: str = "fill", original: dict | None = None):
     if path and not Path(path).is_file():
-        raise FileNotFoundError(f"找不到壁纸文件：{path}")
+        raise FileNotFoundError(tr("找不到壁纸文件：{0}").format(path))
     style = {"fill": "10", "fit": "6", "stretch": "2", "center": "0"}[fit]
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Control Panel\Desktop", 0, winreg.KEY_SET_VALUE) as key:
         winreg.SetValueEx(key, "WallpaperStyle", 0, winreg.REG_SZ, original["WallpaperStyle"] if original else style)

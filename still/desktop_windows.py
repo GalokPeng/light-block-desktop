@@ -9,6 +9,7 @@ from pathlib import Path
 from PySide6.QtCore import QAbstractNativeEventFilter, QCoreApplication, QObject, Signal
 from PySide6.QtGui import QColor, QLinearGradient, QPen
 
+from .i18n import tr
 from . import win32 as api
 
 
@@ -115,7 +116,7 @@ def open_target(target):
     # Pass paths as a single structured argument; never construct shell commands.
     result = execute(None, "open", str(target), None, None, 1)
     if result <= 32:
-        raise OSError(f"无法打开该项目（Windows 错误 {result}）。")
+        raise OSError(tr("无法打开该项目（Windows 错误 {0}）。").format(result))
 
 
 def reveal_file(path):

@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QFileDialo
     QLabel, QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit, QSplitter, QStackedWidget,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
+from .i18n import tr
 from .desktop_windows import open_target, reveal_file
 from .productivity_model import RenameJournal, rename_preview
 
@@ -70,20 +71,20 @@ class RenameDialog(QDialog):
         self.workbench, self.paths = workbench, paths
         self.journal = RenameJournal(workbench.controller.store.directory)
         self.pairs = []
-        self.setWindowTitle("批量重命名 · 先预览再应用")
+        self.setWindowTitle(tr("批量重命名 · 先预览再应用"))
         self.setObjectName("root")
         self.setStyleSheet(STYLE)
         self.resize(800, 560)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(23, 20, 23, 20)
-        layout.addWidget(label("把命名，也整理得井井有条。", "section"))
+        layout.addWidget(label(tr("把命名，也整理得井井有条。"), "section"))
         self.pattern = QLineEdit("{n:03}_{name}{ext}")
-        self.pattern.setPlaceholderText("{name} 原名称 · {ext} 扩展名 · {n:03} 三位序号")
+        self.pattern.setPlaceholderText(tr("{name} 原名称 · {ext} 扩展名 · {n:03} 三位序号"))
         self.pattern.textChanged.connect(self.preview)
         layout.addWidget(self.pattern)
-        layout.addWidget(label("模板支持 {name}、{ext}、{n:03}。同名冲突会阻止操作；成功后可撤销最近一次。", "muted", True))
+        layout.addWidget(label(tr("模板支持 {name}、{ext}、{n:03}。同名冲突会阻止操作；成功后可撤销最近一次。"), "muted", True))
         self.table = QTableWidget(0, 2)
-        self.table.setHorizontalHeaderLabels(["原名称", "新名称"])
+        self.table.setHorizontalHeaderLabels([tr("原名称"), tr("新名称")])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setColumnWidth(0, 330)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -91,9 +92,9 @@ class RenameDialog(QDialog):
         self.status = label("", "muted", True)
         layout.addWidget(self.status)
         actions = QHBoxLayout()
-        actions.addWidget(button("取消", self.reject))
+        actions.addWidget(button(tr("取消"), self.reject))
         actions.addStretch()
-        self.apply_button = button("应用重命名", self.apply, "primary")
+        self.apply_button = button(tr("应用重命名"), self.apply, "primary")
         actions.addWidget(self.apply_button)
         layout.addLayout(actions)
         self.preview()
@@ -106,7 +107,7 @@ class RenameDialog(QDialog):
                 self.table.setItem(index, 0, QTableWidgetItem(source.name))
                 self.table.setItem(index, 1, QTableWidgetItem(target.name))
             self.apply_button.setEnabled(True)
-            self.status.setText(f"{len(self.pairs)} 个项目 · 未应用前原文件保持不变")
+            self.status.setText(tr("{0} 个项目 · 未应用前原文件保持不变").format(len(self.pairs)))
         except (ValueError, OSError, IndexError) as exc:
             self.apply_button.setEnabled(False)
             self.status.setText(str(exc))
@@ -118,7 +119,7 @@ class RenameDialog(QDialog):
             self.workbench.last_rename = self.journal.apply(pairs)
             self.accept()
         except OSError as exc:
-            self.status.setText("未完成，恢复日志保留在 rename_jobs："+str(exc))
+            self.status.setText(tr("未完成，恢复日志保留在 rename_jobs：")+str(exc))
 
 
 class FileWorkbench(QWidget):
@@ -134,7 +135,7 @@ class FileWorkbench(QWidget):
         self.page = 0
         self.current = None
         self.provider = QFileIconProvider()
-        self.setWindowTitle("轻块桌面 · 文件工作台")
+        self.setWindowTitle(tr("轻块桌面 · 文件工作台"))
         self.setObjectName("root")
         self.setWindowIcon(workbench.controller.icon)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -142,18 +143,18 @@ class FileWorkbench(QWidget):
         self.resize(1120, 720)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(23, 22, 23, 20)
-        layout.addWidget(label("先看清，再整理。", "title"))
+        layout.addWidget(label(tr("先看清，再整理。"), "title"))
         row = QHBoxLayout()
         self.path_label = QLineEdit()
         self.path_label.setReadOnly(True)
-        self.path_label.setPlaceholderText("选择文件夹，预览与整理本地文件")
+        self.path_label.setPlaceholderText(tr("选择文件夹，预览与整理本地文件"))
         row.addWidget(self.path_label, 1)
-        row.addWidget(button("选择文件夹…", self.choose))
-        row.addWidget(button("上一级", self.up))
-        row.addWidget(button("刷新", lambda: self.refresh(force=True)))
+        row.addWidget(button(tr("选择文件夹…"), self.choose))
+        row.addWidget(button(tr("上一级"), self.up))
+        row.addWidget(button(tr("刷新"), lambda: self.refresh(force=True)))
         layout.addLayout(row)
         self.search = QLineEdit()
-        self.search.setPlaceholderText("按名称筛选当前文件夹…")
+        self.search.setPlaceholderText(tr("按名称筛选当前文件夹…"))
         self.search_timer = QTimer(self)
         self.search_timer.setSingleShot(True)
         self.search_timer.setInterval(180)
@@ -169,7 +170,7 @@ class FileWorkbench(QWidget):
         preview = QWidget()
         pv = QVBoxLayout(preview)
         pv.setContentsMargins(15, 0, 0, 0)
-        self.meta = label("选择一个文件查看预览", "muted", True)
+        self.meta = label(tr("选择一个文件查看预览"), "muted", True)
         self.meta.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         pv.addWidget(self.meta)
         self.stack = QStackedWidget()
@@ -185,30 +186,30 @@ class FileWorkbench(QWidget):
         split.setSizes([350, 700])
         layout.addWidget(split, 1)
         pages = QHBoxLayout()
-        pages.addWidget(button("上一页", lambda: self.change_page(-1)))
+        pages.addWidget(button(tr("上一页"), lambda: self.change_page(-1)))
         self.page_label = label("", "muted")
         pages.addWidget(self.page_label)
-        pages.addWidget(button("下一页", lambda: self.change_page(1)))
+        pages.addWidget(button(tr("下一页"), lambda: self.change_page(1)))
         pages.addStretch()
         layout.addLayout(pages)
         actions = QHBoxLayout()
-        actions.addWidget(button("系统应用打开", self.open))
-        actions.addWidget(button("在文件夹中显示", self.reveal))
-        actions.addWidget(button("计算 SHA-256", self.hash))
-        actions.addWidget(button("撤销最近重命名", self.undo))
-        actions.addWidget(button("恢复中断任务", self.recover))
+        actions.addWidget(button(tr("系统应用打开"), self.open))
+        actions.addWidget(button(tr("在文件夹中显示"), self.reveal))
+        actions.addWidget(button(tr("计算 SHA-256"), self.hash))
+        actions.addWidget(button(tr("撤销最近重命名"), self.undo))
+        actions.addWidget(button(tr("恢复中断任务"), self.recover))
         actions.addStretch()
-        actions.addWidget(button("批量重命名…", self.rename, "primary"))
+        actions.addWidget(button(tr("批量重命名…"), self.rename, "primary"))
         layout.addLayout(actions)
-        self.status = label("预览为只读。批量重命名需要先确认预览，并保留恢复日志。", "muted", True)
+        self.status = label(tr("预览为只读。批量重命名需要先确认预览，并保留恢复日志。"), "muted", True)
         self.status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.status)
         pending = RenameJournal(workbench.controller.store.directory).pending()
         if pending:
-            self.status.setText(f"发现 {len(pending)} 项中断的重命名任务，请点击“恢复中断任务”。文件有身份记录和重名保护。")
+            self.status.setText(tr("发现 {0} 项中断的重命名任务，请点击“恢复中断任务”。文件有身份记录和重名保护。").format(len(pending)))
 
     def choose(self):
-        folder = QFileDialog.getExistingDirectory(self, "选择文件夹")
+        folder = QFileDialog.getExistingDirectory(self, tr("选择文件夹"))
         if folder:
             self.folder = Path(folder)
             self.refresh()
@@ -232,7 +233,7 @@ class FileWorkbench(QWidget):
         self.scanner.listed.connect(self.directory_loaded)
         self.scanner.finished.connect(self.scan_finished)
         self.scanner.start()
-        self.status.setText("正在读取目录…搜索使用缓存，图标仅按当前页加载。")
+        self.status.setText(tr("正在读取目录…搜索使用缓存，图标仅按当前页加载。"))
 
     def directory_loaded(self, path, rows, error):
         if self.sender() is not self.scanner or self.folder != Path(path):
@@ -263,9 +264,9 @@ class FileWorkbench(QWidget):
             item.setData(Qt.ItemDataRole.UserRole,row["path"])
             self.list.addItem(item)
         self.list.setUpdatesEnabled(True)
-        self.page_label.setText(f"第 {self.page+1} / {max(1,(len(rows)+149)//150)} 页 · {len(rows)} 个结果")
+        self.page_label.setText(tr("第 {0} / {1} 页 · {2} 个结果").format(self.page + 1, max(1, (len(rows) + 149) // 150), len(rows)))
         if len(self.cached_entries) >= 10000:
-            self.status.setText("当前目录仅索引前 10000 项，请进入子目录进一步查找。")
+            self.status.setText(tr("当前目录仅索引前 10000 项，请进入子目录进一步查找。"))
 
     def change_page(self, delta):
         self.page += delta
@@ -280,9 +281,9 @@ class FileWorkbench(QWidget):
         path = self.current
         try:
             stat = path.stat()
-            self.meta.setText(f"{path.name}\n{stat.st_size:,} 字节 · 修改于 {datetime.fromtimestamp(stat.st_mtime):%Y-%m-%d %H:%M}\n{path}")
+            self.meta.setText(tr("{0}\n{1:,} 字节 · 修改于 {2:%Y-%m-%d %H:%M}\n{3}").format(path.name, stat.st_size, datetime.fromtimestamp(stat.st_mtime), path))
             if path.is_dir():
-                self.text.setPlainText("文件夹 · 双击进入\n\n"+"\n".join(p.name for _,p in zip(range(120),path.iterdir())))
+                self.text.setPlainText(tr("文件夹 · 双击进入\n\n")+"\n".join(p.name for _,p in zip(range(120),path.iterdir())))
                 self.stack.setCurrentWidget(self.text)
                 return
             image = QImage()
@@ -300,10 +301,10 @@ class FileWorkbench(QWidget):
             elif path.suffix.lower() in {".txt", ".md", ".json", ".csv", ".py", ".log", ".yaml", ".yml", ".ini", ".xml", ".html", ".css", ".js", ".ts"}:
                 with path.open("rb") as file:
                     content = file.read(512*1024)
-                self.text.setPlainText(content.decode("utf-8", "replace")+ ("\n\n…预览仅显示前 512 KB" if stat.st_size > len(content) else ""))
+                self.text.setPlainText(content.decode("utf-8", "replace")+ (tr("\n\n…预览仅显示前 512 KB") if stat.st_size > len(content) else ""))
                 self.stack.setCurrentWidget(self.text)
             else:
-                self.text.setPlainText("当前格式请使用系统应用打开。\n\n你仍可查看属性、计算校验值，或参与批量重命名。")
+                self.text.setPlainText(tr("当前格式请使用系统应用打开。\n\n你仍可查看属性、计算校验值，或参与批量重命名。"))
                 self.stack.setCurrentWidget(self.text)
         except OSError as exc:
             self.status.setText(str(exc))
@@ -330,14 +331,14 @@ class FileWorkbench(QWidget):
             return
         if self.worker and self.worker.isRunning():
             self.worker.requestInterruption()
-            self.status.setText("上一项计算正在取消，请稍后重试。")
+            self.status.setText(tr("上一项计算正在取消，请稍后重试。"))
             return
         self.worker = HashWorker(str(self.current), self.workbench)
         self.workbench.track_thread(self.worker)
         self.worker.finished.connect(self.hash_finished)
         self.worker.result.connect(self.hash_result)
         self.worker.start()
-        self.status.setText("正在计算 SHA-256，可继续浏览；关闭窗口会取消。")
+        self.status.setText(tr("正在计算 SHA-256，可继续浏览；关闭窗口会取消。"))
 
     def hash_finished(self):
         if self.sender() is self.worker:
@@ -351,17 +352,17 @@ class FileWorkbench(QWidget):
         paths = [Path(item.data(Qt.ItemDataRole.UserRole)) for item in self.list.selectedItems()]
         if paths and RenameDialog(self.workbench, paths, self).exec():
             self.refresh(force=True)
-            self.status.setText("重命名完成，可撤销最近一次。")
+            self.status.setText(tr("重命名完成，可撤销最近一次。"))
 
     def undo(self):
         if not self.workbench.last_rename:
-            self.status.setText("当前没有可撤销的重命名任务。")
+            self.status.setText(tr("当前没有可撤销的重命名任务。"))
             return
         try:
             RenameJournal(self.workbench.controller.store.directory).undo(self.workbench.last_rename)
             self.workbench.last_rename = None
             self.refresh(force=True)
-            self.status.setText("已撤销重命名。")
+            self.status.setText(tr("已撤销重命名。"))
         except (OSError, ValueError) as exc:
             self.workbench.error(str(exc))
 
@@ -375,7 +376,7 @@ class FileWorkbench(QWidget):
             except (OSError,ValueError) as exc:
                 errors.append(str(exc))
         self.refresh(force=True)
-        self.status.setText(f"已恢复 {restored} 项任务。"+("\n"+"\n".join(errors) if errors else "原文件名已还原；冲突文件不会覆盖。"))
+        self.status.setText(tr("已恢复 {0} 项任务。").format(restored)+("\n"+"\n".join(errors) if errors else tr("原文件名已还原；冲突文件不会覆盖。")))
 
     def closeEvent(self, event):
         self.search_timer.stop()
