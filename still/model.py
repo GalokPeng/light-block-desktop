@@ -18,6 +18,27 @@ ASSETS = ROOT / "assets"
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 VIDEO_EXT = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v"}
 FITS = {"fill": "填充屏幕", "fit": "完整显示", "stretch": "拉伸铺满", "center": "原始尺寸"}
+APPS_FOLDER = "shell:AppsFolder\\"
+
+
+def dock_target_key(target: str) -> str:
+    return os.path.normcase(os.path.normpath(target))
+
+
+def normalize_dock_pins(pins: list) -> list[str]:
+    unique = {}
+    for target in pins:
+        if not isinstance(target, str) or "\0" in target:
+            continue
+        if target.startswith(APPS_FOLDER):
+            ident = target[len(APPS_FOLDER):]
+            valid = "!" in ident and not any(char in ident for char in "\\/")
+        else:
+            path = Path(target)
+            valid = path.is_absolute() and path.suffix.lower() in {".exe", ".lnk"}
+        if valid:
+            unique.setdefault(dock_target_key(target), target)
+    return list(unique.values())
 
 
 def media_kind(path: Path) -> str:
@@ -62,6 +83,8 @@ class Settings:
     original_wallpaper: dict | None = None
     settings_theme: str = "dark"
     settings_language: str = "system"
+    taskbar_style_enabled: bool = False
+    dock_pins: list[str] | None = None
     organizer_enabled: bool = False
     organizer_position: list[int] | None = None
     organizer_title: str = DEFAULT_ORGANIZER_TITLE
@@ -110,6 +133,9 @@ class Store:
                     self.settings.settings_theme = "dark"
                 if self.settings.settings_language not in ("system", "zh", "en"):
                     self.settings.settings_language = "system"
+                self.settings.taskbar_style_enabled = self.settings.taskbar_style_enabled is True
+                pins = self.settings.dock_pins
+                self.settings.dock_pins = normalize_dock_pins(pins) if isinstance(pins, list) else None
                 if not isinstance(self.settings.organizer_title, str):
                     self.settings.organizer_title = DEFAULT_ORGANIZER_TITLE
                 position = self.settings.organizer_position

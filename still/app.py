@@ -43,6 +43,7 @@ class Controller:
         self.release_check = None
         self.window = None
         self.organizer = None
+        self.dock = None
         self.workbench = None
         self.hotkeys = None
         self.closing = False
@@ -66,6 +67,8 @@ class Controller:
             self.configure_hotkeys()
         if store.settings.organizer_enabled or (store.directory / "desktop-icon-state.json").exists():
             self.get_organizer()
+        if store.settings.taskbar_style_enabled:
+            self.open_dock()
         self.update_tray()
         if not background or not QSystemTrayIcon.isSystemTrayAvailable():
             self.show_window()
@@ -138,6 +141,10 @@ class Controller:
             self.report_error(str(exc))
             return
         self.apply_language()
+        if self.dock is not None:
+            self.dock.setWindowTitle(tr("应用 Dock"))
+            self.dock.visuals.clear()
+            self.dock.layout_entries()
         self.build_tray_menu()
         self.update_tray()
         if self.window is not None:
@@ -187,6 +194,7 @@ class Controller:
 
     def needs_background(self):
         return (self.engine.surface is not None or self.store.settings.organizer_enabled or
+                self.dock is not None or
                 bool(self.hotkeys and self.hotkeys.registered)
                 or (self.workbench is not None and self.workbench.needs_background()))
 
@@ -271,10 +279,47 @@ class Controller:
 
     def cleanup(self):
         self.closing = True
+        self.close_dock()
         if self.hotkeys is not None:
             self.hotkeys.cleanup()
         if self.workbench is not None:
             self.workbench.cleanup()
+
+    def open_dock(self):
+        from .dock import Dock
+        self.dock = Dock(self)
+        self.dock.taskbar_style.start()
+
+    def close_dock(self):
+        if self.dock is not None:
+            dock = self.dock
+            self.dock = None
+            dock.stop()
+
+    def set_taskbar_style(self, enabled):
+        settings = self.store.settings
+        if not enabled:
+            self.close_dock()
+        if enabled != settings.taskbar_style_enabled:
+            settings.taskbar_style_enabled = enabled
+            try:
+                self.store.save()
+            except OSError as exc:
+                settings.taskbar_style_enabled = False
+                self.report_error(str(exc))
+            else:
+                if enabled:
+                    self.open_dock()
+        if self.window is not None:
+            toggle = self.window.pages.widget(1).taskbar_toggle
+            toggle.blockSignals(True)
+            toggle.setChecked(settings.taskbar_style_enabled)
+            toggle.blockSignals(False)
+        QTimer.singleShot(0, self.maybe_quit)
+
+    def show_organizer_settings(self):
+        self.show_window()
+        self.window.pages.setCurrentIndex(1)
 
     def get_organizer(self):
         if self.organizer is None:

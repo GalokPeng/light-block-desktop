@@ -735,6 +735,8 @@ class MainWindow(QMainWindow):
         for card in self.cards:
             card.light = self.light
             card.update()
+        if self.controller.dock is not None:
+            self.controller.dock.refresh_theme()
 
     def set_filter(self, kind):
         self.filter_kind = kind
