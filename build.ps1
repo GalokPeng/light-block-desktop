@@ -1,0 +1,41 @@
+param(
+    [string]$FFmpegPath = '',
+    [string]$PythonPath = '',
+    [string]$DistPath = '',
+    [string]$WorkPath = '',
+    [switch]$SkipInstall
+)
+$ErrorActionPreference = 'Stop'
+Set-Location -LiteralPath $PSScriptRoot
+if (-not $PythonPath) {
+    $PythonPath = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
+    if (-not (Test-Path -LiteralPath $PythonPath)) {
+        py -3.11 -m venv .venv
+        if ($LASTEXITCODE -ne 0) { throw 'Python 3.11 is required.' }
+    }
+}
+$PythonPath = (Get-Command $PythonPath -ErrorAction Stop).Source
+if (-not $DistPath) { $DistPath = Join-Path $PSScriptRoot 'dist' }
+if (-not $WorkPath) { $WorkPath = Join-Path $PSScriptRoot 'build' }
+if (-not $SkipInstall) {
+    & $PythonPath -m pip install -r requirements.txt -r requirements-build.txt
+    if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
+}
+$previousPath = $env:PATH
+$previousFFmpeg = $env:STILL_FFMPEG
+$previousCache = $env:PYINSTALLER_CONFIG_DIR
+try {
+    $env:STILL_FFMPEG = if ($FFmpegPath) { (Resolve-Path -LiteralPath $FFmpegPath).Path } else { '' }
+    # Collect dependencies from Python, Qt and Windows only.
+    $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+    $env:PYINSTALLER_CONFIG_DIR = Join-Path $WorkPath 'pyinstaller-cache'
+    & $PythonPath -m PyInstaller --clean --noconfirm --distpath $DistPath --workpath $WorkPath Still.spec
+    if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
+} finally {
+    $env:PATH = $previousPath
+    $env:STILL_FFMPEG = $previousFFmpeg
+    $env:PYINSTALLER_CONFIG_DIR = $previousCache
+}
+$version = & $PythonPath tools/release.py version
+if ($LASTEXITCODE -ne 0) { throw 'Could not read the app version.' }
+Write-Host "Built: $(Join-Path $DistPath "Qingkuai-v$version-Windows-x64")"

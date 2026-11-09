@@ -1,0 +1,118 @@
+name: Windows release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish this version if the repository release switch is enabled
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.repository }}
+  cancel-in-progress: false
+
+env:
+  PYTHONUTF8: '1'
+
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.PUBLISH_RELEASES == 'true')
+    runs-on: windows-2022
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      build: ${{ steps.plan.outputs.build }}
+      publish: ${{ steps.plan.outputs.publish }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11.9'
+          architecture: x64
+      - id: plan
+        shell: pwsh
+        env:
+          ALLOW_RELEASE: ${{ vars.PUBLISH_RELEASES }}
+          REQUEST_PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+        run: |
+          $version = python tools/release.py version
+          if ($LASTEXITCODE -ne 0) { throw 'Invalid app version.' }
+          $eligible = python tools/release.py plan
+          if ($LASTEXITCODE -ne 0) { throw 'Invalid version progression.' }
+          $publish = $eligible -eq 'true' -and $env:ALLOW_RELEASE -eq 'true' -and $env:REQUEST_PUBLISH -eq 'true'
+          $build = $publish -or $env:GITHUB_EVENT_NAME -eq 'workflow_dispatch'
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "build=$($build.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "publish=$($publish.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+  package:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11.9'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-build.txt
+      - run: python -m pip install -r requirements.txt -r requirements-build.txt
+      - run: python tools/run_tests.py
+      - shell: pwsh
+        run: ./tools/release.ps1 -PythonPath (Get-Command python).Source -SkipInstall
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-${{ needs.plan.outputs.version }}
+          path: release/*
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    needs: [plan, package]
+    if: needs.plan.outputs.publish == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: windows-${{ needs.plan.outputs.version }}
+          path: release
+      - shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          $tag = "v$env:APP_VERSION"
+          $base = "Qingkuai-$tag"
+          $names = @("$base-Setup-x64.exe", "$base-Windows-x64.zip", "$base-source.zip")
+          $sumFile = Join-Path release "$base-SHA256SUMS.txt"
+          $expected = @{}
+          foreach ($line in Get-Content -LiteralPath $sumFile) {
+            $hash, $name = $line -split '  ', 2
+            $expected[$name] = $hash
+          }
+          $assets = foreach ($name in $names) {
+            $asset = Join-Path release $name
+            if ((Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash -ine $expected[$name]) {
+              throw "Checksum mismatch for $name"
+            }
+            $asset
+          }
+          gh release create $tag @assets $sumFile --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "轻块桌面 $tag" --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw "Release publication failed. Check whether $tag has a partial draft." }

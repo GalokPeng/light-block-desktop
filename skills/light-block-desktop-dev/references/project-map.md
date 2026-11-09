@@ -1,0 +1,19 @@
+# 轻块桌面项目地图
+
+Windows 10 / 11 x64，Python 3.11，PySide6。运行 `python main.py`，也可以传入 `--data-dir` 指向测试目录。运行依赖在 `requirements.txt`。开发机有交互桌面时可加测 `python tools/run_tests.py --desktop`。
+
+| 领域 | 入口与验证重点 |
+| --- | --- |
+| 启动与设置 | `main.py` 调用 `still/app.py`。`still/model.py` 的 `Store` 保存设置和素材索引，`ui.py` 构建主设置页。读取旧设置后再检查新设置落盘 |
+| 壁纸 | `engine.py` 和 `win32.py`。静态壁纸由 Windows 显示，GIF 和视频通过 Qt 原生输出读取原文件。测试 WorkerW 关系、连续帧、暂停和退出清理 |
+| 桌面收纳和便签 | `organizer.py`、`organizer_model.py`、`desktop_icons.py`、`notes.py` 与 `desktop_windows.py`。收纳入口引用原文件，旧托管文件有恢复逻辑。面板由 Explorer 桌面层拥有，保持不抢焦点。验证关闭后原生桌面图标状态恢复，便签位置和分组正常重载 |
+| 截屏与热键 | `workbench.py`、`hotkeys.py`、`capture_overlay.py`、`capture.py`、`capture_text.py`。验证原生全局热键、150% 缩放下的选区和导出像素。右键重选和滚轮调标注与长图滚动各自独立 |
+| 长图与录屏 | `scroll_capture.py`、`scroll_match.py`、`capture_frame.py`、`recording_ui.py`、`media_tools.py`。长图保留最后成功拼接的位置，录屏边框在采集区域之外或被排除。FFmpeg 独立进程负责录制和导出 |
+| 发布 | `still/model.py` 的 `VERSION` 是版本源。 `build.ps1` 调 PyInstaller，`installer/LightBlockDesktop.iss` 编译安装包，GitHub Actions 验证并发布 |
+
+## 实例和数据边界
+
+- 官方默认配置为 `%LOCALAPPDATA%/StillWallpaper`。其中包括设置、收纳清单及备份、文件恢复凭据、便签和剪贴板数据库。真实内容不进入 Git。升级和卸载流程保留这些数据。
+- 程序的单实例通道按配置目录派生。自启动注册表名称和桌面图标租约有独立的稳定标识。发布 fork 并要求与官方版并存时，应显式区分配置、自启动和安装标识。桌面图标可见性属于同一个 Windows 会话，应保留互斥保护。
+- 与桌面图标、WorkerW、全局热键和真实录屏有关的行为不能由纯离屏测试证明。共享 Windows 会话内用 `--data-dir` 隔离配置，也要隔离或暂缓改变真实桌面状态的测试。
+- 原始壁纸文件不覆盖、不压缩。可逆文件操作继续使用现有清单、写入顺序和恢复凭据。

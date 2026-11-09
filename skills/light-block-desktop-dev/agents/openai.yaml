@@ -1,0 +1,4 @@
+interface:
+  display_name: "轻块桌面二开"
+  short_description: "阅读轻块桌面源码并按项目规范开发、验证、准备上游贡献或发布"
+  default_prompt: "使用 $light-block-desktop-dev 开始轻块桌面二开，先确认走自行维护还是向上游提 PR。"
