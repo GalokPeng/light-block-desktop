@@ -1,9 +1,7 @@
 <p align="center"><img src="assets/icon.png" width="88" alt="轻块桌面图标"></p>
 <h1 align="center">轻块桌面</h1>
-<p align="center">Windows 动态壁纸、桌面收纳、截屏和便签</p>
-<p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases/latest"><strong>下载最新版</strong></a> · <a href="https://light-block-desktop.vercel.app/?lang=zh">产品官网</a> · <a href="README.en.md">English</a> · <a href="CHANGES.md">更新日志</a></p>
-
-![轻块桌面的壁纸库和显示设置](site/public/media/wallpaper-zh.webp)
+<p align="center">Windows 壁纸、截屏录屏、桌面收纳、原生任务栏美化和便签</p>
+<p align="center"><a href="https://light-block-desktop.vercel.app/download/"><strong>下载 Windows 安装包</strong></a> · <a href="#功能展示">功能展示</a> · <a href="https://light-block-desktop.vercel.app/?lang=zh">产品官网</a> · <a href="README.en.md">English</a> · <a href="CHANGES.md">更新日志</a></p>
 
 ## 下载与安装
 
@@ -13,23 +11,41 @@
 
 Setup 默认安装到当前用户目录。壁纸播放和静态截屏可以直接使用。录屏和媒体导出需安装支持 `gdigrab`、`libx264`、`ffv1` 和调色板滤镜的 [FFmpeg 命令行工具](https://ffmpeg.org/download.html)，并将其加入 PATH。
 
-## 功能
+## 功能展示
 
-| 功能 | 用法 |
+### 设置壁纸
+
+导入本地图片、GIF 或视频，保留原画质副本。可选显示器和铺放方式，支持从实际视频帧生成封面。视频默认静音，可在设置或桌面右键菜单中切换。支持登录后恢复壁纸和全屏自动暂停。
+
+![轻块桌面的壁纸库和显示设置](site/public/media/wallpaper-zh.webp)
+
+### 截屏与录屏
+
+默认 `Ctrl+Alt+A` 打开截屏，可选窗口或区域、添加标注、滚动拼接长图、复制 PNG 或原位贴图。录屏可用 `Ctrl+Alt+R` 停止，完成后直接贴屏预览，可涂鸦、裁剪画面和截取时间片段，按选定画质与帧率导出 MP4、GIF 或无损 MKV。
+
+| 截屏选区与标注 | 录屏预览与导出 |
 | --- | --- |
-| 壁纸 | 导入本地静态图、GIF 或视频并保留原画质副本，支持视频帧封面、视频声音开关、显示器、铺放方式和自动暂停 |
-| 桌面收纳 | 支持居上、居中和居下，可按名称、修改时间或分组排列。新增桌面项目会自动归类。关闭后恢复 Windows 原生图标的可见性 |
-| 任务栏美化 | Windows 11 x64 主屏原生任务栏三段居中，支持智能隐藏与触底唤出 |
-| 截屏与标注 | 默认 `Ctrl+Alt+A`，支持智能窗口、手动选区、画笔、文字、箭头、序号和马赛克。可保存 PNG、复制，或在选区原位贴图 |
-| 滚动长截图 | 框选后在区域内滚动，自动尝试拼接，旁边显示预览。也可手动调整重叠高度 |
-| 区域录屏 | `Ctrl+Alt+R` 停止后贴屏预览。可涂鸦、裁剪画面、截取片段，按选定画质与帧率保存或复制 MP4、GIF 和无损 MKV |
-| 效率工具 | 桌面右键新建便签，支持任务提醒、快速启动与计算、可选剪贴板历史、文件预览和批量改名、专注工作区 |
+| [![框选、标注与截屏工具栏](site/public/media/capture-zh.webp)](site/public/media/capture-zh.webp) | [![录屏预览、时间轴与导出设置](site/public/media/recording-zh.webp)](site/public/media/recording-zh.webp) |
 
-| 桌面收纳与便签 | 截屏工具栏 |
-| --- | --- |
-| ![桌面文件夹与置于桌面的便签](site/public/media/organizer-zh.webp) | ![框选、标注与截屏工具栏](site/public/media/capture-zh.webp) |
+### 桌面收纳与原生任务栏美化
 
-截图来自真实程序界面和虚构演示数据。程序在本机处理内容，无账户、广告或遥测。收纳和剪贴板记录需要主动开启。右上角的太阳或月亮可切换设置窗口主题。[完整使用指南](docs/usage.zh-CN.md)
+收纳支持居上、居中和居下，可按名称、修改时间或分组排列，并搜索桌面项目。关闭收纳会恢复原生图标显示状态。
+
+![示例桌面的收纳分组](site/public/media/organizer-zh.webp)
+
+可选的任务栏美化在 Windows 11 22H2 或更新版本的 x64 主屏上，将电源与搜索、应用、系统托盘分三段居中。保留 Windows 搜索和托盘菜单，支持智能隐藏与触底唤出。
+
+![原生任务栏布局示意，从左到右为电源与搜索、应用、系统托盘](site/public/media/taskbar-layout.svg)
+
+*原生任务栏三段式布局示意*
+
+### 桌面便签
+
+右键桌面空白处即可新建并贴出便签。Windows 11 从「显示更多选项」进入。便签可拖动、双击编辑，支持搜索、到期提醒、完成标记和归档。
+
+![便签与任务窗口以及贴在示例桌面上的本周计划](site/public/media/notes-zh.webp)
+
+演示截图使用内置素材和虚构数据。程序在本机处理内容，无账户、广告或遥测。更多功能包括快速启动、剪贴板历史、文件工作台和专注计时。[完整使用指南](docs/usage.zh-CN.md)
 
 ## 开发与发布
 

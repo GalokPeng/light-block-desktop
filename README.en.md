@@ -1,9 +1,7 @@
 <p align="center"><img src="assets/icon.png" width="88" alt="Light Block Desktop icon"></p>
 <h1 align="center">Light Block Desktop</h1>
-<p align="center">Live wallpaper, desktop folders, screen capture and notes for Windows</p>
-<p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases/latest"><strong>Download the latest version</strong></a> · <a href="https://light-block-desktop.vercel.app/en/">Website</a> · <a href="README.md">简体中文</a> · <a href="CHANGES.md">Changelog</a></p>
-
-![Wallpaper library and display settings in Light Block Desktop](site/public/media/wallpaper-en.webp)
+<p align="center">Live wallpaper, screenshots, screen recording, desktop organization, native taskbar styling and notes for Windows</p>
+<p align="center"><a href="https://light-block-desktop.vercel.app/download/"><strong>Download Windows Setup</strong></a> · <a href="#feature-preview">Feature preview</a> · <a href="https://light-block-desktop.vercel.app/en/">Website</a> · <a href="README.md">简体中文</a> · <a href="CHANGES.md">Changelog</a></p>
 
 ## Download and install
 
@@ -13,23 +11,41 @@
 
 Setup installs for the current user by default. Wallpaper playback and still screenshots work with the bundled runtime. Recording and export require the [FFmpeg command-line tool](https://ffmpeg.org/download.html) with `gdigrab`, `libx264`, `ffv1` and palette filters on PATH.
 
-## Features
+## Feature preview
 
-| Feature | How it works |
+### Wallpaper
+
+Import full-quality copies of local images, GIFs and videos. Choose a display and fit mode, and identify videos by their frame-based covers. Video wallpapers start muted. Toggle sound in Settings or the desktop context menu. Restore the last wallpaper at sign-in and pause it on full screen.
+
+![Wallpaper library and display settings in Light Block Desktop](site/public/media/wallpaper-en.webp)
+
+### Screenshots and screen recording
+
+Press `Ctrl+Alt+A` by default to pick a window or region. Annotate, stitch a scrolling region, copy a PNG or pin the capture in place. Stop a recording with `Ctrl+Alt+R` to open a pinned preview. Draw, crop and trim, then export MP4, GIF or lossless MKV at your chosen quality and frame rate.
+
+| Capture selection and annotation | Recording preview and export |
 | --- | --- |
-| Wallpaper | Import full-quality copies of images, GIFs and videos. Videos have frame-based covers and optional sound. Choose a display, fit mode and automatic pause conditions |
-| Desktop organizer | Choose a top, center or bottom layout, and sort by name, modification time or group. New desktop items are grouped automatically. Disabling the organizer restores Windows icon visibility |
-| Taskbar style | Three centered sections on the native Windows 11 x64 taskbar, with smart auto-hide and edge reveal |
-| Capture and annotation | Press `Ctrl+Alt+A` by default. Select a window or area and add text, arrows, numbers, strokes or mosaic. Save PNG, copy, or pin at the original selection |
-| Scrolling capture | Scroll inside the selected region to stitch frames. Follow the side preview or adjust the overlap manually |
-| Region recording | Press `Ctrl+Alt+R` to stop and pin a preview. Draw, crop and trim, then save or copy MP4, GIF or lossless MKV at the selected quality and frame rate |
-| Productivity | Right-click the desktop to pin a new note. Also includes task reminders, launcher and calculator, optional clipboard history, file preview and batch rename, and focus workspaces |
+| [![A selected area with annotations and the capture toolbar](site/public/media/capture-en.webp)](site/public/media/capture-en.webp) | [![Pinned recording preview, timeline and export controls](site/public/media/recording-en.webp)](site/public/media/recording-en.webp) |
 
-| Desktop organizer and pinned note | Capture toolbar |
-| --- | --- |
-| ![Folder groups and a desktop note](site/public/media/organizer-en.webp) | ![A selected area with annotations and the capture toolbar](site/public/media/capture-en.webp) |
+### Desktop organizer and native taskbar styling
 
-Screenshots show the app with fictional demo data. Processing happens locally, with no account, ads or telemetry. Desktop organizing and clipboard history are opt-in. Use the sun or moon button to switch the settings theme. [User guide](docs/usage.en.md)
+Place the organizer at the top, center or bottom. Sort by name, modification time or group, and search for desktop items. Turning the organizer off restores the original icon visibility.
+
+![Folder groups on a sample desktop](site/public/media/organizer-en.webp)
+
+Optional styling centers power and search, apps and the system tray on the native taskbar of the primary display on Windows 11 22H2 or later, x64. Windows Search and tray menus stay available. The bar can hide when covered and reappear when you move the pointer to the bottom edge.
+
+![Native taskbar diagram showing power and search, apps and the system tray](site/public/media/taskbar-layout.svg)
+
+*Diagram of the three-section native taskbar*
+
+### Desktop notes
+
+Right-click the desktop background to create and pin a note. On Windows 11, start with **Show more options**. Drag to move a note, double-click to edit it, or open Notes & Tasks to search, set a reminder, mark it done or archive it.
+
+![Notes and Tasks editor beside a weekly checklist pinned to a sample desktop](site/public/media/notes-en.webp)
+
+Screenshots use bundled media and fictional data. The app runs locally with no account, ads or telemetry. It also includes a launcher, clipboard history, a file workbench and focus timers. [User guide](docs/usage.en.md)
 
 ## Development and releases
 

@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Light Block Desktop · Windows</title>
-  <meta name="description" content="Live wallpaper, desktop folders, notes and screen capture in one local Windows app.">
+  <meta name="description" content="Set live wallpapers, capture and record your screen, organize your desktop, style the native Windows taskbar and pin notes.">
   <meta property="og:title" content="Light Block Desktop">
-  <meta property="og:description" content="Live wallpaper, desktop folders, notes and screen capture in one local Windows app.">
+  <meta property="og:description" content="Set live wallpapers, capture and record your screen, organize your desktop, style the native Windows taskbar and pin notes.">
   <link rel="icon" href="/media/icon.png">
   <link rel="stylesheet" href="/site.css">
 
@@ -30,47 +30,73 @@
         <div>
           <p class="kicker">WINDOWS 10 / 11 · X64</p>
           <h1>A calmer Windows desktop.</h1>
-          <p>Live wallpaper, desktop folders, notes and screen capture in one local Windows app.</p>
+          <p>Set your wallpaper, capture or record the screen, organize your desktop, style the native taskbar and pin notes.</p>
           <div class="actions"><a class="button primary" href="/download/">Download Windows Setup ↓</a><a class="button secondary" href="https://github.com/GalokPeng/light-block-desktop">View source ↗</a></div>
           <p class="fine">MIT licensed · Installer and portable ZIP</p>
         </div>
         <figure>
-          <a class="frame" href="/media/wallpaper-en.webp"><img src="/media/wallpaper-en.webp" alt="Wallpaper library and display settings" fetchpriority="high"></a>
+          <a class="frame" href="/media/wallpaper-en.webp"><img src="/media/wallpaper-en.webp" alt="Wallpaper library and display settings" width="1920" height="1290" fetchpriority="high"></a>
           <figcaption>Light Block Desktop · bundled sample media</figcaption>
         </figure>
       </div>
     </section>
-    <div class="wrap strip"><div><strong>Plays from source files</strong></div><div><strong>Follows Windows display language</strong></div><div><strong>Local data</strong></div></div>
+    <div class="wrap strip"><div><strong>Full-quality wallpaper copies</strong></div><div><strong>English and Simplified Chinese</strong></div><div><strong>Local data</strong></div></div>
     <section class="wrap section" id="features">
-      <p class="kicker">DESKTOP & CAPTURE</p>
-      <h2>From wallpaper to workbench</h2>
-      <p class="lead">Use live wallpaper, desktop folders and screen capture independently. Enable the parts you need.</p>
-      <article class="feature">
+      <p class="kicker">FEATURE PREVIEW</p>
+      <h2>Make the desktop your own</h2>
+      <nav class="feature-nav" aria-label="Feature preview">
+        <a href="#wallpaper">Wallpaper</a><a href="#capture">Capture &amp; recording</a><a href="#desktop">Organizer &amp; taskbar</a><a href="#notes">Desktop notes</a>
+      </nav>
+      <article class="feature" id="wallpaper">
         <div>
           <p class="label">01 / WALLPAPER</p>
           <h3>Static, GIF and video wallpapers</h3>
-          <p>Import local media and choose how it fits your display. GIF and video play from the source file. Windows handles static wallpaper.</p>
-          <ul><li>Start quietly at sign-in and restore the last wallpaper.</li><li>Pause when a full-screen app takes over, the screen locks, the display turns off or you switch to battery.</li></ul>
+          <p>Import an image, GIF or video and keep a full-quality copy in your wallpaper library. Pick a display and fit mode, and find videos by their frame-based thumbnails.</p>
+          <ul>
+            <li>Video wallpapers start muted. Toggle sound in Playback Settings or the desktop context menu.</li>
+            <li>Restore the last wallpaper at sign-in. Pause live wallpaper on full screen, lock, display off or battery power.</li>
+          </ul>
         </div>
-        <a class="frame" href="/media/wallpaper-en.webp"><img src="/media/wallpaper-en.webp" alt="Wallpaper library and display settings" loading="lazy"></a>
+        <a class="frame" href="/media/wallpaper-en.webp"><img src="/media/wallpaper-en.webp" alt="Wallpaper library and display settings" width="1920" height="1290" loading="lazy"></a>
       </article>
-      <article class="feature">
+      <article class="feature" id="capture">
         <div>
-          <p class="label">02 / ORGANIZE</p>
-          <h3>A place for files and notes</h3>
-          <p>Group folders, shortcuts, system entries and files by type. Click a translucent folder to expand its grid and click away to close it.</p>
-          <ul><li>Rename groups and adjust icon sizes and opacity. Source files stay in place.</li><li>Disabling the organizer restores the original icon visibility. Pin notes to the desktop independently.</li></ul>
+          <p class="label">02 / CAPTURE &amp; RECORDING</p>
+          <h3>Annotate screenshots and edit recordings</h3>
+          <p>Press <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>A</kbd> to pick a window or region. Annotate a screenshot, stitch a scrolling region, copy a PNG or pin the capture in place.</p>
+          <ul>
+            <li>Finished recordings open in a pinned preview. Draw on the video, crop the frame and trim the clip.</li>
+            <li>Choose quality and frame rate, then save or copy MP4, GIF or lossless MKV. Recording and export require FFmpeg.</li>
+          </ul>
         </div>
-        <a class="frame" href="/media/organizer-en.webp"><img src="/media/organizer-en.webp" alt="Desktop folder groups and a pinned note on sample wallpaper" loading="lazy"></a>
+        <div class="feature-visuals">
+          <figure><a class="frame" href="/media/capture-en.webp"><img src="/media/capture-en.webp" alt="Screen selection with a box, arrow and numbered marker on a sample release board" width="1800" height="1104" loading="lazy"></a><figcaption>Capture selection and annotation toolbar</figcaption></figure>
+          <figure><a class="frame" href="/media/recording-en.webp"><img src="/media/recording-en.webp" alt="Pinned recording with a timeline, export format, quality and frame rate controls" width="1200" height="736" loading="lazy"></a><figcaption>Recording preview, timeline and export controls</figcaption></figure>
+        </div>
       </article>
-      <article class="feature">
+      <article class="feature" id="desktop">
         <div>
-          <p class="label">03 / CAPTURE</p>
-          <h3>Capture, annotate, pin and record</h3>
-          <p>Open the picker with <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>A</kbd>. Choose a window or region, then add text, arrows, strokes, mosaic and numbered markers.</p>
-          <ul><li>Pin a capture above windows. Double-click it to close and copy.</li><li>Stitch a scrolling region, or record a region and save it as MP4, GIF or lossless MKV.</li></ul>
+          <p class="label">03 / ORGANIZER &amp; TASKBAR</p>
+          <h3>Organize the desktop and style the native taskbar</h3>
+          <p>Place the organizer at the top, center or bottom. Sort by name, modification time or group, and search for desktop items. Turning the organizer off restores the original icon visibility.</p>
+          <ul>
+            <li>Optional taskbar styling centers power and search, apps and the system tray on the primary display on Windows 11 22H2 or later, x64. Windows Search and tray menus stay available.</li>
+            <li>The bar can hide when a full-screen app or window covers it. Move the pointer to the bottom edge to reveal it.</li>
+          </ul>
         </div>
-        <a class="frame" href="/media/capture-en.webp"><img src="/media/capture-en.webp" alt="Screen selection with annotations on a sample release board" loading="lazy"></a>
+        <div class="feature-visuals">
+          <figure><a class="frame" href="/media/organizer-en.webp"><img src="/media/organizer-en.webp" alt="Translucent folder groups on a sample desktop" width="1200" height="736" loading="lazy"></a><figcaption>Desktop organizer groups</figcaption></figure>
+          <figure><a class="frame" href="/media/taskbar-layout.svg"><img src="/media/taskbar-layout.svg" alt="Power and search, apps and the system tray centered on one taskbar" width="1200" height="212" loading="lazy"></a><figcaption>Diagram of the three-section native taskbar</figcaption></figure>
+        </div>
+      </article>
+      <article class="feature" id="notes">
+        <div>
+          <p class="label">04 / DESKTOP NOTES</p>
+          <h3>Keep your to-dos on the desktop</h3>
+          <p>Right-click the desktop background and choose <strong>Light Block Desktop · New Note</strong> to pin a note. On Windows 11, open <strong>Show more options</strong> first. Drag the note to move it, or double-click to edit.</p>
+          <ul><li>Search, set reminders, mark tasks done or archive them in Notes &amp; Tasks.</li><li>Notes save locally. Pinned notes stay visible when you close Settings.</li></ul>
+        </div>
+        <figure><a class="frame" href="/media/notes-en.webp"><img src="/media/notes-en.webp" alt="Notes and Tasks editor beside a pinned weekly checklist on a sample desktop" width="1200" height="736" loading="lazy"></a><figcaption>Notes editor and a pinned desktop note</figcaption></figure>
       </article>
     </section>
     <section class="wrap section">
@@ -79,11 +105,9 @@
       <div class="tools">
         <article><p class="label">01</p><h3>Launcher</h3><p>Find Start menu apps, organizer items and tools, or evaluate a simple expression.</p></article>
         <article><p class="label">02</p><h3>Clipboard history</h3><p>Opt in to search, pin and copy local text and images.</p></article>
-        <article><p class="label">03</p><h3>Notes &amp; tasks</h3><p>Manage reminders and to-dos. Pin notes to your desktop and drag them into place.</p></article>
-        <article><p class="label">04</p><h3>File workbench</h3><p>Preview files, calculate SHA-256 and review batch renames with undo.</p></article>
-        <article><p class="label">05</p><h3>Focus workspaces</h3><p>Save wallpaper and folder layouts, then use focus and break timers.</p></article>
+        <article><p class="label">03</p><h3>File workbench</h3><p>Preview files, calculate SHA-256 and review batch renames with undo.</p></article>
+        <article><p class="label">04</p><h3>Focus workspaces</h3><p>Save wallpaper and folder layouts, then use focus and break timers.</p></article>
       </div>
-      <a class="frame tools-preview" href="/media/settings-tools-en.webp"><img src="/media/settings-tools-en.webp" alt="Productivity tools in Light Block Desktop" loading="lazy"></a>
     </section>
     <section class="wrap section install-grid" id="install">
       <div>
@@ -95,8 +119,8 @@
       <div>
         <details><summary>How do I upgrade?</summary><p>Quit the previous version and run the new installer. It keeps your existing settings. Extract the full portable ZIP before launching.</p></details>
         <details><summary>Does recording need anything extra?</summary><p>Recording and media export require FFmpeg on PATH. Wallpaper playback, still screenshots and desktop folders work with the bundled runtime.</p></details>
-        <details><summary>Where is my data stored?</summary><p>The settings folder is %LOCALAPPDATA%\StillWallpaper. Wallpaper, desktop files and clipboard history are handled on your device.</p></details>
-        <details><summary>How is the language selected?</summary><p>The app uses Simplified Chinese for Chinese Windows display languages and English otherwise. Setup also includes a Traditional Chinese wizard.</p></details>
+        <details><summary>Where is my data stored?</summary><p>Settings and wallpapers live in the <code>data</code> folder beside the app. The first launch copies your previous settings. A read-only app folder uses <code>%LOCALAPPDATA%\StillWallpaper</code>.</p></details>
+        <details><summary>How is the language selected?</summary><p>The app follows the Windows display language by default. Switch between English and Simplified Chinese in the upper-right corner of Settings. Setup also includes Traditional Chinese.</p></details>
       </div>
     </section>
   </main>
