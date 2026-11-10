@@ -64,3 +64,7 @@ Windows x64，Python 3.11 和 PySide6。修改之前可把 [二开 Skill](skills
 [![GitHub stars](https://img.shields.io/github/stars/GalokPeng/light-block-desktop?style=flat)](https://github.com/GalokPeng/light-block-desktop/stargazers)
 
 [![Star History Chart](https://api.star-history.com/svg?repos=GalokPeng/light-block-desktop&type=Date)](https://www.star-history.com/#GalokPeng/light-block-desktop&Date)
+
+# 致谢与交流
+
+[Linux Do](https://linux.do/)
