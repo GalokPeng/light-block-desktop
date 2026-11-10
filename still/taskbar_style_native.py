@@ -113,7 +113,10 @@ def taskbar(leased=None, shifted_x=None):
         raise OSError("pending")
     bounds = window_bounds(hwnd)
     tray_bounds = window_bounds(tray)
-    x, y, width, height = win32.target_monitor()["rect"]
+    try:
+        x, y, width, height = win32.target_monitor()["rect"]
+    except OSError as exc:
+        raise OSError("pending") from exc
     pid = process_id(hwnd)
     same_shell = leased is not None and (hwnd, pid) == (leased.hwnd, leased.pid)
     if same_shell and not tray_fits(bounds, tray_bounds):
@@ -122,9 +125,11 @@ def taskbar(leased=None, shifted_x=None):
         tray_bounds = window_bounds(tray)
     left, top, right, bottom = bounds
     owned_position = leased is not None and (hwnd, pid, left) == (leased.hwnd, leased.pid, shifted_x)
-    if ((left != x and not owned_position) or right - left != width or bottom != y + height
-            or not 0 < bottom - top < height // 4 or win32.GetWindowLong(hwnd, -20) & 0x400000):
+    if win32.GetWindowLong(hwnd, -20) & 0x400000:
         raise OSError("unsupported")
+    if ((left != x and not owned_position) or right - left != width or bottom != y + height
+            or not 0 < bottom - top < height // 4):
+        raise OSError("pending" if same_shell else "unsupported")
     if not tray_fits(bounds, tray_bounds):
         raise OSError("pending" if same_shell else "unsupported")
     return Taskbar(hwnd, tray, pid, bounds, tray_bounds, x)
@@ -242,7 +247,10 @@ class BottomWorkArea:
         if before[3] != bar.bounds[1]:
             return  # Already expanded, or another appbar also owns this edge.
         after = (*before[:3], bar.bounds[3])
-        self.screen = win32.target_monitor()["name"]
+        try:
+            self.screen = win32.target_monitor()["name"]
+        except OSError:
+            return  # The display disappeared between positioning and expansion.
         self.original, self.expanded = before, after
         set_primary_work_area(after)
         if primary_work_area() == after:
@@ -251,7 +259,11 @@ class BottomWorkArea:
     def restore(self):
         if self.original is None:
             return
-        if win32.target_monitor()["name"] == self.screen:
+        try:
+            screen = win32.target_monitor()["name"]
+        except OSError:
+            screen = None
+        if screen is not None and screen == self.screen:
             current = primary_work_area()
             if current == self.expanded:
                 set_primary_work_area(self.original)

@@ -5,6 +5,7 @@ from PySide6.QtGui import QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from .i18n import tr
+from .desktop_windows import live_screen, screen_monitor
 from .scroll_match import ScrollMatch, match_scroll
 
 
@@ -48,9 +49,10 @@ class ScrollCapture(QWidget):
         from .capture_frame import CaptureFrame, exclude_from_capture
         from .scroll_wheel import ScrollWheel
         self.workbench, self.composite, self.previous = workbench, image, image
-        self.capture_rect, self.screen = rect, screen
+        self.capture_rect, self.source_screen = rect, screen
         self.region = logical_region(rect, screen)
-        self.preview_limit = min(320, max(110, screen.availableGeometry().height() // 2))
+        screen_area, area = screen.geometry(), screen.availableGeometry()
+        self.preview_limit = min(320, max(110, area.height() // 2))
         self.pending = None
         self.pages = 1
         self.last_append = None
@@ -88,7 +90,8 @@ class ScrollCapture(QWidget):
         self.status = label(tr("已采集 1 屏"), "muted", True)
         layout.addWidget(self.status)
         row = QHBoxLayout()
-        row.addWidget(button(tr("采集下一屏"), self.capture_next, "primary"))
+        self.capture_button = button(tr("采集下一屏"), self.capture_next, "primary")
+        row.addWidget(self.capture_button)
         self.undo_button = button(tr("撤销"), self.undo_append)
         self.undo_button.setEnabled(False)
         row.addWidget(self.undo_button)
@@ -108,20 +111,21 @@ class ScrollCapture(QWidget):
         layout.addLayout(manual)
         self.update_thumbnail()
         self.adjustSize()
-        self.outline = CaptureFrame(self.region, screen, parent=self)
+        self.outline = CaptureFrame(self.region, screen_area, parent=self)
         self.capture_excluded = exclude_from_capture(self)
         exclude_from_capture(self.outline)
-        area = screen.availableGeometry()
         # Reserve the maximum card height so adding pages never has to re-dock it.
         max_size = QSize(self.width(), self.height() - self.thumbnail.height() + self.preview_limit + 32)
         position = beside_region(self.region, area, max_size, self.PREVIEW_MARGIN)
         if position is None:
-            area = next((item.availableGeometry() for item in QApplication.screens() if item is not screen), area)
+            area = next((item.availableGeometry() for item in QApplication.screens()
+                         if item is not screen and live_screen(item)), area)
             position = area.topRight()-QPoint(self.width()+14, -14)
         self.move(position)
         self.wheel = ScrollWheel(self.capture_rect, self.wheel_down)
         if not self.wheel.start():
             self.hint.setText(tr("滚轮监听不可用，可用「采集下一屏」。"))
+        self.workbench.controller.app.screenRemoved.connect(self.screen_removed)
 
     def wheel_down(self):
         self.wheel_timer.start()
@@ -138,7 +142,8 @@ class ScrollCapture(QWidget):
         self.adjustSize()
 
     def showEvent(self, event):
-        self.outline.show()
+        if self.source_screen is not None:
+            self.outline.show()
         super().showEvent(event)
 
     def hideEvent(self, event):
@@ -156,6 +161,9 @@ class ScrollCapture(QWidget):
         self.capture_next()
 
     def capture_next(self):
+        if not live_screen(self.source_screen):
+            self.capture_source_lost()
+            return
         if self.capture_timer.isActive():
             return
         if not self.capture_excluded and self.overlaps_capture():
@@ -165,14 +173,33 @@ class ScrollCapture(QWidget):
         else:
             self.grab_next()
 
-    def grab_next(self):
-        if not self.screen or self.screen not in self.workbench.controller.app.screens():
+    def screen_removed(self, screen):
+        if screen is self.source_screen:
+            self.capture_source_lost()
+
+    def capture_source_lost(self):
+        self.source_screen = None
+        self.wheel.close()
+        self.wheel_timer.stop()
+        self.sample_timer.stop()
+        self.capture_timer.stop()
+        self.capture_button.setEnabled(False)
+        self.outline.hide()
+        self.status.setText(tr("原显示器已断开，请重新开始选区。"))
+        if not self.isVisible():
             self.show()
-            self.status.setText(tr("原显示器已断开，请重新开始选区。"))
+
+    def grab_next(self):
+        screen = self.source_screen
+        if not live_screen(screen):
+            self.capture_source_lost()
             return
-        from . import win32
-        origin_x, origin_y = win32.target_monitor(self.screen.name())["rect"][:2]
-        image = self.screen.grabWindow(0).toImage()
+        try:
+            origin_x, origin_y = screen_monitor(screen.geometry())["rect"][:2]
+        except OSError:
+            self.capture_source_lost()
+            return
+        image = screen.grabWindow(0).toImage()
         image = image.copy(self.capture_rect.translated(-origin_x, -origin_y))
         image.setDevicePixelRatio(1)
         if not self.isVisible():

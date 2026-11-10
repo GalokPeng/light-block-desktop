@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .i18n import tr
 
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 APP_NAME = "轻块桌面"
 DEFAULT_ORGANIZER_TITLE = "桌面收纳"
 DEFAULT_CAPTURE_SHORTCUT = "Ctrl+Alt+A"

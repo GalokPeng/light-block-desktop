@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDateTimeEdit
     QListWidget, QListWidgetItem, QMenu, QPlainTextEdit, QVBoxLayout, QWidget)
 
 from .i18n import tr
-from .desktop_windows import desktop_layer, desktop_owner, DesktopWatcher, paint_desktop_panel
+from .desktop_windows import current_screen, desktop_layer, desktop_owner, DesktopWatcher, live_screen, paint_desktop_panel
 from .productivity_model import utc_now
 
 
@@ -70,9 +70,10 @@ class NotePin(QWidget):
 
     def place(self, position):
         desired = QRect(position, self.size())
-        screen = QApplication.screenAt(desired.center()) or next(
-            (screen for screen in QApplication.screens() if screen.availableGeometry().intersects(desired)),
-            QApplication.primaryScreen())
+        screen = QApplication.screenAt(desired.center())
+        if not live_screen(screen):
+            screen = current_screen(next((screen for screen in QApplication.screens()
+                if live_screen(screen) and screen.availableGeometry().intersects(desired)), None))
         if screen is not None:
             area = screen.availableGeometry()
             position = QPoint(max(area.left(), min(position.x(), area.right()-self.width()+1)),
@@ -196,7 +197,8 @@ class NotesEngine(QObject):
             if ident not in self.pins:
                 pin = NotePin(self, row)
                 self.pins[ident] = pin
-                area = QApplication.primaryScreen().availableGeometry()
+                screen = current_screen()
+                area = screen.availableGeometry() if screen is not None else pin.geometry()
                 x = row["pin_x"] if row["pin_x"] is not None else area.x()+140+(len(self.pins)%6)*32
                 y = row["pin_y"] if row["pin_y"] is not None else area.y()+min(400,area.height()//3)+(len(self.pins)%6)*20
                 pin.place(QPoint(x, y))

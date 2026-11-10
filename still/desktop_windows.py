@@ -7,7 +7,8 @@ import sys
 import uuid
 from pathlib import Path
 from PySide6.QtCore import QAbstractNativeEventFilter, QCoreApplication, QObject, QRectF, QSizeF, Qt, Signal
-from PySide6.QtGui import QColor, QImage, QLinearGradient, QPen, QPixmap
+from PySide6.QtGui import QColor, QGuiApplication, QImage, QLinearGradient, QPen, QPixmap
+from shiboken6 import isValid
 
 from .i18n import tr
 from . import win32 as api
@@ -15,6 +16,30 @@ from . import win32 as api
 
 class MARGINS(C.Structure):
     _fields_ = [("left", C.c_int), ("right", C.c_int), ("top", C.c_int), ("bottom", C.c_int)]
+
+
+def live_screen(screen):
+    return screen is not None and isValid(screen) and screen in QGuiApplication.screens()
+
+
+def current_screen(preferred=None):
+    screens = [screen for screen in QGuiApplication.screens() if isValid(screen)]
+    if preferred in screens:
+        return preferred
+    primary = QGuiApplication.primaryScreen()
+    if primary in screens:
+        return primary
+    return next(iter(screens), None)
+
+
+def screen_monitor(area):
+    # On Windows Qt scales the screen size, but retains the native origin.
+    # QScreen.name() can be a display model instead of a Win32 device name.
+    origin = area.x(), area.y()
+    for monitor in api.monitors():
+        if monitor["rect"][:2] == origin:
+            return monitor
+    raise OSError(tr("无法获取显示器信息。"))
 
 
 def desktop_owner():

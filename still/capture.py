@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QHBoxLayout, QInputDial
 from .i18n import tr
 from .capture_text import TEXT_SIZES, AnnotationHistory, InlineText, annotation_font
 from .capture_tools import DOCK_STYLE, NUMBER_SIZES, STROKE_SIZES, DrawingTools, divider, draw_colors, icon_button, strip
+from .desktop_windows import current_screen
 
 SHAPES = {"rect", "ellipse"}
 MOSAICS = {"mosaic", "mosaic_brush"}
@@ -585,12 +586,15 @@ class PinWindow(QWidget):
         if geometry is not None:
             self.setGeometry(geometry.adjusted(-margin, -margin, margin, margin))
         else:
-            screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
-            area = screen.availableGeometry()
-            factor = min(1, 620/image.width(), (area.width()-40)/image.width(), (area.height()-70)/image.height())
+            screen = current_screen(QApplication.screenAt(QCursor.pos()))
+            area = screen.availableGeometry() if screen is not None else None
+            factor = min(1, 620/image.width())
+            if area is not None:
+                factor = min(factor, (area.width()-40)/image.width(), (area.height()-70)/image.height())
             self.resize(QSize(round(image.width()*factor), round(image.height()*factor)).expandedTo(
                 self.minimum_photo) + QSize(2*margin, 2*margin))
-            self.move(area.center()-self.rect().center())
+            if area is not None:
+                self.move(area.center()-self.rect().center())
             self.grip.show()
         self.show_grip = geometry is None
         QShortcut(QKeySequence("Escape"), self, lambda: self.stop_editing() if self.editing else self.close())
@@ -683,7 +687,9 @@ class PinWindow(QWidget):
         self.update()
 
     def fit_size(self, size, anchor=None):
-        screen = self.screen() or QApplication.primaryScreen()
+        screen = current_screen(self.screen())
+        if screen is None:
+            return
         bounds = screen.availableGeometry()
         margin = PIN_GLOW_MARGIN if self.border_visible else 0
         minimum = self.minimum_photo + QSize(2*margin, 2*margin+self.dock_height)

@@ -11,6 +11,7 @@ from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from .i18n import tr
+from .desktop_windows import current_screen, live_screen
 from .productivity_model import ToolsDB
 
 
@@ -28,6 +29,7 @@ class Workbench(QObject):
         self.record_bar = None
         self.record_frame = None
         self.record_pending = None
+        self.record_screen = None
         self.record_placement = None
         self.record_started = 0
         self.record_timer = QTimer(self)
@@ -44,6 +46,7 @@ class Workbench(QObject):
         self.selection_timer = QTimer(self)
         self.selection_timer.setSingleShot(True)
         self.selection_timer.timeout.connect(self.begin_selection)
+        controller.app.screenRemoved.connect(self.screen_removed)
         if controller.store.settings.clipboard_enabled:
             self.clipboard()
         if controller.store.settings.notes_background:
@@ -131,7 +134,9 @@ class Workbench(QObject):
         if self.selector is not None and isValid(self.selector):
             self.selector.raise_()
             return
-        screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
+        screen = current_screen(QApplication.screenAt(QCursor.pos()))
+        if screen is None:
+            return
         self.selection_pending = True
         window = self.controller.window
         was_visible = window is not None and window.isVisible() and not window.isMinimized()
@@ -161,9 +166,11 @@ class Workbench(QObject):
                 self.finish_capture(action, image, rect, screen)
                 QTimer.singleShot(0, self.controller.maybe_quit)
 
-        if screen is None or not isValid(screen) or screen not in self.controller.app.screens():
-            cancelled()
-            return
+        if not live_screen(screen):
+            screen = current_screen(QApplication.screenAt(QCursor.pos()))
+            if screen is None:
+                cancelled()
+                return
         try:
             from .capture_overlay import CaptureOverlay
             selector = CaptureOverlay(screen, mode)
@@ -179,6 +186,9 @@ class Workbench(QObject):
 
     def finish_capture(self, action, image, rect, screen):
         try:
+            if action in {"record", "longshot", "pin"} and not live_screen(screen):
+                self.error(tr("原显示器已断开，请重新开始选区。"))
+                return
             if action == "record":
                 self.record_region(rect, screen)
                 return
@@ -195,6 +205,15 @@ class Workbench(QObject):
                 self.save_capture(image)
         except (OSError, RuntimeError, ValueError) as exc:
             self.error(str(exc))
+
+    def screen_removed(self, screen):
+        if self.closing or screen is None:
+            return
+        selector = self.selector
+        if selector is not None and isValid(selector) and selector.screen_source is screen:
+            selector.close()
+        if screen is self.record_screen and self.recording:
+            self.record()
 
     def save_capture(self, image):
         store = self.controller.store
@@ -243,13 +262,14 @@ class Workbench(QObject):
         if self.record_pending is not None:
             self.record_timer.stop()
             self.record_pending = None
+            self.record_screen = None
             self.record_placement = None
             self.close_record_bar()
             self.record_changed()
             return
         if self._recorder is not None and self._recorder.active:
             self._recorder.stop()
-            if self.record_bar:
+            if self.record_bar is not None and isValid(self.record_bar):
                 self.record_bar.finishing()
             return
         self.open_capture("record")
@@ -264,9 +284,11 @@ class Workbench(QObject):
         directory = self.controller.store.directory / "recordings"
         name = "Still_"+datetime.now().strftime("%Y%m%d_%H%M%S")+"_"+uuid.uuid4().hex[:6]+suffix
         geometry = logical_region(rect, screen)
+        screen_area = screen.geometry()
+        self.record_screen = screen
         self.record_placement = (geometry, rect.size(), settings.record_fps)
-        self.record_bar = RecordingBar(self, rect, screen)
-        self.record_frame = CaptureFrame(geometry, screen, recording=True)
+        self.record_bar = RecordingBar(self, geometry, screen)
+        self.record_frame = CaptureFrame(geometry, screen_area, recording=True)
         self.record_frame.show()
         self.record_pending = (rect, directory/name, lossless, settings.record_fps)
         self.record_changed()
@@ -278,6 +300,8 @@ class Workbench(QObject):
             return
         rect, path, lossless, fps = request
         try:
+            if not live_screen(self.record_screen):
+                raise OSError(tr("原显示器已断开，请重新开始选区。"))
             self.record_started = time.monotonic()
             self.recorder().start(rect, path, lossless=lossless, fps=fps)
             if self.record_bar:
@@ -303,6 +327,7 @@ class Workbench(QObject):
         self.changed.emit()
 
     def record_completed(self, path):
+        self.record_screen = None
         placement, self.record_placement = self.record_placement, None
         self.close_record_bar()
         if placement is None or self.closing or self.controller.quit_timer.isActive():
@@ -312,6 +337,7 @@ class Workbench(QObject):
         self.show("recording-result-"+uuid.uuid4().hex, lambda: RecordingResult(self, path, duration, *placement), activate=False)
 
     def record_error(self, message):
+        self.record_screen = None
         self.record_placement = None
         self.close_record_bar()
         if self.closing:
@@ -367,6 +393,7 @@ class Workbench(QObject):
         self.closing = True
         self.record_timer.stop()
         self.record_pending = None
+        self.record_screen = None
         self.close_record_bar()
         self.selection_timer.stop()
         self.selection_pending = False

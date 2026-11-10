@@ -15,12 +15,13 @@ from .capture_icons import capture_icon
 from .capture_tools import DOCK_STYLE, DrawingTools, divider, icon_button, strip
 from .i18n import tr
 from .capture_frame import exclude_from_capture
-from .capture_overlay import beside_region, logical_region
+from .capture_overlay import beside_region
+from .desktop_windows import current_screen, live_screen
 from .media_tools import FFmpegJob, video_commands
 
 
 class RecordingBar(QWidget):
-    def __init__(self, workbench, physical, screen):
+    def __init__(self, workbench, region, screen):
         super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint |
                          Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowDoesNotAcceptFocus)
         from .ui import STYLE, button, label
@@ -38,9 +39,9 @@ class RecordingBar(QWidget):
         self.setFixedWidth(225)
         self.adjustSize()
         area = screen.availableGeometry()
-        position = beside_region(logical_region(physical, screen), area, self.size())
+        position = beside_region(region, area, self.size())
         if position is None:
-            others = [s.availableGeometry() for s in QApplication.screens() if s is not screen]
+            others = [s.availableGeometry() for s in QApplication.screens() if s is not screen and live_screen(s)]
             if others:
                 position = others[0].topLeft()+QPoint(12, 12)
         self.move(position if position is not None else area.topRight()-QPoint(self.width()+12, -12))
@@ -227,6 +228,12 @@ class RecordingResult(QWidget):
         self.player.errorOccurred.connect(lambda _, message: self.set_status(message))
         self.select_tool("move")
         margin = PIN_GLOW_MARGIN
+        if not live_screen(QApplication.screenAt(geometry.center())):
+            screen = current_screen()
+            if screen is not None:
+                area = screen.availableGeometry().adjusted(margin, margin, -margin, -margin)
+                geometry = QRect(geometry.topLeft(), geometry.size().boundedTo(area.size()))
+                geometry.moveCenter(area.center())
         self.setGeometry(geometry.adjusted(-margin, -margin, margin, margin))
         self.player.setSource(QUrl.fromLocalFile(str(self.source)))
         self.player.play()
@@ -247,7 +254,9 @@ class RecordingResult(QWidget):
         if not hasattr(self, "toolbar"):
             return
         self.toolbar.adjustSize()
-        screen = QApplication.screenAt(self.geometry().center()) or self.screen()
+        screen = current_screen(QApplication.screenAt(self.geometry().center()))
+        if screen is None:
+            return
         area = screen.availableGeometry()
         size = self.toolbar.size()
         gap = 7

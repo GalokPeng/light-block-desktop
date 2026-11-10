@@ -65,7 +65,8 @@ class TaskbarStyle(QObject):
                 self.schedule_refresh()
 
     def refresh(self):
-        if self.process.state() != QProcess.ProcessState.Running or self.stopping:
+        if (self.stopping or self.parent().screen_area is None
+                or self.process.state() != QProcess.ProcessState.Running):
             return
         if self.pending:
             self.dirty = True
@@ -86,6 +87,9 @@ class TaskbarStyle(QObject):
                 self.fail(result["error"])
                 return
             if result.get("waiting"):
+                if self.parent().screen_area is None:
+                    self.retries = 0
+                    return
                 self.retries += 1
                 if self.retries > 12:
                     self.fail("failed")

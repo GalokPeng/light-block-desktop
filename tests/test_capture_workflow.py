@@ -3,17 +3,54 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from PySide6.QtCore import QPoint, QPointF, QRect, QSize, Qt
+from PySide6.QtCore import QObject, QPoint, QPointF, QRect, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QImage, QPixmap, QWheelEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QToolButton
+from shiboken6 import delete
 
 from still.capture import AnnotationCanvas, PinWindow, next_number, render_operations
 from still.capture_overlay import CaptureOverlay, beside_region, pixel_rect
 from still.desktop_icons import DesktopIconLease
+from still.desktop_windows import screen_monitor
 from still.i18n import tr
 from still.model import Store
 from still.organizer_model import Collections
+from still.scroll_capture import ScrollCapture
+from still.workbench import Workbench
+
+
+class CaptureScreenLossTests(unittest.TestCase):
+    def test_scaled_secondary_screen_matches_native_origin_and_never_falls_back(self):
+        primary = {"rect": (0, 0, 1920, 1080), "primary": True}
+        secondary = {"rect": (-3840, -200, 3840, 2160), "primary": False}
+        with patch("still.desktop_windows.api.monitors", return_value=[primary, secondary]):
+            self.assertIs(screen_monitor(QRect(-3840, -200, 2560, 1440)), secondary)
+            with self.assertRaises(OSError):
+                screen_monitor(QRect(1920, 0, 800, 600))
+
+    def test_capture_actions_preserve_frozen_pixels_without_a_live_screen(self):
+        screen = QObject()
+        delete(screen)
+        workbench = Mock()
+        image = QImage(120, 80, QImage.Format.Format_RGB32)
+        rect = QRect(0, 0, 120, 80)
+        for action in ("record", "longshot", "pin"):
+            with self.subTest(action=action):
+                Workbench.finish_capture(workbench, action, image, rect, screen)
+                workbench.error.assert_called_with(tr("原显示器已断开，请重新开始选区。"))
+        workbench.record_region.assert_not_called()
+        workbench.show.assert_not_called()
+        workbench.pin.assert_not_called()
+        Workbench.finish_capture(workbench, "save", image, rect, screen)
+        workbench.save_capture.assert_called_once_with(image)
+
+    def test_delayed_scroll_grab_stops_on_deleted_screen(self):
+        screen = QObject()
+        delete(screen)
+        scroll = Mock(source_screen=screen)
+        ScrollCapture.grab_next(scroll)
+        scroll.capture_source_lost.assert_called_once_with()
 
 
 class FrozenScreen:
@@ -39,7 +76,7 @@ class CaptureWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.frame = QRect(50, 110, 670, 450)
         self.control = QRect(160, 185, 270, 200)
-        with patch("still.capture_overlay.win32.target_monitor", return_value={"rect": (-1500, 0, 1500, 1050)}), \
+        with patch("still.capture_overlay.screen_monitor", return_value={"rect": (-1500, 0, 1500, 1050)}), \
              patch("still.capture_overlay.native_targets", return_value=[(self.frame, [self.control])]):
             self.overlay = CaptureOverlay(FrozenScreen())
         self.overlay.show()

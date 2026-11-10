@@ -104,6 +104,7 @@
   "恢复不透明": "Reset Opacity",
   "关闭贴图": "Close Pin",
   "无法读取当前屏幕，请检查显示器后重试。": "Couldn't read the current screen. Check your display and try again.",
+  "原显示器已断开，请重新开始选区。": "The original display disconnected. Start a new capture to select a region.",
   "轻块桌面 · 截图选区": "Light Block Desktop · Capture Region",
   "智能窗口": "Detect Windows",
   "手动选区": "Select Region",

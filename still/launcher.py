@@ -8,7 +8,7 @@ from PySide6.QtGui import QCursor, QKeySequence, QShortcut
 from PySide6.QtWidgets import QApplication, QFileIconProvider, QLineEdit, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 
 from .i18n import tr
-from .desktop_windows import open_target, start_menu_folders
+from .desktop_windows import current_screen, open_target, start_menu_folders
 from .organizer_model import entry_name, group_name
 from .productivity_model import calculate
 
@@ -84,9 +84,10 @@ class Launcher(QWidget):
         self.filter()
 
     def showEvent(self, event):
-        screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
-        area = screen.availableGeometry()
-        self.move(area.center().x()-self.width()//2, area.y()+max(50, area.height()//5))
+        screen = current_screen(QApplication.screenAt(QCursor.pos()))
+        if screen is not None:
+            area = screen.availableGeometry()
+            self.move(area.center().x()-self.width()//2, area.y()+max(50, area.height()//5))
         super().showEvent(event)
         self.search.setFocus()
 

@@ -14,6 +14,7 @@ from .capture import (MOSAICS, AnnotationSizer, choose_number, extend_drawing, m
                       operation_rect, paint_mosaic, paint_operation, render_operations)
 from .capture_text import AnnotationHistory, InlineText
 from .capture_tools import DOCK_STYLE, DrawingTools, divider, draw_colors, icon_button, strip
+from .desktop_windows import screen_monitor
 
 
 def pixel_rect(rect, ratio):
@@ -24,9 +25,10 @@ def pixel_rect(rect, ratio):
 
 
 def logical_region(physical, screen):
-    x, y = win32.target_monitor(screen.name())["rect"][:2]
+    area = screen.geometry()
+    x, y = screen_monitor(area)["rect"][:2]
     ratio = screen.devicePixelRatio()
-    return pixel_rect(physical.translated(-x, -y), 1/ratio).translated(screen.geometry().topLeft())
+    return pixel_rect(physical.translated(-x, -y), 1/ratio).translated(area.topLeft())
 
 
 def beside_region(region, area, size, gap=10):
@@ -112,15 +114,16 @@ class CaptureOverlay(QWidget):
                          Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.NoDropShadowWindowHint)
         self.screen_source = screen
         self.mode = mode
+        geometry = screen.geometry()
         self.snapshot = screen.grabWindow(0)
         if self.snapshot.isNull():
             raise OSError(tr("无法读取当前屏幕，请检查显示器后重试。"))
         self.ratio = self.snapshot.devicePixelRatio()
-        self.monitor = win32.target_monitor(screen.name())
+        self.monitor = screen_monitor(geometry)
         self.setWindowTitle(tr("轻块桌面 · 截图选区"))
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)
-        self.setGeometry(screen.geometry())
+        self.setGeometry(geometry)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.targets = native_targets(self.monitor, self.ratio, self.rect())

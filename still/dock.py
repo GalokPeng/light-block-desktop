@@ -9,9 +9,10 @@ from pathlib import Path
 from PySide6.QtCore import QElapsedTimer, QEasingCurve, QEvent, QFileInfo, QPoint, QPointF, QProcess, QRectF, QSize, Qt, QTimer, QVariantAnimation
 from PySide6.QtGui import QColor, QCursor, QLinearGradient, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QFileDialog, QFileIconProvider, QMenu, QMessageBox, QToolTip, QWidget
+from shiboken6 import isValid
 
 from . import dock_glass, dock_windows, win32
-from .desktop_windows import cropped_icon, open_target, paint_icon
+from .desktop_windows import cropped_icon, current_screen, open_target, paint_icon, screen_monitor
 from .dock_search import DockSearch
 from .i18n import tr
 from .model import APPS_FOLDER, dock_target_key, normalize_dock_pins
@@ -26,6 +27,7 @@ CONTROL_SIZE = 39
 CONTROL_WIDTH = 128
 GROUP_GAP = 6
 EDGE_RESERVE = 24
+SCREEN_SIGNALS = ("availableGeometryChanged", "geometryChanged", "logicalDotsPerInchChanged")
 POWER_SLOT, SEARCH_SLOT = -2, -3
 EXPLORER = str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "explorer.exe")
 PASSIVE_WINDOW = (Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint |
@@ -132,6 +134,8 @@ class Dock(QWidget):
         self.scale_start = []
         self.scale_end = []
         self.screen_source = None
+        self.screen_area = None
+        self.screen_dpr = 1.0
         self.monitor_rect = (0, 0, 0, 0)
         self.tray_bounds = None
         self.tray_ready = False
@@ -166,8 +170,13 @@ class Dock(QWidget):
         self.taskbar_style.failed.connect(self.style_failed)
         self.watcher.shell_changed.connect(self.taskbar_style.refresh)
         self.watcher.foreground_changed.connect(self.foreground_changed)
-        self.controller.app.primaryScreenChanged.connect(self.bind_screen)
-        self.bind_screen(self.controller.app.primaryScreen())
+        self.screen_timer = QTimer(self, singleShot=True)
+        self.screen_timer.timeout.connect(self.rebind_screen)
+        app = self.controller.app
+        app.primaryScreenChanged.connect(self.schedule_screen_refresh)
+        app.screenAdded.connect(self.schedule_screen_refresh)
+        app.screenRemoved.connect(self.screen_removed)
+        self.rebind_screen()
         self.refresh_theme()
         self.refresh_shortcuts()
         self.refresh_pending = True
@@ -178,23 +187,53 @@ class Dock(QWidget):
         pins = self.settings.dock_pins
         return pins if pins is not None else [EXPLORER]
 
+    def schedule_screen_refresh(self, *_):
+        self.screen_timer.start(0)
+
+    def screen_removed(self, screen):
+        if screen is self.screen_source:
+            self.bind_screen(None)
+        self.schedule_screen_refresh()
+
+    def rebind_screen(self):
+        self.bind_screen(current_screen())
+
     def bind_screen(self, screen):
-        if self.screen_source is not None and self.screen_source in self.controller.app.screens():
-            for name in ("availableGeometryChanged", "geometryChanged", "logicalDotsPerInchChanged"):
-                getattr(self.screen_source, name).disconnect(self.screen_changed)
-        self.screen_source = screen
-        if screen is not None:
-            for name in ("availableGeometryChanged", "geometryChanged", "logicalDotsPerInchChanged"):
-                getattr(screen, name).connect(self.screen_changed)
+        previous = self.screen_source
+        if screen is not previous:
+            if previous is not None and isValid(previous):
+                for name in SCREEN_SIGNALS:
+                    getattr(previous, name).disconnect(self.screen_changed)
+                previous.destroyed.disconnect(self.schedule_screen_refresh)
+            self.screen_source = screen
+            if screen is not None:
+                for name in SCREEN_SIGNALS:
+                    getattr(screen, name).connect(self.screen_changed)
+                screen.destroyed.connect(self.schedule_screen_refresh)
         self.screen_changed()
 
     def screen_changed(self, *_):
+        # A Windows display change can destroy the QScreen before queued Dock
+        # events run. Layout and pointer tracking use these value snapshots.
+        self.screen_area = None
         screen = self.screen_source
-        if screen is not None:
-            self.monitor_rect = win32.target_monitor(screen.name())["rect"]
+        if screen is not None and isValid(screen):
+            area, ratio = screen.geometry(), screen.devicePixelRatio()
+            try:
+                self.monitor_rect = screen_monitor(area)["rect"]
+            except OSError:
+                self.screen_timer.start(250)
+            else:
+                self.screen_area = area
+                self.screen_dpr = ratio
+        if self.screen_area is None:
+            self.hide()
+            self.tray_frame.hide()
+            self.layout_glass()
         self.layout_entries()
         self.sync_visibility()
-        self.taskbar_style.schedule_refresh()
+        if self.screen_area is not None:
+            self.taskbar_style.schedule_refresh()
 
     def tray_layout(self, result):
         self.watcher.shell_windows = {result["hwnd"], result["tray"]}
@@ -205,7 +244,7 @@ class Dock(QWidget):
             self.tray_ready = positioned
             self.layout_entries()
             self.sync_visibility()
-        visible = positioned and self.screen_source is not None and not result["hidden"]
+        visible = positioned and self.screen_area is not None and not result["hidden"]
         if visible != self.isVisible():
             if not visible and self.menu is not None:
                 self.menu.close()
@@ -236,11 +275,11 @@ class Dock(QWidget):
             self.taskbar_style.schedule_refresh()
 
     def sync_visibility(self):
-        ready = self.screen_source is not None and self.tray_ready
+        ready = self.screen_area is not None and self.tray_ready
         if ready:
             left, top, right, bottom = self.tray_bounds
             inset, _ = tray_metrics(bottom - top)
-            dpi = self.screen_source.devicePixelRatio()
+            dpi = self.screen_dpr
             origin = left - self.taskbar_style.span
             top, bottom = top + inset, bottom - inset
             self.covered = bool(dock_windows.covering_window(
@@ -258,8 +297,8 @@ class Dock(QWidget):
         self.update_reveal()
 
     def update_reveal(self):
-        if self.covered:
-            screen = self.screen_source.geometry()
+        screen = self.screen_area
+        if self.covered and screen is not None:
             pos = QCursor.pos()
             at_edge = screen.left() <= pos.x() <= screen.right() and screen.bottom() - 1 <= pos.y() <= screen.bottom()
             interactive = self.geometry().united(self.tray_frame.geometry()).adjusted(-4, 0, 4, 3)
@@ -283,7 +322,7 @@ class Dock(QWidget):
         self.taskbar_style.refresh()
 
     def tray_hidden(self):
-        return (not self.tray_ready or self.screen_source is None or self.desktop_settle.isActive()
+        return (not self.tray_ready or self.screen_area is None or self.desktop_settle.isActive()
                 or (self.covered and not self.revealed))
 
     @property
@@ -341,11 +380,10 @@ class Dock(QWidget):
             self.layout_entries()
 
     def layout_entries(self):
-        if self.screen_source is None or self.tray_bounds is None:
+        area = self.screen_area
+        if area is None or self.tray_bounds is None:
             return
-        screen = self.screen_source
-        area = screen.geometry()
-        ratio = screen.devicePixelRatio()
+        ratio = self.screen_dpr
         tray_x, top, tray_right, bottom = self.tray_bounds
         monitor_x, monitor_y, _, _ = self.monitor_rect
         tray_width = round((tray_right - tray_x) / ratio)
@@ -371,15 +409,14 @@ class Dock(QWidget):
             self.tray_frame.update()
             self.layout_glass()
         self.taskbar_style.set_span(round(span * ratio))
-        self.prepare_visuals()
+        self.prepare_visuals(ratio)
         if len(self.scales) != count:
             self.animation.stop()
             self.hover = -1
             self.scales = [1.0] * count
         self.update()
 
-    def prepare_visuals(self):
-        dpr = self.screen_source.devicePixelRatio()
+    def prepare_visuals(self, dpr):
         updated = {}
         for entry in self.visible_entries:
             key = (entry.target, dpr)
@@ -723,13 +760,17 @@ class Dock(QWidget):
         painter.drawText(search.adjusted(27, 0, -4, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, tr("搜索"))
 
     def stop(self):
+        self.screen_timer.stop()
         self.edge_timer.stop()
         self.desktop_settle.stop()
         self.search.stop()
         self.watcher.stop()
         self.refresh_timer.stop()
         self.taskbar_style.stop()
-        self.controller.app.primaryScreenChanged.disconnect(self.bind_screen)
+        app = self.controller.app
+        app.primaryScreenChanged.disconnect(self.schedule_screen_refresh)
+        app.screenAdded.disconnect(self.schedule_screen_refresh)
+        app.screenRemoved.disconnect(self.screen_removed)
         self.bind_screen(None)
         self.hide()
         self.tray_frame.hide()

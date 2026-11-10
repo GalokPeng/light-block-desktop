@@ -1,3 +1,10 @@
+# v0.7.1 · 显示器切换修复 / Display switching fix
+
+- 修复显示器断开或切换主屏时，Dock 刷新可能反复提示「操作未完成」的问题。显示布局稳定后，Dock 与托盘会重新定位。
+- 截屏会结束已失效的选区。长截图保留已采集的内容，进行中的录屏会结束并保留已录片段。
+- Fixed repeated error notifications from the Dock when a display disconnects or the primary display changes. The Dock and tray reposition once the display layout settles.
+- Screen capture closes an invalid selection. Scrolling capture keeps the images already collected, and an active recording finishes with the footage already captured.
+
 # v0.7.0 · 桌面收纳与录屏贴屏预览 / Desktop organizer and pinned recording previews
 
 - 桌面收纳支持居上、居中和居下，可分别按名称、修改时间或分组排列。新增桌面文件、快捷方式和文件夹会自动归类，收纳栏内可直接搜索。

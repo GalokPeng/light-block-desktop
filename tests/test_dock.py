@@ -3,7 +3,8 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import Mock, patch
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QObject, QRect, Qt
+from shiboken6 import delete
 
 from still import dock_windows
 from still.dock import Dock, group_entries
@@ -13,8 +14,29 @@ from still.taskbar_style_native import BottomWorkArea, HIDDEN_SHAPE, Taskbar, Ta
 
 
 class DockTests(unittest.TestCase):
+    def test_queued_dock_refresh_uses_values_after_screen_destruction(self):
+        class Screen(QObject):
+            def devicePixelRatio(self):
+                return float(self.objectName())
+
+        screen = Screen()
+        screen.setObjectName("1.5")
+        dock = Mock(screen_source=screen, screen_area=QRect(0, 0, 1000, 700),
+                    screen_dpr=screen.devicePixelRatio(), tray_ready=True, tray_bounds=(950, 990, 1200, 1050),
+                    app_left=135, taskbar_style=Mock(span=370))
+        delete(screen)
+        with patch.object(dock_windows, "covering_window", return_value=None) as covering:
+            Dock.sync_visibility(dock)
+            covering.assert_called_once()
+            self.assertFalse(dock.covered)
+        Dock.screen_changed(dock)
+        self.assertIsNone(dock.screen_area)
+        dock.hide.assert_called_once_with()
+        dock.taskbar_style.schedule_refresh.assert_not_called()
+
     def test_dock_and_frame_change_visibility_only_on_native_commit(self):
-        dock = Mock(covered=False, tray_bounds=(900, 944, 1200, 1000), tray_ready=True)
+        dock = Mock(covered=False, screen_area=QRect(0, 0, 1600, 1000),
+                    tray_bounds=(900, 944, 1200, 1000), tray_ready=True)
         dock.menu = None
         Dock.update_reveal(dock)
         dock.sync_material.assert_called_once_with()

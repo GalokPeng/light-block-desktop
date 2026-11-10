@@ -647,14 +647,18 @@ class DesktopShelf(QWidget):
         saved = self.manager.store.settings.organizer_position if self.alignment == "center" else None
         point = QPoint(*saved) if saved is not None else None
         screen = QApplication.screenAt(point) if point is not None else None
-        if screen is not None:
+        if native.live_screen(screen):
             return screen.availableGeometry(), point
-        area = QApplication.primaryScreen().availableGeometry()
+        screen = native.current_screen()
+        if screen is None:
+            area = self.geometry()
+            return area, area.center()
+        area = screen.availableGeometry()
         dock = getattr(self.manager.controller, "dock", None)
         if self.alignment == "bottom" and dock is not None:
             # The Dock releases the native work area so maximized apps can
             # reach the bottom edge. Leave room for it on the desktop itself.
-            area.setBottom(min(area.bottom(), QApplication.primaryScreen().geometry().bottom() - (dock.tray_height or 48)))
+            area.setBottom(min(area.bottom(), screen.geometry().bottom() - (dock.tray_height or 48)))
         return area, area.center()
 
     @staticmethod
@@ -723,9 +727,10 @@ class DesktopShelf(QWidget):
                 return True
         elif kind == QEvent.Type.MouseMove and self.move_anchor is not None:
             point = event.globalPosition().toPoint()
-            screen = QApplication.screenAt(point) or QApplication.primaryScreen()
-            self.move(self.clamp_position(point-self.move_anchor, self.size(), screen.availableGeometry()))
-            self.place_search()
+            screen = native.current_screen(QApplication.screenAt(point))
+            if screen is not None:
+                self.move(self.clamp_position(point-self.move_anchor, self.size(), screen.availableGeometry()))
+                self.place_search()
             return True
         elif kind == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton and self.move_anchor is not None:
             self.end_move(save=True)

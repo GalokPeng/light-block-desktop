@@ -17,7 +17,7 @@ def exclude_from_capture(widget):
 
 
 class CaptureFrame(QWidget):
-    def __init__(self, region, screen, color="#398bff", parent=None, recording=False):
+    def __init__(self, region, screen_area, color="#398bff", parent=None, recording=False):
         super().__init__(parent, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint |
                          Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowTransparentForInput |
                          Qt.WindowType.WindowDoesNotAcceptFocus)
@@ -25,7 +25,7 @@ class CaptureFrame(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.color = QColor(color)
-        self.inner = recording and not screen.geometry().contains(region.adjusted(-3, -3, 3, 3))
+        self.inner = recording and not screen_area.contains(region.adjusted(-3, -3, 3, 3))
         self.setGeometry(region if self.inner else region.adjusted(-3, -3, 3, 3))
         if self.inner:
             exclude_from_capture(self)
