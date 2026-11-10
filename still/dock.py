@@ -2,20 +2,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import ceil
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QEasingCurve, QEvent, QFileInfo, QPoint, QPointF, QProcess, QRectF, QSize, Qt, QTimer, QVariantAnimation
-from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen, QPixmap
+from PySide6.QtCore import QElapsedTimer, QEasingCurve, QEvent, QFileInfo, QPoint, QPointF, QProcess, QRectF, QSize, Qt, QTimer, QVariantAnimation
+from PySide6.QtGui import QColor, QCursor, QLinearGradient, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QFileDialog, QFileIconProvider, QMenu, QMessageBox, QToolTip, QWidget
 
-from . import dock_windows, win32
-from .desktop_windows import open_target
+from . import dock_glass, dock_windows, win32
+from .desktop_windows import cropped_icon, open_target, paint_icon
 from .dock_search import DockSearch
 from .i18n import tr
 from .model import APPS_FOLDER, dock_target_key, normalize_dock_pins
 from .taskbar_style import TaskbarStyle
-from .taskbar_style_native import tray_metrics
+from .taskbar_style_native import tray_metrics, ZORDER_ONLY
 
 SLOT = 57
 INSET = 12
@@ -27,6 +28,9 @@ GROUP_GAP = 6
 EDGE_RESERVE = 24
 POWER_SLOT, SEARCH_SLOT = -2, -3
 EXPLORER = str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "explorer.exe")
+PASSIVE_WINDOW = (Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint |
+                  Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowDoesNotAcceptFocus |
+                  Qt.WindowType.NoDropShadowWindowHint)
 
 
 @dataclass(frozen=True)
@@ -51,13 +55,15 @@ def group_entries(pins, windows, shortcuts):
     return entries
 
 
-def paint_pill(painter, pill, radius, light, tray=False):
+def paint_pill(painter, pill, radius, color, light, opacity, blur=False, tray=False):
     pill = pill.adjusted(0.5, 0.5, -0.5, -0.5)
-    top, bottom = ((248, 252, 255), (226, 236, 240)) if light else ((44, 55, 66), (16, 23, 32))
-    opacity = (54, 39) if tray else ((227, 217) if light else (223, 231))
+    top, bottom = color.lighter(128), color.darker(131)
+    alpha = round(opacity * (0.86 if tray else 1.60 if blur else 2.55))
+    top.setAlpha(alpha)
+    bottom.setAlpha(round(alpha * .90))
     glass = QLinearGradient(pill.topLeft(), pill.bottomLeft())
-    glass.setColorAt(0, QColor(*top, opacity[0]))
-    glass.setColorAt(1, QColor(*bottom, opacity[1]))
+    glass.setColorAt(0, top)
+    glass.setColorAt(1, bottom)
     painter.setBrush(glass)
     painter.setPen(QPen(QColor(255, 255, 255, 218 if light else 71), 1))
     painter.drawRoundedRect(pill, radius, radius)
@@ -65,9 +71,7 @@ def paint_pill(painter, pill, radius, light, tray=False):
 
 class TrayFrame(QWidget):
     def __init__(self, dock):
-        super().__init__(dock, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint |
-                         Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowDoesNotAcceptFocus |
-                         Qt.WindowType.WindowTransparentForInput | Qt.WindowType.NoDropShadowWindowHint)
+        super().__init__(dock, PASSIVE_WINDOW | Qt.WindowType.WindowTransparentForInput)
         self.dock = dock
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
@@ -77,14 +81,34 @@ class TrayFrame(QWidget):
         pill = QRectF(0, inset, self.width(), self.height() - 2 * inset)
         with QPainter(self) as painter:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            paint_pill(painter, pill, self.dock.pill_radius, self.dock.light, tray=True)
+            paint_pill(painter, pill, self.dock.pill_radius, self.dock.color, self.dock.light,
+                       self.dock.settings.dock_opacity, tray=True)
+
+
+class GlassPlate(QWidget):
+    def __init__(self):
+        super().__init__(None, PASSIVE_WINDOW | Qt.WindowType.WindowTransparentForInput)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.accent = None
+
+    def show_under(self, dock, geometry, accent):
+        if self.geometry() != geometry:
+            self.setGeometry(geometry)
+        handle = int(self.winId())
+        if self.accent != accent:
+            if not dock_glass.write_accent(handle, accent):
+                self.hide()
+                return
+            self.accent = accent
+        if not self.isVisible():
+            self.show()
+            win32.SetWindowPos(handle, int(dock.winId()), 0, 0, 0, 0, ZORDER_ONLY)
 
 
 class Dock(QWidget):
     def __init__(self, controller):
-        super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint |
-                         Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowDoesNotAcceptFocus |
-                         Qt.WindowType.NoDropShadowWindowHint)
+        super().__init__(None, PASSIVE_WINDOW)
         self.controller = controller
         self.settings = controller.store.settings
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -114,6 +138,16 @@ class Dock(QWidget):
         self.tray_height = 0
         self.tray_inset = 0
         self.pill_radius = 18
+        self.accent = None
+        self.color = QColor(self.settings.dock_color)
+        self.glass_plates = ()
+        self.covered = False
+        self.revealed = False
+        self.reveal_grace = QElapsedTimer()
+        self.edge_timer = QTimer(self, interval=90)
+        self.edge_timer.timeout.connect(self.update_reveal)
+        self.desktop_settle = QTimer(self, singleShot=True, interval=115)
+        self.desktop_settle.timeout.connect(self.finish_desktop_transition)
         self.tray_frame = TrayFrame(self)
         self.search = DockSearch(self)
         self.search.failed.connect(lambda: self.controller.report_error(tr("无法打开 Windows 搜索。请按 Win+S。")))
@@ -130,9 +164,11 @@ class Dock(QWidget):
         self.taskbar_style = TaskbarStyle(self)
         self.taskbar_style.layout_ready.connect(self.tray_layout)
         self.taskbar_style.failed.connect(self.style_failed)
-        self.watcher.shell_changed.connect(self.taskbar_style.schedule_refresh)
+        self.watcher.shell_changed.connect(self.taskbar_style.refresh)
+        self.watcher.foreground_changed.connect(self.foreground_changed)
         self.controller.app.primaryScreenChanged.connect(self.bind_screen)
         self.bind_screen(self.controller.app.primaryScreen())
+        self.refresh_theme()
         self.refresh_shortcuts()
         self.refresh_pending = True
         self.refresh_tasks()
@@ -169,8 +205,15 @@ class Dock(QWidget):
             self.tray_ready = positioned
             self.layout_entries()
             self.sync_visibility()
-        if self.tray_frame.isVisible():
-            self.tray_frame.raise_()
+        visible = positioned and self.screen_source is not None and not result["hidden"]
+        if visible != self.isVisible():
+            if not visible and self.menu is not None:
+                self.menu.close()
+            self.setVisible(visible)
+            self.tray_frame.setVisible(visible)
+            self.layout_glass()
+            if visible:
+                self.taskbar_style.schedule_refresh()
 
     def style_failed(self, message):
         if self.controller.dock is self:
@@ -189,22 +232,99 @@ class Dock(QWidget):
             self.watcher.known = {window.hwnd for window in self.windows}
             self.rebuild_entries()
         self.sync_visibility()
+        if self.isVisible():
+            self.taskbar_style.schedule_refresh()
 
     def sync_visibility(self):
-        visible = self.screen_source is not None and self.tray_ready and not win32.fullscreen_on(self.monitor_rect)
-        if visible != self.isVisible():
-            if not visible and self.menu is not None:
-                self.menu.close()
-            self.setVisible(visible)
-            self.tray_frame.setVisible(visible)
+        ready = self.screen_source is not None and self.tray_ready
+        if ready:
+            left, top, right, bottom = self.tray_bounds
+            inset, _ = tray_metrics(bottom - top)
+            dpi = self.screen_source.devicePixelRatio()
+            origin = left - self.taskbar_style.span
+            top, bottom = top + inset, bottom - inset
+            self.covered = bool(dock_windows.covering_window(
+                (origin, top, origin + round(CONTROL_WIDTH * dpi), bottom),
+                (origin + round(self.app_left * dpi), top, left - round(GROUP_GAP * dpi), bottom),
+                (left, top, right, bottom)))
+        else:
+            self.covered = False
+        if self.covered and not self.edge_timer.isActive():
+            self.edge_timer.start()
+        elif not self.covered:
+            self.edge_timer.stop()
+            self.revealed = False
+            self.reveal_grace.invalidate()
+        self.update_reveal()
+
+    def update_reveal(self):
+        if self.covered:
+            screen = self.screen_source.geometry()
+            pos = QCursor.pos()
+            at_edge = screen.left() <= pos.x() <= screen.right() and screen.bottom() - 1 <= pos.y() <= screen.bottom()
+            interactive = self.geometry().united(self.tray_frame.geometry()).adjusted(-4, 0, 4, 3)
+            if at_edge or (self.revealed and (interactive.contains(pos) or self.menu is not None)):
+                self.reveal_grace.start()
+                self.revealed = True
+            elif self.reveal_grace.isValid() and self.reveal_grace.elapsed() > 230:
+                self.revealed = False
+                self.reveal_grace.invalidate()
+        self.sync_material()
+
+    def foreground_changed(self, desktop):
+        if self.tray_ready:
+            if desktop and (self.covered or self.taskbar_style.hidden):
+                self.desktop_settle.start()
+            self.sync_visibility()
+            self.taskbar_style.refresh()
+
+    def finish_desktop_transition(self):
+        self.sync_visibility()
+        self.taskbar_style.refresh()
+
+    def tray_hidden(self):
+        return (not self.tray_ready or self.screen_source is None or self.desktop_settle.isActive()
+                or (self.covered and not self.revealed))
 
     @property
     def light(self):
-        return self.settings.settings_theme == "light"
+        return (.2126 * self.color.red() + .7152 * self.color.green() + .0722 * self.color.blue()) >= 145
 
     def refresh_theme(self):
+        self.color = QColor(self.settings.dock_color)
+        self.accent = (dock_glass.acrylic(self.color.rgb() & 0xFFFFFF, self.settings.dock_opacity)
+                       if self.settings.dock_glass and dock_glass.enabled_by_system() else None)
+        self.sync_material()
+        self.layout_glass()
         self.update()
         self.tray_frame.update()
+
+    def sync_material(self):
+        hidden = self.tray_hidden()
+        frame = None if hidden else int(self.tray_frame.winId())
+        self.taskbar_style.set_tray_state(frame, self.accent, hidden)
+
+    def layout_glass(self):
+        if self.accent is None or not self.isVisible():
+            for plate in self.glass_plates:
+                plate.hide()
+            return
+        if not self.glass_plates:
+            self.glass_plates = (GlassPlate(), GlassPlate())
+        # DWM acrylic covers the entire HWND, including pixels outside a
+        # layered window's region. Keep each glass HWND inside its rounded pill.
+        inset = ceil(self.pill_radius * (1 - 2 ** -.5) + 1)
+        for plate, pill in zip(self.glass_plates, self.pill_rects()):
+            inner = pill.adjusted(inset, inset, -inset, -inset).toRect()
+            if not inner.isEmpty():
+                plate.show_under(self, inner.translated(self.geometry().topLeft()), self.accent)
+            else:
+                plate.hide()
+
+    def pill_rects(self):
+        y = self.pill_top
+        height = self.pill_bottom - y
+        return QRectF(0, y, CONTROL_WIDTH, height), QRectF(self.app_left, y, self.app_width, height)
 
     def refresh_shortcuts(self):
         self.shortcuts = {}
@@ -249,6 +369,7 @@ class Dock(QWidget):
             self.tray_frame.setGeometry(panel_left + span, panel_bottom - self.tray_height,
                                         tray_width, self.tray_height)
             self.tray_frame.update()
+            self.layout_glass()
         self.taskbar_style.set_span(round(span * ratio))
         self.prepare_visuals()
         if len(self.scales) != count:
@@ -271,7 +392,7 @@ class Dock(QWidget):
             name, image = dock_windows.package_visual(target)
             fallback = target[len(APPS_FOLDER):].split("_", 1)[0].rsplit(".", 1)[-1]
             if not image.isNull():
-                return name or fallback, QPixmap.fromImage(image)
+                return name or fallback, cropped_icon(QPixmap.fromImage(image))
             entry = next((entry for entry in self.entries if entry.target == target), None)
             path = entry.windows[0].executable if entry and entry.windows else ""
             name = name or fallback
@@ -279,8 +400,9 @@ class Dock(QWidget):
             path = target
             name = tr("文件资源管理器") if dock_target_key(path) == dock_target_key(EXPLORER) else Path(path).stem
         if path and Path(path).suffix.lower() == ".lnk":
-            return name, self.provider.icon(QFileInfo(path)).pixmap(QSize(64, 64), dpr)
-        return name, QPixmap.fromImage(dock_windows.executable_icon(path, round(64 * dpr))) if path else QPixmap()
+            return name, cropped_icon(self.provider.icon(QFileInfo(path)).pixmap(QSize(64, 64), dpr))
+        image = dock_windows.executable_icon(path, round(64 * dpr)) if path else None
+        return name, cropped_icon(QPixmap.fromImage(image)) if image is not None else QPixmap()
 
     def name(self, entry):
         return (self.visuals.get((entry.target, self.icon_dpr)) or self.load_visual(entry.target, self.icon_dpr))[0]
@@ -538,9 +660,10 @@ class Dock(QWidget):
         painter.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.SmoothPixmapTransform)
         y = self.pill_top
         height = self.pill_bottom - y
-        paint_pill(painter, QRectF(0, y, CONTROL_WIDTH, height), self.pill_radius, self.light)
-        paint_pill(painter, QRectF(self.app_left, y, self.app_width, height), self.pill_radius, self.light)
-        ink = QColor("#24483c" if self.light else "#d5ede3")
+        for index, pill in enumerate(self.pill_rects()):
+            blurred = bool(self.glass_plates and self.glass_plates[index].isVisible())
+            paint_pill(painter, pill, self.pill_radius, self.color, self.light, self.settings.dock_opacity, blur=blurred)
+        ink = QColor("#18212b" if self.light else "#edf5fa")
         self.paint_controls(painter, ink)
         icon_bottom = self.pill_bottom - 8
         max_icon = max(1, icon_bottom - y - 2)
@@ -562,21 +685,21 @@ class Dock(QWidget):
                     painter.setPen(QPen(QColor("#d5ede3"), 1.5))
                     painter.drawRoundedRect(box.adjusted(size * 0.29, size * 0.32, -size * 0.29, -size * 0.32), 2, 2)
                 else:
-                    painter.drawPixmap(box, pixmap, QRectF(pixmap.rect()))
+                    paint_icon(painter, pixmap, box)
                 if entry.windows:
                     painter.setPen(Qt.PenStyle.NoPen)
                     painter.setBrush(ink)
                     painter.drawEllipse(QRectF(center - 1.6, icon_bottom + 2, 3.2, 3.2))
             else:
                 painter.setPen(QPen(ink, 1.7, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-                y = box.center().y()
+                symbol_y = box.center().y()
                 if index == len(self.scales) - 1:
-                    painter.drawLine(QPoint(round(center - 5), round(y)), QPoint(round(center + 5), round(y)))
-                    painter.drawLine(QPoint(round(center), round(y - 5)), QPoint(round(center), round(y + 5)))
+                    painter.drawLine(QPoint(round(center - 5), round(symbol_y)), QPoint(round(center + 5), round(symbol_y)))
+                    painter.drawLine(QPoint(round(center), round(symbol_y - 5)), QPoint(round(center), round(symbol_y + 5)))
                 else:
                     painter.setBrush(ink)
                     for offset in (-6, 0, 6):
-                        painter.drawEllipse(QRectF(center + offset - 1, y - 1, 2, 2))
+                        painter.drawEllipse(QRectF(center + offset - 1, symbol_y - 1, 2, 2))
 
     def paint_controls(self, painter, ink):
         y = (self.pill_top + self.pill_bottom) / 2
@@ -600,13 +723,19 @@ class Dock(QWidget):
         painter.drawText(search.adjusted(27, 0, -4, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, tr("搜索"))
 
     def stop(self):
+        self.edge_timer.stop()
+        self.desktop_settle.stop()
         self.search.stop()
         self.watcher.stop()
         self.refresh_timer.stop()
         self.taskbar_style.stop()
         self.controller.app.primaryScreenChanged.disconnect(self.bind_screen)
         self.bind_screen(None)
+        self.hide()
+        self.tray_frame.hide()
+        self.layout_glass()
+        for plate in self.glass_plates:
+            plate.deleteLater()
         if self.menu is not None:
             self.menu.close()
-        self.hide()
         self.deleteLater()

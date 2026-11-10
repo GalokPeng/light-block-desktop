@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QInputDialog, QLineEdit, QListWidget,
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtWidgets import (QColorDialog, QComboBox, QFrame, QHBoxLayout, QInputDialog, QLineEdit, QListWidget,
     QListWidgetItem, QScrollArea, QSlider, QVBoxLayout, QWidget)
 
 from .i18n import tr
-from .organizer_model import SYSTEM_ENTRIES, group_name
+from .organizer_model import SYSTEM_ENTRIES, group_name, organizer_view, view_options
 from .ui import Toggle, button, label
 
 
@@ -27,7 +28,7 @@ class OrganizerPage(QWidget):
         top = QHBoxLayout()
         titles = QVBoxLayout()
         titles.addWidget(label(tr("桌面文件夹"), "section"))
-        titles.addWidget(label(tr("开启后在桌面中央显示分类，并隐藏 Windows 原生图标。"), "muted", True))
+        titles.addWidget(label(tr("开启后在桌面显示收纳面板，并隐藏 Windows 原生图标。"), "muted", True))
         top.addLayout(titles, 1)
         self.enabled = Toggle(self.manager.enabled)
         self.enabled.setAccessibleName(tr("开启桌面收纳"))
@@ -92,11 +93,32 @@ class OrganizerPage(QWidget):
             self.color.addItem(title, key)
         self.color.currentIndexChanged.connect(lambda: self.group_option("color", self.color.currentData()))
         rv.addWidget(self.color)
-        self.icon_size = QComboBox()
-        for size, title in ((32, tr("紧凑图标")), (44, tr("标准图标")), (60, tr("大图标"))):
-            self.icon_size.addItem(title, size)
-        self.icon_size.currentIndexChanged.connect(lambda: self.group_option("icon_size", self.icon_size.currentData()))
+        rv.addSpacing(8)
+        rv.addWidget(label(tr("桌面布局"), "muted"))
+        self.alignment = QComboBox()
+        for key, title in (("top", tr("居上")), ("center", tr("居中")), ("bottom", tr("居下"))):
+            self.alignment.addItem(title, key)
+        self.alignment.currentIndexChanged.connect(lambda: self.global_option("organizer_alignment", self.alignment.currentData()))
+        rv.addWidget(self.alignment)
+        self.view = QComboBox()
+        for key, title in view_options():
+            self.view.addItem(title, key)
+        self.view.currentIndexChanged.connect(self.set_view)
+        rv.addWidget(self.view)
+        rv.addWidget(label(tr("桌面图标大小"), "muted"))
+        self.icon_size = QSlider(Qt.Orientation.Horizontal)
+        self.icon_size.setAccessibleName(tr("桌面图标大小"))
+        self.icon_size.setRange(0, 2)
+        self.icon_size.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.icon_size.setTickInterval(1)
+        self.icon_size.valueChanged.connect(lambda value: self.global_option("organizer_icon_size", (32, 44, 60)[value]))
         rv.addWidget(self.icon_size)
+        sizes = QHBoxLayout()
+        for index, name in enumerate((tr("小"), tr("中"), tr("大"))):
+            if index:
+                sizes.addStretch()
+            sizes.addWidget(label(name, "muted"))
+        rv.addLayout(sizes)
         rv.addSpacing(8)
         rv.addWidget(label(tr("面板透明度"), "muted"))
         self.opacity = QSlider(Qt.Orientation.Horizontal)
@@ -108,6 +130,27 @@ class OrganizerPage(QWidget):
         self.opacity_save.timeout.connect(lambda: self.global_option("organizer_opacity", self.opacity.value()))
         self.opacity.valueChanged.connect(lambda _: self.opacity_save.start())
         rv.addWidget(self.opacity)
+        rv.addSpacing(8)
+        rv.addWidget(label(tr("Dock 和托盘"), "section"))
+        glass_row = QHBoxLayout()
+        glass_row.addWidget(label(tr("磨砂玻璃")))
+        glass_row.addStretch()
+        self.glass = Toggle(window.store.settings.dock_glass)
+        self.glass.setAccessibleName(tr("磨砂玻璃"))
+        self.glass.toggled.connect(lambda value: self.global_option("dock_glass", value))
+        glass_row.addWidget(self.glass)
+        rv.addLayout(glass_row)
+        self.dock_color = button(tr("底栏颜色"), self.choose_dock_color)
+        rv.addWidget(self.dock_color)
+        rv.addWidget(label(tr("底栏不透明度"), "muted"))
+        self.dock_opacity = QSlider(Qt.Orientation.Horizontal)
+        self.dock_opacity.setAccessibleName(tr("底栏不透明度"))
+        self.dock_opacity.setRange(20, 100)
+        self.dock_opacity.setSingleStep(5)
+        self.dock_opacity_save = QTimer(self, singleShot=True, interval=180)
+        self.dock_opacity_save.timeout.connect(lambda: self.global_option("dock_opacity", self.dock_opacity.value()))
+        self.dock_opacity.valueChanged.connect(lambda _: self.dock_opacity_save.start() if not self.updating else None)
+        rv.addWidget(self.dock_opacity)
         rv.addWidget(label(tr("收纳中的项目以入口形式打开。关闭收纳会恢复 Windows 桌面图标的原显示状态。"), "muted", True))
         rv.addStretch()
         # Keep form controls readable on small displays; scroll the settings
@@ -140,6 +183,14 @@ class OrganizerPage(QWidget):
     def refresh(self):
         self.updating = True
         self.enabled.setChecked(self.manager.enabled)
+        settings = self.manager.store.settings
+        self.alignment.setCurrentIndex(self.alignment.findData(settings.organizer_alignment))
+        self.view.setCurrentIndex(self.view.findData(organizer_view(settings)))
+        self.icon_size.setValue((32, 44, 60).index(settings.organizer_icon_size or 44))
+        self.glass.setChecked(settings.dock_glass)
+        self.show_dock_color()
+        if not self.dock_opacity_save.isActive():
+            self.dock_opacity.setValue(settings.dock_opacity)
         self.groups.clear()
         for group in self.manager.collections.groups:
             item = QListWidgetItem(tr("{0}\n{1} 个项目").format(group_name(group), len(group['entries'])))
@@ -158,12 +209,11 @@ class OrganizerPage(QWidget):
         self.selected_id = item.data(Qt.ItemDataRole.UserRole) if item else ""
         group = self.group()
         self.updating = True
-        for widget in (self.name, self.color, self.icon_size):
+        for widget in (self.name, self.color):
             widget.setEnabled(group is not None)
         if group:
             self.name.setText(group_name(group))
             self.color.setCurrentIndex(max(0, self.color.findData(group["color"])))
-            self.icon_size.setCurrentIndex(max(0, self.icon_size.findData(group.get("icon_size", 44))))
         self.updating = False
 
     def toggle(self, value):
@@ -196,9 +246,45 @@ class OrganizerPage(QWidget):
     def global_option(self, key, value):
         if self.updating:
             return
-        setattr(self.manager.store.settings, key, value)
-        self.manager.store.save()
-        self.manager.refresh()
+        settings = self.manager.store.settings
+        previous = getattr(settings, key)
+        if previous == value:
+            return
+        setattr(settings, key, value)
+        try:
+            self.manager.store.save()
+        except OSError as exc:
+            setattr(settings, key, previous)
+            self.refresh()
+            self.manager.error.emit(str(exc))
+            return
+        if key in ("dock_glass", "dock_opacity", "dock_color"):
+            dock = self.window.controller.dock
+            if dock is not None:
+                dock.refresh_theme()
+        else:
+            self.manager.refresh()
+
+    def set_view(self):
+        if not self.updating:
+            self.manager.set_view(self.view.currentData())
+
+    def choose_dock_color(self):
+        settings = self.manager.store.settings
+        color = QColorDialog.getColor(QColor(settings.dock_color), self, tr("底栏颜色"))
+        if color.isValid():
+            self.global_option("dock_color", color.name())
+            self.show_dock_color()
+
+    def show_dock_color(self):
+        swatch = QPixmap(20, 20)
+        swatch.fill(Qt.GlobalColor.transparent)
+        with QPainter(swatch) as painter:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setBrush(QColor(self.manager.store.settings.dock_color))
+            painter.setPen(QColor("#9aa8ba"))
+            painter.drawRoundedRect(1, 1, 17, 17, 5, 5)
+        self.dock_color.setIcon(QIcon(swatch))
 
     def remove(self):
         if self.group():

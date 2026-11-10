@@ -115,11 +115,11 @@ class ToolPalette:
 
 
 class DrawingTools:
-    def __init__(self, row, attach, select, reset_number, *, crop=False):
+    def __init__(self, row, attach, select, reset_number, *, crop=False, groups=GROUPS):
         self.attach = attach
         self.select = select
         self.reset_number = reset_number
-        self.groups = GROUPS + ((("crop",),) if crop else ())
+        self.groups = groups + ((("crop",),) if crop else ())
         self.buttons = {}
         self.choices = {}
         self.panels = {}

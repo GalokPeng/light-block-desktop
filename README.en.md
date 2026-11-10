@@ -18,10 +18,11 @@ Setup installs for the current user by default. Wallpaper playback and still scr
 | Feature | How it works |
 | --- | --- |
 | Wallpaper | Import a still image, GIF or video. Live wallpaper plays from the source file. Choose a display, fit mode and automatic pause conditions |
-| Desktop organizer | Group files by type, open folders in a grid, and customize names, icon sizes and opacity. Disabling it restores the original Windows icon visibility |
-| Capture and annotation | Press `Ctrl+Alt+A` by default. Select a window or area and add text, arrows, numbers, strokes or mosaic. Right-click to reselect, then save PNG, copy or pin |
+| Desktop organizer | Choose a top, center or bottom layout, and sort by name, modification time or group. New desktop items are grouped automatically. Disabling the organizer restores Windows icon visibility |
+| Taskbar style | Optional Dock and native tray with smart auto-hide, edge reveal, custom colors and frosted glass |
+| Capture and annotation | Press `Ctrl+Alt+A` by default. Select a window or area and add text, arrows, numbers, strokes or mosaic. Save PNG, copy, or pin at the original selection |
 | Scrolling capture | Scroll inside the selected region to stitch frames. Follow the side preview or adjust the overlap manually |
-| Region recording | The selection frame stays visible. Press `Ctrl+Alt+R` to stop. Save or copy MP4 and GIF, or save lossless MKV |
+| Region recording | Press `Ctrl+Alt+R` to stop and pin a preview. Draw, crop and trim, then save or copy MP4, GIF or lossless MKV at the selected quality and frame rate |
 | Productivity | Launcher and calculator, optional clipboard history, pinned notes and tasks, file preview and batch rename, and focus workspaces |
 
 | Desktop organizer and pinned note | Capture toolbar |

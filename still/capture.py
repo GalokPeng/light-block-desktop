@@ -18,6 +18,17 @@ from .capture_tools import DOCK_STYLE, NUMBER_SIZES, STROKE_SIZES, DrawingTools,
 SHAPES = {"rect", "ellipse"}
 MOSAICS = {"mosaic", "mosaic_brush"}
 FREEHAND = {"pen", "highlight", "mosaic_brush"}
+PIN_GLOW_MARGIN = 5
+
+
+def paint_pin_glow(painter, rect):
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    for inset, alpha in ((1.5, 18), (2.5, 32), (4, 110)):
+        painter.setPen(QPen(QColor(145, 229, 218, alpha), 1))
+        painter.drawRoundedRect(QRectF(rect).adjusted(inset, inset, -inset, -inset), 4, 4)
+    painter.restore()
 
 
 def next_number(operations):
@@ -342,7 +353,7 @@ class AnnotationCanvas(QWidget):
                 self.hidden_image = render_operations(self.source, self.operations[:hidden] + self.operations[hidden+1:])
                 self.hidden_index = hidden
             background = self.hidden_image
-        painter.drawImage(self.image_area, background)
+        self.paint_content(painter, background)
         painter.save()
         painter.setClipRect(self.image_area)
         self.inline.paint(painter, paint_operation)
@@ -361,6 +372,9 @@ class AnnotationCanvas(QWidget):
             else:
                 paint_operation(painter, self.current)
             painter.restore()
+
+    def paint_content(self, painter, background):
+        painter.drawImage(self.image_area, background)
 
     def set_tool(self, tool):
         self.tool = tool
@@ -548,7 +562,7 @@ class CaptureEditor(QWidget):
 
 
 class PinWindow(QWidget):
-    def __init__(self, workbench, image):
+    def __init__(self, workbench, image, geometry=None):
         super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.workbench, self.image = workbench, image.copy()
         self.image.setDevicePixelRatio(1)
@@ -561,14 +575,24 @@ class PinWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowTitle(tr("轻块桌面 · 贴图"))
         self.setToolTip(tr("Ctrl + 滚轮缩放 · 右键编辑"))
-        self.setMinimumSize(100, 70)
-        screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
-        area = screen.availableGeometry()
-        factor = min(1, 620/image.width(), (area.width()-40)/image.width(), (area.height()-70)/image.height())
-        self.resize(max(100,round(image.width()*factor))+12, max(70,round(image.height()*factor))+12)
-        self.move(area.center()-self.rect().center())
+        self.original_photo_size = geometry.size() if geometry is not None else None
+        self.minimum_photo = QSize(100, 70) if geometry is None else geometry.size().boundedTo(QSize(100, 70))
         self.grip = QSizeGrip(self)
         self.grip.setFixedSize(17, 17)
+        self.grip.hide()
+        self.setMinimumSize(self.minimum_photo)
+        margin = PIN_GLOW_MARGIN
+        if geometry is not None:
+            self.setGeometry(geometry.adjusted(-margin, -margin, margin, margin))
+        else:
+            screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
+            area = screen.availableGeometry()
+            factor = min(1, 620/image.width(), (area.width()-40)/image.width(), (area.height()-70)/image.height())
+            self.resize(QSize(round(image.width()*factor), round(image.height()*factor)).expandedTo(
+                self.minimum_photo) + QSize(2*margin, 2*margin))
+            self.move(area.center()-self.rect().center())
+            self.grip.show()
+        self.show_grip = geometry is None
         QShortcut(QKeySequence("Escape"), self, lambda: self.stop_editing() if self.editing else self.close())
         QShortcut(QKeySequence.StandardKey.Copy, self, self.copy_image)
 
@@ -576,12 +600,13 @@ class PinWindow(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         if self.border_visible:
-            painter.setPen(QPen(QColor(220, 235, 255, 180), 1))
-            painter.setBrush(QColor("#202c3c"))
-            painter.drawRoundedRect(QRectF(self.rect()).adjusted(1, 1, -1, -1), 8, 8)
+            paint_pin_glow(painter, self.rect())
         if not self.editing:
             image = self.canvas.image if self.canvas is not None else self.image
             area = QRectF(self.photo_area())
+            if self.photo_area().size() == self.original_photo_size:
+                painter.drawImage(area, image)
+                return
             factor = min(area.width()/image.width(), area.height()/image.height())
             width, height = image.width()*factor, image.height()*factor
             target = QRectF(0, 0, width, height)
@@ -594,7 +619,7 @@ class PinWindow(QWidget):
         super().resizeEvent(event)
 
     def photo_area(self):
-        margin = 6 if self.border_visible else 0
+        margin = PIN_GLOW_MARGIN if self.border_visible else 0
         return self.rect().adjusted(margin, margin, -margin, -margin-self.dock_height)
 
     def place_editor(self):
@@ -653,14 +678,15 @@ class PinWindow(QWidget):
         self.canvas.hide()
         self.edit_dock.hide()
         height, self.dock_height = self.height()-self.dock_height, 0
-        self.grip.setVisible(self.border_visible)
+        self.grip.setVisible(self.show_grip and self.border_visible)
         self.resize(self.width(), height)
         self.update()
 
     def fit_size(self, size, anchor=None):
         screen = self.screen() or QApplication.primaryScreen()
         bounds = screen.availableGeometry()
-        minimum = QSize(100, 70+self.dock_height)
+        margin = PIN_GLOW_MARGIN if self.border_visible else 0
+        minimum = self.minimum_photo + QSize(2*margin, 2*margin+self.dock_height)
         if self.editing:
             minimum.setWidth(max(minimum.width(), self.edit_dock.sizeHint().width()+8))
         size = size.expandedTo(minimum).boundedTo(bounds.size())
@@ -701,8 +727,11 @@ class PinWindow(QWidget):
             self.close()
 
     def toggle_border(self):
+        content = self.photo_area().translated(self.pos())
         self.border_visible = not self.border_visible
-        self.grip.setVisible(self.border_visible and not self.editing)
+        margin = PIN_GLOW_MARGIN if self.border_visible else 0
+        self.setGeometry(content.adjusted(-margin, -margin, margin, margin+self.dock_height))
+        self.grip.setVisible(self.show_grip and self.border_visible and not self.editing)
         self.place_editor()
         self.update()
 

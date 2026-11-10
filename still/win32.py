@@ -37,14 +37,44 @@ SetWindowPos = bind(user32, "SetWindowPos", W.BOOL, W.HWND, W.HWND, C.c_int, C.c
 MapWindowPoints = bind(user32, "MapWindowPoints", C.c_int, W.HWND, W.HWND, C.POINTER(W.POINT), W.UINT)
 GetWindowRect = bind(user32, "GetWindowRect", W.BOOL, W.HWND, C.POINTER(W.RECT))
 IsWindow = bind(user32, "IsWindow", W.BOOL, W.HWND)
+IsZoomed = bind(user32, "IsZoomed", W.BOOL, W.HWND)
 GetForegroundWindow = bind(user32, "GetForegroundWindow", W.HWND)
+SetForegroundWindow = bind(user32, "SetForegroundWindow", W.BOOL, W.HWND)
+BringWindowToTop = bind(user32, "BringWindowToTop", W.BOOL, W.HWND)
+SetActiveWindow = bind(user32, "SetActiveWindow", W.HWND, W.HWND)
+AttachThreadInput = bind(user32, "AttachThreadInput", W.BOOL, W.DWORD, W.DWORD, W.BOOL)
 GetClassName = bind(user32, "GetClassNameW", C.c_int, W.HWND, W.LPWSTR, C.c_int)
 GetWindowThreadProcessId = bind(user32, "GetWindowThreadProcessId", W.DWORD, W.HWND, C.POINTER(W.DWORD))
 SystemParametersInfo = bind(user32, "SystemParametersInfoW", W.BOOL, W.UINT, W.UINT, C.c_void_p, W.UINT)
 MonitorFromWindow = bind(user32, "MonitorFromWindow", W.HANDLE, W.HWND, W.DWORD)
 GetCurrentProcess = bind(kernel32, "GetCurrentProcess", W.HANDLE)
+GetCurrentThreadId = bind(kernel32, "GetCurrentThreadId", W.DWORD)
 DwmGetWindowAttribute = bind(dwmapi, "DwmGetWindowAttribute", C.c_long, W.HWND, W.DWORD, C.c_void_p, W.DWORD)
 DwmSetWindowAttribute = bind(dwmapi, "DwmSetWindowAttribute", C.c_long, W.HWND, W.DWORD, C.c_void_p, W.DWORD)
+
+
+def activate_from_tray(hwnd):
+    """Honor an explicit tray command while keeping the window in its normal z-order band."""
+    if GetForegroundWindow() == hwnd or SetForegroundWindow(hwnd):
+        return
+    foreground = GetForegroundWindow()
+    current_thread = GetCurrentThreadId()
+    foreground_thread = GetWindowThreadProcessId(foreground, None) if foreground else 0
+    if not foreground_thread:
+        return
+    if foreground_thread == current_thread:
+        SetActiveWindow(hwnd)
+        return
+    result = C.c_size_t()
+    if not SendMessageTimeout(foreground, 0, 0, 0, 0x0003, 150, C.byref(result)):
+        return  # An unresponsive foreground app must not block the settings UI.
+    if GetForegroundWindow() != foreground or not AttachThreadInput(current_thread, foreground_thread, True):
+        return
+    try:
+        BringWindowToTop(hwnd)
+        SetActiveWindow(hwnd)
+    finally:
+        AttachThreadInput(current_thread, foreground_thread, False)
 
 
 def theme_frame(hwnd, light):
@@ -230,9 +260,9 @@ def desktop_locked() -> bool:
         CloseDesktop(desktop)
 
 
-def fullscreen_on(rect) -> bool:
+def fullscreen_on(rect, *, ignore_maximized=False) -> bool:
     hwnd = GetForegroundWindow()
-    if not hwnd:
+    if not hwnd or (ignore_maximized and IsZoomed(hwnd)):
         return False
     pid = W.DWORD()
     GetWindowThreadProcessId(hwnd, C.byref(pid))

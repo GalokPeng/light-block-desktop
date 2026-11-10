@@ -1,3 +1,14 @@
+# v0.7.0 · 桌面收纳与录屏贴屏预览 / Desktop organizer and pinned recording previews
+
+- 桌面收纳支持居上、居中和居下，可分别按名称、修改时间或分组排列。新增桌面文件、快捷方式和文件夹会自动归类，收纳栏内可直接搜索。
+- Dock 与原生托盘联动显隐。应用窗口覆盖底栏时自动隐藏，鼠标触底唤出。支持独立设置底栏颜色、透明度和磨砂效果。
+- 录屏结束后在选区贴屏预览。工具栏支持涂鸦、画面裁剪、截取时间片段和撤销，可按所选画质与帧率保存或复制 MP4、GIF 和无损 MKV。
+- 截图贴图沿用选区的原位置和尺寸，边框为淡荧光。通过系统托盘打开设置时，窗口会切到前台并保留原有最大化状态。
+- Place the organizer at the top, center or bottom of the desktop, and sort each layout by name, modification time or group. New desktop items are grouped automatically and can be found with the built-in search.
+- The Dock and native tray coordinate visibility when windows cover the bottom edge. Move the pointer to the edge to reveal them. Customize the bar's color, opacity and frosted glass independently of the settings theme.
+- Finished recordings play in a pinned preview. Draw, crop, trim and undo edits, then save or copy MP4, GIF or lossless MKV at the selected quality and frame rate.
+- Pinned screenshots keep the selection's position and size and use a subtle glow. Opening settings from the system tray brings the window forward and preserves its maximized state.
+
 # v0.6.0 · 任务栏美化 / Taskbar Dock
 
 - 在「桌面收纳」中开启任务栏美化。主屏底部居中排列电源与搜索、应用 Dock 和原生系统托盘。

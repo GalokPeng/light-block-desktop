@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import uuid
 from dataclasses import asdict, dataclass, field, fields
@@ -9,7 +10,7 @@ from pathlib import Path
 
 from .i18n import tr
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 APP_NAME = "轻块桌面"
 DEFAULT_ORGANIZER_TITLE = "桌面收纳"
 DEFAULT_CAPTURE_SHORTCUT = "Ctrl+Alt+A"
@@ -84,8 +85,14 @@ class Settings:
     settings_theme: str = "dark"
     settings_language: str = "system"
     taskbar_style_enabled: bool = False
+    dock_glass: bool = True
+    dock_opacity: int = 70
+    dock_color: str = "#263038"
     dock_pins: list[str] | None = None
     organizer_enabled: bool = False
+    organizer_alignment: str = "center"
+    organizer_views: dict[str, str] = field(default_factory=dict)
+    organizer_icon_size: int | None = None
     organizer_position: list[int] | None = None
     organizer_title: str = DEFAULT_ORGANIZER_TITLE
     organizer_groups: list = field(default_factory=list)
@@ -134,8 +141,21 @@ class Store:
                 if self.settings.settings_language not in ("system", "zh", "en"):
                     self.settings.settings_language = "system"
                 self.settings.taskbar_style_enabled = self.settings.taskbar_style_enabled is True
+                self.settings.dock_glass = self.settings.dock_glass is True
+                color = self.settings.dock_color
+                if not isinstance(color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+                    self.settings.dock_color = "#263038"
+                opacity = self.settings.dock_opacity
+                self.settings.dock_opacity = max(20, min(100, opacity)) if type(opacity) is int else 70
                 pins = self.settings.dock_pins
                 self.settings.dock_pins = normalize_dock_pins(pins) if isinstance(pins, list) else None
+                if self.settings.organizer_alignment not in ("top", "center", "bottom"):
+                    self.settings.organizer_alignment = "center"
+                views = self.settings.organizer_views
+                self.settings.organizer_views = {key: value for key, value in views.items()
+                    if key in ("top", "center", "bottom") and value in ("groups", "name", "time")} if isinstance(views, dict) else {}
+                if self.settings.organizer_icon_size not in (32, 44, 60):
+                    self.settings.organizer_icon_size = None
                 if not isinstance(self.settings.organizer_title, str):
                     self.settings.organizer_title = DEFAULT_ORGANIZER_TITLE
                 position = self.settings.organizer_position

@@ -1,4 +1,4 @@
-"""Own a temporary clip on Explorer's primary taskbar, preserving its live tray."""
+"""Own the primary taskbar clip and its bottom work-area reservation."""
 from __future__ import annotations
 
 import ctypes as C
@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import json
 import sys
 
-from . import win32
+from . import dock_glass, win32
 
 gdi32 = C.WinDLL("gdi32", use_last_error=True)
 shell32 = C.WinDLL("shell32", use_last_error=True)
@@ -20,8 +20,17 @@ get_region = win32.bind(win32.user32, "GetWindowRgn", C.c_int, W.HWND, W.HRGN)
 set_region = win32.bind(win32.user32, "SetWindowRgn", C.c_int, W.HWND, W.HRGN, W.BOOL)
 set_dpi = win32.bind(win32.user32, "SetThreadDpiAwarenessContext", W.HANDLE, W.HANDLE)
 is_visible = win32.bind(win32.user32, "IsWindowVisible", W.BOOL, W.HWND)
+get_client = win32.bind(win32.user32, "GetClientRect", W.BOOL, W.HWND, C.POINTER(W.RECT))
+send_timeout = win32.bind(win32.user32, "SendMessageTimeoutW", C.c_size_t, W.HWND, W.UINT, W.WPARAM,
+                           W.LPARAM, W.UINT, W.UINT, C.POINTER(C.c_size_t))
 create_mutex = win32.bind(win32.kernel32, "CreateMutexW", W.HANDLE, C.c_void_p, W.BOOL, W.LPCWSTR)
 close_handle = win32.bind(win32.kernel32, "CloseHandle", W.BOOL, W.HANDLE)
+monitor_from_rect = win32.bind(win32.user32, "MonitorFromRect", W.HANDLE, C.POINTER(W.RECT), W.DWORD)
+window_at = win32.bind(win32.user32, "WindowFromPoint", W.HWND, W.POINT)
+root_window = win32.bind(win32.user32, "GetAncestor", W.HWND, W.HWND, W.UINT)
+ZORDER_ONLY = 0x0001 | 0x0002 | 0x0010 | 0x0200 | 0x0400
+TOPMOST = 0x0008
+HIDDEN_SHAPE = ((0, 0, 0, 0), 0)
 
 
 class AppBarData(C.Structure):
@@ -76,6 +85,22 @@ def process_id(hwnd):
     return process.value
 
 
+def tray_fits(bounds, tray_bounds):
+    left, top, right, bottom = bounds
+    tray_left, tray_top, tray_right, tray_bottom = tray_bounds
+    return (left <= tray_left < tray_right == right and tray_right - tray_left <= (right - left) // 2
+            and tray_top == top and tray_bottom == bottom)
+
+
+def relayout_taskbar(hwnd):
+    rect = W.RECT()
+    if get_client(hwnd, C.byref(rect)):
+        result = C.c_size_t()
+        # Explorer's client size stays the same when the HWND slides. Ask it
+        # to realign the notification child if its coordinates became stale.
+        send_timeout(hwnd, 0x0005, 0, (rect.bottom << 16) | rect.right, 0x0002, 120, C.byref(result))
+
+
 def taskbar(leased=None, shifted_x=None):
     hwnd = win32.FindWindow("Shell_TrayWnd", None)
     if not hwnd or not is_visible(hwnd):
@@ -86,17 +111,23 @@ def taskbar(leased=None, shifted_x=None):
     tray = win32.FindWindowEx(hwnd, None, "TrayNotifyWnd", None)
     if not tray or not is_visible(tray):
         raise OSError("pending")
-    left, top, right, bottom = window_bounds(hwnd)
-    tray_left, tray_top, tray_right, tray_bottom = window_bounds(tray)
+    bounds = window_bounds(hwnd)
+    tray_bounds = window_bounds(tray)
     x, y, width, height = win32.target_monitor()["rect"]
     pid = process_id(hwnd)
+    same_shell = leased is not None and (hwnd, pid) == (leased.hwnd, leased.pid)
+    if same_shell and not tray_fits(bounds, tray_bounds):
+        relayout_taskbar(hwnd)
+        bounds = window_bounds(hwnd)
+        tray_bounds = window_bounds(tray)
+    left, top, right, bottom = bounds
     owned_position = leased is not None and (hwnd, pid, left) == (leased.hwnd, leased.pid, shifted_x)
     if ((left != x and not owned_position) or right - left != width or bottom != y + height
-            or not 0 < bottom - top < height // 4
-            or not 0 < tray_right - tray_left <= width // 2 or tray_left < left or tray_right != right
-            or tray_top != top or tray_bottom != bottom or win32.GetWindowLong(hwnd, -20) & 0x400000):
+            or not 0 < bottom - top < height // 4 or win32.GetWindowLong(hwnd, -20) & 0x400000):
         raise OSError("unsupported")
-    return Taskbar(hwnd, tray, pid, (left, top, right, bottom), (tray_left, top, right, bottom), x)
+    if not tray_fits(bounds, tray_bounds):
+        raise OSError("pending" if same_shell else "unsupported")
+    return Taskbar(hwnd, tray, pid, bounds, tray_bounds, x)
 
 
 def window_region(hwnd):
@@ -134,21 +165,100 @@ def region_matches(hwnd, shape):
             delete_region(expected)
 
 
-def put_region(hwnd, box, radius=0):
+def put_region(hwnd, box, radius=0, *, redraw=True):
     region = make_region(box, radius) if box else None
     if box and not region:
         raise OSError("failed")
-    if not set_region(hwnd, region, True):
+    if not set_region(hwnd, region, redraw):
         if region:
             delete_region(region)
         raise OSError("failed")
 
 
-def move_taskbar(hwnd, x, y):
+def suppress_taskbar(hwnd):
+    if not win32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0080 | 0x0417):
+        raise OSError("failed")
+
+
+def move_taskbar(hwnd, x, y, *, show=False):
     # Keep the shell's z order and focus. Explorer clamps the position in
     # WM_WINDOWPOSCHANGING, so skip that notification for this horizontal move.
-    if not win32.SetWindowPos(hwnd, None, x, y, 0, 0, 0x0001 | 0x0004 | 0x0010 | 0x0400):
+    flags = 0x0415 | (0x0040 if show else 0)  # SWP_SHOWWINDOW
+    if not win32.SetWindowPos(hwnd, None, x, y, 0, 0, flags):
+        if show:
+            win32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0457)
         raise OSError("failed")
+
+
+def primary_work_area():
+    rect = W.RECT()
+    if not win32.SystemParametersInfo(0x0030, 0, C.byref(rect), 0):  # SPI_GETWORKAREA
+        raise OSError("failed")
+    return coords(rect)
+
+
+def set_primary_work_area(area):
+    rect = W.RECT(*area)
+    # Keep the change in this session. Broadcasting WM_SETTINGCHANGE also
+    # makes Explorer immediately reclaim its full-width taskbar reservation.
+    if not win32.SystemParametersInfo(0x002F, 0, C.byref(rect), 0):  # SPI_SETWORKAREA
+        raise OSError("failed")
+
+
+def resize_maximized_windows(before, after):
+    """Extend already maximized windows without changing their restore bounds."""
+    rect = W.RECT(*before)
+    monitor = monitor_from_rect(C.byref(rect), 0)
+    if not monitor:
+        return
+    previous_bottom, next_bottom = before[3], after[3]
+
+    @win32.ENUMPROC
+    def visit(hwnd, _):
+        if not is_visible(hwnd) or not win32.IsZoomed(hwnd) or win32.MonitorFromWindow(hwnd, 0) != monitor:
+            return True
+        frame = W.RECT()
+        if win32.DwmGetWindowAttribute(hwnd, 9, C.byref(frame), C.sizeof(frame)) != 0:
+            return True
+        if abs(frame.bottom - previous_bottom) <= 2:
+            bounds = W.RECT()
+            if win32.GetWindowRect(hwnd, C.byref(bounds)):
+                height = bounds.bottom - bounds.top + next_bottom - frame.bottom
+                # NOMOVE, NOZORDER, NOACTIVATE, NOSENDCHANGING, ASYNCWINDOWPOS.
+                win32.SetWindowPos(hwnd, None, 0, 0, bounds.right - bounds.left, height, 0x4416)
+        return True
+
+    win32.EnumWindows(visit, 0)
+
+
+class BottomWorkArea:
+    def __init__(self):
+        self.original = None
+        self.expanded = None
+        self.screen = None
+
+    def expand(self, bar):
+        before = primary_work_area()
+        if before[3] != bar.bounds[1]:
+            return  # Already expanded, or another appbar also owns this edge.
+        after = (*before[:3], bar.bounds[3])
+        self.screen = win32.target_monitor()["name"]
+        self.original, self.expanded = before, after
+        set_primary_work_area(after)
+        if primary_work_area() == after:
+            resize_maximized_windows(before, after)
+
+    def restore(self):
+        if self.original is None:
+            return
+        if win32.target_monitor()["name"] == self.screen:
+            current = primary_work_area()
+            if current == self.expanded:
+                set_primary_work_area(self.original)
+                current = primary_work_area()
+            if current == self.original:
+                resize_maximized_windows(self.expanded, self.original)
+        self.original = self.expanded = self.screen = None
 
 
 class TaskbarLease:
@@ -156,8 +266,46 @@ class TaskbarLease:
         self.applied = None
         self.original_rectangular = False
         self.shifted_x = None
+        self.work_area = BottomWorkArea()
+        self.original_material = self.applied_material = None
+        self.read_material = self.write_material = None
+        self.original_topmost = None
+        self.shape = None
 
-    def update(self, span):
+    def style_tray(self, bar, frame, accent):
+        self.style_material(bar.hwnd, accent)
+        if not frame or not is_visible(frame):
+            return
+        left, top, right, bottom = bar.tray_bounds
+        hit = window_at(W.POINT((left + right) // 2, (top + bottom) // 2))
+        root = root_window(hit, 2) if hit else None
+        if root in (bar.hwnd, frame) or (root and process_id(root) == bar.pid):
+            return  # Leave Explorer's own flyouts above the tray.
+        if self.original_topmost is None:
+            self.original_topmost = bool(win32.GetWindowLong(bar.hwnd, -20) & TOPMOST)
+        # The frame is click-through. If an app is above the real tray,
+        # raise Explorer and then place the frame immediately above it.
+        if win32.SetWindowPos(bar.hwnd, -1, 0, 0, 0, 0, ZORDER_ONLY):
+            win32.SetWindowPos(frame, -1, 0, 0, 0, 0, ZORDER_ONLY)
+
+    def style_material(self, hwnd, accent):
+        if self.read_material is None:
+            if dock_glass.read_accent(hwnd) is not None:
+                self.read_material, self.write_material = dock_glass.read_accent, dock_glass.write_accent
+            else:
+                self.read_material, self.write_material = dock_glass.read_backdrop, dock_glass.write_backdrop
+        if self.read_material is dock_glass.read_accent:
+            target = accent if accent is not None else (0, 0, 0, 0)
+        else:
+            target = 3 if accent is not None else 1  # DWMSBT_TRANSIENTWINDOW / DWMSBT_NONE
+        if target != self.applied_material:
+            current = self.read_material(hwnd)
+            if current is not None and self.write_material(hwnd, target):
+                if self.applied_material is None or current != self.applied_material:
+                    self.original_material = current
+                self.applied_material = target
+
+    def update(self, span, hidden=False):
         previous = self.applied
         current = taskbar(previous, self.shifted_x)
         if span is None:
@@ -171,7 +319,7 @@ class TaskbarLease:
         if free < 0:
             raise OSError("unsupported")
         target_x = current.home_x + free // 2 + span - current.clip[0]
-        owns_region = previous is not None and region_matches(current.hwnd, previous.tray_shape)
+        owns_region = previous is not None and region_matches(current.hwnd, self.shape)
         if not owns_region:
             kind, box = window_region(current.hwnd)
             # Respect an existing taskbar mod. Native Explorer has either no
@@ -179,30 +327,61 @@ class TaskbarLease:
             if kind and (kind, box) != (2, (0, 0, right - left, bottom - top)):
                 raise OSError("unsupported")
             self.original_rectangular = bool(kind)
-        if not owns_region or previous.tray_shape != current.tray_shape:
-            put_region(current.hwnd, *current.tray_shape)
-        self.applied = current
-        if left != target_x:
+        shape = HIDDEN_SHAPE if hidden else current.tray_shape
+        presented = False
+        if not owns_region or self.shape != shape:
+            # SetWindowRgn sends WM_WINDOWPOSCHANGING, so Explorer can snap
+            # the tray back to its original position while applying the clip.
+            # Apply a visible clip while hidden, then place and show together.
+            if not hidden:
+                suppress_taskbar(current.hwnd)
+            show_x = left
+            try:
+                put_region(current.hwnd, *shape, redraw=False)
+                self.shape = shape
+                self.applied = current
+                show_x = target_x
+            finally:
+                if not hidden:
+                    move_taskbar(current.hwnd, show_x, top, show=True)
+                    self.shifted_x = show_x
+                    presented = True
+            if hidden and left == target_x:
+                left = window_bounds(current.hwnd)[0]
+        if not presented and left != target_x:
             move_taskbar(current.hwnd, target_x, top)
         self.shifted_x = target_x
         positioned = taskbar(current, target_x)
         if positioned.bounds[0] != target_x:
             raise OSError("pending")
+        self.applied = positioned
+        self.work_area.expand(positioned)
         return positioned
 
     def restore(self):
         current = self.applied
-        if current is None:
-            return
-        if win32.FindWindow("Shell_TrayWnd", None) == current.hwnd and process_id(current.hwnd) == current.pid:
-            left, top, right, bottom = window_bounds(current.hwnd)
-            if left == self.shifted_x and left != current.home_x:
-                move_taskbar(current.hwnd, current.home_x, top)
-            if region_matches(current.hwnd, current.tray_shape):
-                box = (0, 0, right - left, bottom - top) if self.original_rectangular else None
-                put_region(current.hwnd, box)
-        self.applied = None
-        self.shifted_x = None
+        try:
+            if (current is not None and win32.FindWindow("Shell_TrayWnd", None) == current.hwnd
+                    and process_id(current.hwnd) == current.pid):
+                left, top, right, bottom = window_bounds(current.hwnd)
+                if left == self.shifted_x and left != current.home_x:
+                    move_taskbar(current.hwnd, current.home_x, top)
+                if self.shape is not None and region_matches(current.hwnd, self.shape):
+                    box = (0, 0, right - left, bottom - top) if self.original_rectangular else None
+                    put_region(current.hwnd, box)
+                if self.applied_material is not None and self.read_material(current.hwnd) == self.applied_material:
+                    self.write_material(current.hwnd, self.original_material)
+                if self.original_topmost is False and win32.GetWindowLong(current.hwnd, -20) & TOPMOST:
+                    win32.SetWindowPos(current.hwnd, -2, 0, 0, 0, 0, ZORDER_ONLY)
+                tray = win32.FindWindowEx(current.hwnd, None, "TrayNotifyWnd", None)
+                if tray and not tray_fits(window_bounds(current.hwnd), window_bounds(tray)):
+                    relayout_taskbar(current.hwnd)
+        finally:
+            self.work_area.restore()
+        self.applied = self.shifted_x = None
+        self.original_material = self.applied_material = self.original_topmost = None
+        self.read_material = self.write_material = None
+        self.shape = None
 
 
 def pipe_stream(stream, number, mode):
@@ -240,17 +419,23 @@ def run_helper():
     lease = TaskbarLease()
     try:
         for command in reader:
-            span = json.loads(command)["span"]
+            request = json.loads(command)
+            span = request["span"]
             if span is not None and (type(span) is not int or span <= 0):
                 raise OSError("failed")
+            hidden = request.get("hidden", False)
             try:
-                bar = lease.update(span)
+                bar = lease.update(span, hidden)
             except OSError as exc:
                 if str(exc) != "pending":
                     raise
                 reply({"waiting": True})
                 continue
-            reply({"hwnd": bar.hwnd, "tray": bar.tray, "bounds": bar.tray_bounds, "positioned": span is not None})
+            if span is not None and "accent" in request:
+                accent = request.get("accent")
+                lease.style_tray(bar, request.get("frame"), tuple(accent) if accent is not None else None)
+            reply({"hwnd": bar.hwnd, "tray": bar.tray, "bounds": bar.tray_bounds,
+                   "positioned": span is not None, "hidden": hidden})
     except (OSError, ValueError, TypeError, KeyError) as exc:
         lease.restore()
         if not isinstance(exc, BrokenPipeError):

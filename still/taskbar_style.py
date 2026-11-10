@@ -25,6 +25,8 @@ class TaskbarStyle(QObject):
         self.dirty = False
         self.retries = 0
         self.span = None
+        self.frame = self.accent = None
+        self.hidden = True
         self.shell_events = ShellEvents(self)
         self.refresh_timer = QTimer(self, singleShot=True, interval=20)
         self.refresh_timer.timeout.connect(self.refresh)
@@ -53,6 +55,15 @@ class TaskbarStyle(QObject):
             self.span = span
             self.refresh()
 
+    def set_tray_state(self, frame, accent, hidden):
+        if (frame, accent, hidden) != (self.frame, self.accent, self.hidden):
+            visibility_changed = self.hidden != hidden
+            self.frame, self.accent, self.hidden = frame, accent, hidden
+            if visibility_changed:
+                self.refresh()
+            else:
+                self.schedule_refresh()
+
     def refresh(self):
         if self.process.state() != QProcess.ProcessState.Running or self.stopping:
             return
@@ -60,7 +71,8 @@ class TaskbarStyle(QObject):
             self.dirty = True
             return
         self.pending = True
-        self.process.write(json.dumps({"span": self.span}).encode("ascii") + b"\n")
+        request = {"span": self.span, "frame": self.frame, "accent": self.accent, "hidden": self.hidden}
+        self.process.write(json.dumps(request).encode("ascii") + b"\n")
 
     def read_replies(self):
         while self.process.canReadLine() and not self.stopping:
@@ -84,7 +96,7 @@ class TaskbarStyle(QObject):
             self.layout_ready.emit(result)
             if self.dirty:
                 self.dirty = False
-                self.schedule_refresh()
+                self.refresh()
 
     def fail(self, code):
         if not self.stopping:

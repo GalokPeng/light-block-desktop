@@ -14,6 +14,7 @@ COLORS = {"mint": "#a6e4ca", "blue": "#9ac8ff", "violet": "#cbb7f7", "amber": "#
 SYSTEM_ENTRIES = {"computer": ("此电脑", "shell:MyComputerFolder"),
                   "recycle": ("回收站", "shell:RecycleBinFolder"),
                   "settings": ("Windows 设置", "ms-settings:")}
+SYSTEM_ORDER = {target.casefold(): index for index, (_, target) in enumerate(SYSTEM_ENTRIES.values())}
 DESKTOP_CATEGORIES = (
     ("folders", "文件夹", "mint", ()),
     ("shortcuts", "快捷方式", "blue", (".lnk", ".url", ".appref-ms", ".website", ".exe")),
@@ -37,6 +38,36 @@ def entry_name(entry):
     name = entry["name"]
     default = SYSTEM_ENTRIES.get(entry.get("system"))
     return tr(name) if default and name == default[0] else name
+
+
+def organizer_view(settings):
+    return settings.organizer_views.get(settings.organizer_alignment, "name")
+
+
+def view_options():
+    return (("name", tr("按名称排列")), ("time", tr("按修改时间排列")), ("groups", tr("按分组排列")))
+
+
+def entry_modified(entry):
+    try:
+        return Path(entry["target"]).stat().st_mtime_ns
+    except OSError:
+        return -1
+
+
+def named_entries(groups, query="", *, order="name"):
+    words = query.casefold().split()
+    matches = []
+    for group in groups:
+        category = group_name(group).casefold()
+        for entry in group["entries"]:
+            name = entry_name(entry).casefold()
+            if all(word in name or word in category for word in words):
+                priority = SYSTEM_ORDER.get(entry["target"].casefold(), len(SYSTEM_ORDER))
+                modified = -entry_modified(entry) if order == "time" and priority == len(SYSTEM_ORDER) else 0
+                matches.append((priority, modified, name, entry, group))
+    matches.sort(key=lambda match: match[:3])
+    return [(entry, group) for _, _, _, entry, group in matches]
 
 
 def identifier():
@@ -171,21 +202,28 @@ class Collections:
             self.store.save()
         return group
 
-    def classify_desktop(self, roots, next_rect=None):
+    def classify_desktop(self, roots, next_rect=None, *, snapshot=None, only_new=False):
         """Build file references in a single manifest write, leaving Desktop files in place."""
         known = {os.path.normcase(e["target"]) for g in self.groups for e in g["entries"]}
         buckets = {key: [] for key, _, _, _ in DESKTOP_CATEGORIES}
+        listed, observed = {}, {}
         for root in roots:
+            root_key = os.path.normcase(str(root.absolute()))
             try:
                 paths = sorted(root.iterdir(), key=lambda p: (p.suffix.lower(), p.name.casefold()))
             except OSError:
                 continue
+            present = listed.setdefault(root_key, set())
+            seen = observed.setdefault(root_key, set())
+            previous = snapshot.get(root_key, ()) if only_new and snapshot is not None else ()
             for path in paths:
                 if path.name.startswith(".") or path.name.lower() == "desktop.ini":
                     continue
                 target = str(path.absolute())
                 normalized = os.path.normcase(target)
-                if normalized in known:
+                present.add(normalized)
+                if normalized in known or normalized in previous:
+                    seen.add(normalized)
                     continue
                 try:
                     info = path.stat()
@@ -193,25 +231,54 @@ class Collections:
                     continue
                 if getattr(info, "st_file_attributes", 0) & 0x02:
                     continue
+                seen.add(normalized)
                 key = "folders" if stat.S_ISDIR(info.st_mode) else SUFFIX_CATEGORY.get(path.suffix.lower(), "other")
                 name = path.stem if key == "shortcuts" else path.name
-                buckets[key].append({"id": identifier(), "name": name, "target": target, "managed": False})
+                buckets[key].append({"id": identifier(), "name": name, "target": target, "managed": False,
+                                     "desktop_auto": True})
                 known.add(normalized)
         for key, (name, target) in SYSTEM_ENTRIES.items():
             if os.path.normcase(target) not in known:
                 buckets["system"].append({"id": identifier(), "name": name, "target": target, "managed": False, "system": key})
+        original_groups = self.groups[:]
+        original_entries = [(g, g["entries"][:]) for g in original_groups]
+        removed = 0
+        for group, entries in original_entries:
+            kept = []
+            for entry in entries:
+                if entry.get("desktop_auto") and not entry.get("managed"):
+                    target = Path(entry["target"])
+                    present = listed.get(os.path.normcase(str(target.parent)))
+                    if present is not None and os.path.normcase(str(target)) not in present:
+                        removed += 1
+                        continue
+                kept.append(entry)
+            group["entries"][:] = kept
+        initialized = self.store.settings.organizer_auto_classified
         count = 0
         for key, name, color, _ in DESKTOP_CATEGORIES:
             entries = buckets[key]
             group = next((g for g in self.groups if g.get("auto_category") == key), None)
-            if group is None and (entries or not self.store.settings.organizer_auto_classified and key in {"folders", "shortcuts", "system", "other"}):
+            if group is None and (entries or not initialized and key in {"folders", "shortcuts", "system", "other"}):
                 group = self.create(name, color, next_rect() if next_rect else None, save=False)
                 group["auto_category"] = key
             if group is not None:
                 group["entries"].extend(entries)
                 count += len(entries)
-        self.store.settings.organizer_auto_classified = True
-        self.store.save()
+        try:
+            if not initialized:
+                self.store.settings.organizer_auto_classified = True
+                self.store.save()
+            elif count or removed:
+                self.write_manifest()
+        except OSError:
+            self.store.settings.organizer_auto_classified = initialized
+            self.groups[:] = original_groups
+            for group, entries in original_entries:
+                group["entries"][:] = entries
+            raise
+        if snapshot is not None:
+            snapshot.update(observed)
         return count
 
     def add_paths(self, group, paths):

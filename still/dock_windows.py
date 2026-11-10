@@ -15,10 +15,11 @@ from .model import APPS_FOLDER
 
 EVENT_FOREGROUND = 0x0003
 EVENT_MINIMIZE_START, EVENT_MINIMIZE_END = 0x0016, 0x0017
-EVENT_DESTROY, EVENT_SHOW, EVENT_HIDE = 0x8001, 0x8002, 0x8003
+EVENT_DESTROY, EVENT_SHOW, EVENT_HIDE, EVENT_REORDER = 0x8001, 0x8002, 0x8003, 0x8004
 EVENT_LOCATION = 0x800B
 EVENT_CLOAKED, EVENT_UNCLOAKED = 0x8017, 0x8018
 SHELL_CLASSES = {"Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"}
+DESKTOP_CLASSES = {"Progman", "WorkerW"}
 
 shell32 = C.WinDLL("shell32", use_last_error=True)
 ole32 = C.WinDLL("ole32")
@@ -122,6 +123,58 @@ def task_candidate(hwnd):
     return (app_window or not (style & 0x80 or get_window(hwnd, 4))) and not style & 0x8000000
 
 
+def app_surface(hwnd):
+    return task_candidate(hwnd) or api.GetWindowLong(hwnd, -16) & 0x00C00000 == 0x00C00000  # WS_CAPTION
+
+
+def overlaps_strip(bounds, strip):
+    left, top, right, bottom = bounds
+    x1, y1, x2, y2 = strip
+    return left < x2 and top < y2 and right > x1 and bottom > y1
+
+
+def covering_window(*strips):
+    """Find a visible app above the desktop that intersects a bottom panel."""
+    hit = None
+
+    @api.ENUMPROC
+    def visit(hwnd, _):
+        nonlocal hit
+        if is_iconic(hwnd) or not is_visible(hwnd):
+            return True
+        kind = window_class(hwnd)
+        if kind in DESKTOP_CLASSES:
+            # Show Desktop can raise the desktop above windows whose visible
+            # styles have not changed yet. Stop at the actual desktop host.
+            if kind == "Progman" or api.FindWindowEx(hwnd, None, "SHELLDLL_DefView", None):
+                return False
+        if kind in SHELL_CLASSES:
+            return True
+        # Include dialogs and floating app windows with a caption. Exclude
+        # desktop-owned tool windows, shell menus and our own Dock overlay.
+        if not app_surface(hwnd):
+            return True
+        extended = api.GetWindowLong(hwnd, -20)
+        if extended & 0x80020 == 0x80020:  # WS_EX_LAYERED | WS_EX_TRANSPARENT
+            return True
+        rect = W.RECT()
+        if api.DwmGetWindowAttribute(hwnd, 9, C.byref(rect), C.sizeof(rect)) != 0:
+            if not api.GetWindowRect(hwnd, C.byref(rect)):
+                return True
+        bounds = rect.left, rect.top, rect.right, rect.bottom
+        if not any(overlaps_strip(bounds, strip) for strip in strips):
+            return True
+        cloaked = W.DWORD()
+        api.DwmGetWindowAttribute(hwnd, 14, C.byref(cloaked), C.sizeof(cloaked))
+        if cloaked.value:
+            return True
+        hit = hwnd
+        return False
+
+    api.EnumWindows(visit, 0)
+    return hit
+
+
 def process_target(pid):
     handle = open_process(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
     if not handle:
@@ -220,6 +273,7 @@ def open_windows_search():
 class TaskWatcher(QObject):
     changed = Signal(bool)  # True when the task list needs refreshing as well.
     shell_changed = Signal()
+    foreground_changed = Signal(bool)
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -229,7 +283,7 @@ class TaskWatcher(QObject):
         self.hooks = []
         for first, last in ((EVENT_FOREGROUND, EVENT_FOREGROUND),
                             (EVENT_MINIMIZE_START, EVENT_MINIMIZE_END),
-                            (EVENT_DESTROY, EVENT_HIDE),
+                            (EVENT_DESTROY, EVENT_REORDER),
                             (EVENT_LOCATION, EVENT_LOCATION),
                             (EVENT_CLOAKED, EVENT_UNCLOAKED)):
             handle = set_hook(first, last, None, self.callback, 0, 0, 0)
@@ -241,15 +295,19 @@ class TaskWatcher(QObject):
     def _event(self, hook, event, hwnd, object_id, child_id, thread, timestamp):
         if not hwnd or object_id or child_id:
             return
-        if hwnd in self.shell_windows and event in (EVENT_LOCATION, EVENT_SHOW, EVENT_HIDE, EVENT_DESTROY):
+        if hwnd in self.shell_windows and event in (EVENT_LOCATION, EVENT_SHOW, EVENT_HIDE, EVENT_DESTROY, EVENT_REORDER):
             self.shell_changed.emit()
+        if event == EVENT_FOREGROUND:
+            self.foreground_changed.emit(window_class(hwnd) in DESKTOP_CLASSES)
         if event == EVENT_LOCATION:
-            if hwnd == api.GetForegroundWindow():
+            if hwnd in self.known or hwnd == api.GetForegroundWindow() or app_surface(hwnd):
                 self.changed.emit(False)
         elif event == EVENT_FOREGROUND or hwnd in self.known:
             self.changed.emit(True)
         elif event in (EVENT_SHOW, EVENT_UNCLOAKED) and task_candidate(hwnd) and window_pid(hwnd) != os.getpid():
             self.changed.emit(True)
+        elif event in (EVENT_SHOW, EVENT_HIDE, EVENT_DESTROY, EVENT_CLOAKED):
+            self.changed.emit(False)
 
     def stop(self):
         for hook in self.hooks:

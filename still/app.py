@@ -13,6 +13,7 @@ from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
+from . import win32
 from .i18n import install_qt_translation, set_language, tr
 from .engine import WallpaperEngine
 from .model import APP_NAME, Store, VERSION
@@ -86,7 +87,7 @@ class Controller:
         menu = QMenu()
         self.menu = menu
         open_action = QAction(tr("打开轻块桌面设置"), menu)
-        open_action.triggered.connect(self.show_window)
+        open_action.triggered.connect(lambda: QTimer.singleShot(0, self.show_from_tray))
         menu.addAction(open_action)
         self.pause_action = QAction(tr("暂停动态壁纸"), menu)
         self.pause_action.triggered.connect(self.engine.pause)
@@ -169,15 +170,23 @@ class Controller:
 
     def activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
-            self.show_window()
+            self.show_from_tray()
 
-    def show_window(self):
+    def show_from_tray(self):
+        self.show_window(from_tray=True)
+
+    def show_window(self, *, from_tray=False):
         self.quit_timer.stop()
         if self.window is None:
             self.window = self.make_window()
-        self.window.showNormal()
+        if self.window.isMinimized():
+            self.window.setWindowState(self.window.windowState() & ~Qt.WindowState.WindowMinimized)
+        self.window.show()
         self.window.raise_()
-        self.window.activateWindow()
+        if from_tray:
+            win32.activate_from_tray(int(self.window.winId()))
+        else:
+            self.window.activateWindow()
 
     def make_window(self):
         from .ui import MainWindow

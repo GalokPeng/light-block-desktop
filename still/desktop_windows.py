@@ -6,8 +6,8 @@ from ctypes import wintypes as W
 import sys
 import uuid
 from pathlib import Path
-from PySide6.QtCore import QAbstractNativeEventFilter, QCoreApplication, QObject, Signal
-from PySide6.QtGui import QColor, QLinearGradient, QPen
+from PySide6.QtCore import QAbstractNativeEventFilter, QCoreApplication, QObject, QRectF, QSizeF, Qt, Signal
+from PySide6.QtGui import QColor, QImage, QLinearGradient, QPen, QPixmap
 
 from .i18n import tr
 from . import win32 as api
@@ -49,6 +49,33 @@ def paint_desktop_panel(painter, rect, opacity):
     painter.setBrush(fill)
     painter.setPen(QPen(QColor(230, 239, 255, 78), 1))
     painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 23, 23)
+
+
+def cropped_icon(pixmap):
+    if pixmap.isNull() or not pixmap.hasAlphaChannel():
+        return pixmap
+    alpha = pixmap.toImage().convertToFormat(QImage.Format.Format_Alpha8)
+    data = bytes(alpha.constBits())
+    stride = alpha.bytesPerLine()
+    left, top, right, bottom = alpha.width(), alpha.height(), 0, 0
+    for y in range(alpha.height()):
+        row = data[y * stride:y * stride + alpha.width()]
+        content = row.strip(b"\x00")
+        if content:
+            start = row.index(content[:1])
+            left, top = min(left, start), min(top, y)
+            right, bottom = max(right, start + len(content)), y + 1
+    return pixmap.copy(left, top, right - left, bottom - top) if right > left else QPixmap()
+
+
+def paint_icon(painter, pixmap, bounds):
+    if not pixmap.isNull():
+        bounds = QRectF(bounds)
+        size = QSizeF(pixmap.size())
+        size.scale(bounds.size(), Qt.AspectRatioMode.KeepAspectRatio)
+        target = QRectF(0, 0, size.width(), size.height())
+        target.moveCenter(bounds.center())
+        painter.drawPixmap(target, pixmap, QRectF(pixmap.rect()))
 
 
 def native_glass(hwnd, enabled=True):

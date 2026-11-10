@@ -32,7 +32,8 @@ def parse_media_info(text):
             "width": int(resolution[1]) if resolution else 0, "height": int(resolution[2]) if resolution else 0}
 
 
-def video_commands(source, output, start, duration, crop, mode, fps=12, gif_width=0, palette=None):
+def video_commands(source, output, start, duration, crop, mode, fps=12, gif_width=0, palette=None, *,
+                   overlay=None, max_height=0, output_fps=None, crf=18):
     source, output = Path(source), Path(output)
     if source.resolve() == output.resolve():
         raise ValueError(tr("输出文件必须与原文件不同。"))
@@ -47,23 +48,41 @@ def video_commands(source, output, start, duration, crop, mode, fps=12, gif_widt
         seek += ["-t", str(round(duration, 3))]
     seek += ["-i", str(source)]
     common = ["-hide_banner", "-n"]
+    graph = ""
+    video = "[0:v]"
+    if overlay is not None:
+        seek += ["-i", str(overlay)]
+        graph = f"[0:v]{','.join(filters) or 'null'}[base];[base][1:v]overlay=format=auto:alpha=straight[marked];"
+        video = "[marked]"
+        filters.clear()
+    if mode == "gif" or output_fps:
+        filters.append(f"fps={int(fps if mode == 'gif' else output_fps)}")
+    if max_height:
+        filters.append(f"scale=-2:'min(ih,{int(max_height)})':flags=lanczos")
     if mode == "gif":
-        filters.append(f"fps={int(fps)}")
         if gif_width:
             filters.append(f"scale={int(gif_width)}:-1:flags=lanczos")
         chain = ",".join(filters)
         if palette is None:
             raise ValueError(tr("GIF 导出需要独立调色板临时文件。"))
-        return [common + seek + ["-vf", chain+",palettegen=stats_mode=diff", "-frames:v", "1", str(palette)],
-                common + seek + ["-i", str(palette), "-lavfi", f"[0:v]{chain}[v];[v][1:v]paletteuse=dither=sierra2_4a",
+        palette_input = 2 if overlay is not None else 1
+        return [common + seek + ["-filter_complex_threads", "1", "-filter_complex",
+                                 f"{graph}{video}{chain},palettegen=stats_mode=diff", "-frames:v", "1", str(palette)],
+                common + seek + ["-i", str(palette), "-filter_complex_threads", "1", "-filter_complex",
+                                 f"{graph}{video}{chain}[v];[v][{palette_input}:v]paletteuse=dither=sierra2_4a",
                                  "-an", "-loop", "0", "-progress", "pipe:1", str(output)]]
     args = common + seek
-    if filters:
+    if mode != "lossless":
+        filters.append("pad=ceil(iw/2)*2:ceil(ih/2)*2")
+    if graph:
+        args += ["-filter_complex_threads", "1", "-filter_complex", f"{graph}{video}{','.join(filters) or 'null'}[v]",
+                 "-map", "[v]", "-map", "0:a?"]
+    elif filters:
         args += ["-vf", ",".join(filters)]
     if mode == "lossless":
         args += ["-c:v", "ffv1", "-level", "3", "-c:a", "flac"]
     else:
-        args += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
+        args += ["-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
     return [args + ["-progress", "pipe:1", str(output)]]
 
 

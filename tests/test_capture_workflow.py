@@ -197,6 +197,21 @@ class CaptureWorkflowTests(unittest.TestCase):
         self.assertNotEqual(highlight, clean.pixelColor(70, 75))
         self.assertNotEqual(highlight, QColor("#ff6868"))
 
+    def test_positioned_pin_keeps_capture_bounds_when_border_changes(self):
+        image = QImage(183, 104, QImage.Format.Format_RGB32)
+        image.fill(QColor("#ff8050"))
+        bounds = QRect(37, 51, 122, 69)
+        pin = PinWindow(None, image, bounds)
+        try:
+            self.assertEqual(pin.photo_area().translated(pin.pos()), bounds)
+            pin.toggle_border()
+            self.assertEqual(pin.geometry(), bounds)
+            pin.toggle_border()
+            self.assertEqual(pin.photo_area().translated(pin.pos()), bounds)
+            self.assertEqual(pin.current_image(), image)
+        finally:
+            pin.close()
+
     def test_pin_double_click_copies_and_border_toggle_hides_grip(self):
         image = self.overlay.snapshot.toImage()
         pin = PinWindow(None, image)

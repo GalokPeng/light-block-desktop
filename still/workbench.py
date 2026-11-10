@@ -28,6 +28,7 @@ class Workbench(QObject):
         self.record_bar = None
         self.record_frame = None
         self.record_pending = None
+        self.record_placement = None
         self.record_started = 0
         self.record_timer = QTimer(self)
         self.record_timer.setSingleShot(True)
@@ -112,10 +113,10 @@ class Workbench(QObject):
         from .capture import CaptureEditor
         return self.show("editor-"+uuid.uuid4().hex, lambda: CaptureEditor(self, image, wheel_sizes))
 
-    def pin(self, image):
+    def pin(self, image, geometry=None):
         if not image.isNull():
             from .capture import PinWindow
-            return self.show("pin-"+uuid.uuid4().hex, lambda: PinWindow(self, image))
+            return self.show("pin-"+uuid.uuid4().hex, lambda: PinWindow(self, image, geometry))
 
     @property
     def recording(self):
@@ -186,7 +187,8 @@ class Workbench(QObject):
                 self.show("longshot", lambda: ScrollCapture(self, image, rect, screen), activate=False)
                 return
             if action == "pin":
-                self.pin(image)
+                from .capture_overlay import logical_region
+                self.pin(image, logical_region(rect, screen))
             elif action == "copy":
                 QApplication.clipboard().setImage(image)
             elif action == "save":
@@ -241,6 +243,7 @@ class Workbench(QObject):
         if self.record_pending is not None:
             self.record_timer.stop()
             self.record_pending = None
+            self.record_placement = None
             self.close_record_bar()
             self.record_changed()
             return
@@ -260,8 +263,10 @@ class Workbench(QObject):
         suffix = ".mkv" if lossless else ".mp4"
         directory = self.controller.store.directory / "recordings"
         name = "Still_"+datetime.now().strftime("%Y%m%d_%H%M%S")+"_"+uuid.uuid4().hex[:6]+suffix
+        geometry = logical_region(rect, screen)
+        self.record_placement = (geometry, rect.size(), settings.record_fps)
         self.record_bar = RecordingBar(self, rect, screen)
-        self.record_frame = CaptureFrame(logical_region(rect, screen), screen, recording=True)
+        self.record_frame = CaptureFrame(geometry, screen, recording=True)
         self.record_frame.show()
         self.record_pending = (rect, directory/name, lossless, settings.record_fps)
         self.record_changed()
@@ -298,14 +303,16 @@ class Workbench(QObject):
         self.changed.emit()
 
     def record_completed(self, path):
+        placement, self.record_placement = self.record_placement, None
         self.close_record_bar()
-        if self.closing or self.controller.quit_timer.isActive():
+        if placement is None or self.closing or self.controller.quit_timer.isActive():
             return
         from .recording_ui import RecordingResult
         duration = time.monotonic()-self.record_started
-        self.show("recording-result-"+uuid.uuid4().hex, lambda: RecordingResult(self, path, duration))
+        self.show("recording-result-"+uuid.uuid4().hex, lambda: RecordingResult(self, path, duration, *placement), activate=False)
 
     def record_error(self, message):
+        self.record_placement = None
         self.close_record_bar()
         if self.closing:
             import logging

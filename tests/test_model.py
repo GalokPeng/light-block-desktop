@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import call, patch
 
 from still.model import Store, media_kind
 from still.organizer_model import Collections
@@ -10,6 +11,33 @@ from still.hotkeys import MOD_CTRL, MOD_SHIFT, capture_binding
 
 
 class StoreTests(unittest.TestCase):
+    def test_dock_color_persists_independently_of_the_settings_theme(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Store(root)
+            self.assertEqual(store.settings.dock_color, "#263038")
+            store.settings.dock_color = "#7b48b6"
+            store.settings.settings_theme = "light"
+            store.save()
+            self.assertEqual(Store(root).settings.dock_color, "#7b48b6")
+            store.settings.dock_color = "#12"
+            store.save()
+            self.assertEqual(Store(root).settings.dock_color, "#263038")
+
+    def test_explicit_tray_activation_detaches_the_foreground_input_queue(self):
+        with (patch.object(win32, "GetForegroundWindow", return_value=2),
+              patch.object(win32, "SetForegroundWindow", return_value=False),
+              patch.object(win32, "GetCurrentThreadId", return_value=10),
+              patch.object(win32, "GetWindowThreadProcessId", return_value=20),
+              patch.object(win32, "SendMessageTimeout", return_value=1),
+              patch.object(win32, "AttachThreadInput", return_value=True) as attach,
+              patch.object(win32, "BringWindowToTop") as raise_window,
+              patch.object(win32, "SetActiveWindow") as activate):
+            win32.activate_from_tray(1)
+        self.assertEqual(attach.call_args_list, [call(10, 20, True), call(10, 20, False)])
+        raise_window.assert_called_once_with(1)
+        activate.assert_called_once_with(1)
+
     def test_capture_shortcut_validation_and_persistence(self):
         self.assertEqual(capture_binding("Ctrl+Shift+J"), (MOD_CTRL | MOD_SHIFT, ord("J")))
         self.assertEqual(capture_binding("F8"), (0, 0x77))
