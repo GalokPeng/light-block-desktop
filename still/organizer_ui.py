@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
-from PySide6.QtWidgets import (QColorDialog, QComboBox, QFrame, QHBoxLayout, QInputDialog, QLineEdit, QListWidget,
+from PySide6.QtCore import QSignalBlocker, Qt, QTimer
+from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QInputDialog, QLineEdit, QListWidget,
     QListWidgetItem, QScrollArea, QSlider, QVBoxLayout, QWidget)
 
 from .i18n import tr
+from .model import TASKBAR_RADIUS_LIMITS
 from .organizer_model import SYSTEM_ENTRIES, group_name, organizer_view, view_options
 from .ui import Toggle, button, label
 
@@ -42,7 +42,8 @@ class OrganizerPage(QWidget):
         taskbar = QHBoxLayout()
         taskbar_text = QVBoxLayout()
         taskbar_text.addWidget(label(tr("任务栏美化"), "section"))
-        taskbar_text.addWidget(label(tr("在主屏底部显示电源、搜索和应用 Dock，右侧保留系统托盘。"), "muted", True))
+        self.taskbar_intro = label("", "muted", True)
+        taskbar_text.addWidget(self.taskbar_intro)
         taskbar.addLayout(taskbar_text, 1)
         self.taskbar_toggle = Toggle(window.store.settings.taskbar_style_enabled)
         self.taskbar_toggle.setAccessibleName(tr("开启任务栏美化"))
@@ -131,26 +132,18 @@ class OrganizerPage(QWidget):
         self.opacity.valueChanged.connect(lambda _: self.opacity_save.start())
         rv.addWidget(self.opacity)
         rv.addSpacing(8)
-        rv.addWidget(label(tr("Dock 和托盘"), "section"))
-        glass_row = QHBoxLayout()
-        glass_row.addWidget(label(tr("磨砂玻璃")))
-        glass_row.addStretch()
-        self.glass = Toggle(window.store.settings.dock_glass)
-        self.glass.setAccessibleName(tr("磨砂玻璃"))
-        self.glass.toggled.connect(lambda value: self.global_option("dock_glass", value))
-        glass_row.addWidget(self.glass)
-        rv.addLayout(glass_row)
-        self.dock_color = button(tr("底栏颜色"), self.choose_dock_color)
-        rv.addWidget(self.dock_color)
-        rv.addWidget(label(tr("底栏不透明度"), "muted"))
-        self.dock_opacity = QSlider(Qt.Orientation.Horizontal)
-        self.dock_opacity.setAccessibleName(tr("底栏不透明度"))
-        self.dock_opacity.setRange(20, 100)
-        self.dock_opacity.setSingleStep(5)
-        self.dock_opacity_save = QTimer(self, singleShot=True, interval=180)
-        self.dock_opacity_save.timeout.connect(lambda: self.global_option("dock_opacity", self.dock_opacity.value()))
-        self.dock_opacity.valueChanged.connect(lambda _: self.dock_opacity_save.start() if not self.updating else None)
-        rv.addWidget(self.dock_opacity)
+        rv.addWidget(label(tr("原生任务栏"), "section"))
+        self.taskbar_radius_label = label("", "muted")
+        rv.addWidget(self.taskbar_radius_label)
+        self.taskbar_radius = QSlider(Qt.Orientation.Horizontal)
+        self.taskbar_radius.setAccessibleName(tr("任务栏圆角"))
+        self.taskbar_radius.setRange(*TASKBAR_RADIUS_LIMITS)
+        self.taskbar_radius_save = QTimer(self, singleShot=True, interval=180)
+        self.taskbar_radius_save.timeout.connect(lambda: self.global_option("taskbar_radius", self.taskbar_radius.value()))
+        self.taskbar_radius.valueChanged.connect(self.taskbar_radius_changed)
+        rv.addWidget(self.taskbar_radius)
+        self.taskbar_status = label("", "muted", True)
+        rv.addWidget(self.taskbar_status)
         rv.addWidget(label(tr("收纳中的项目以入口形式打开。关闭收纳会恢复 Windows 桌面图标的原显示状态。"), "muted", True))
         rv.addStretch()
         # Keep form controls readable on small displays; scroll the settings
@@ -187,10 +180,7 @@ class OrganizerPage(QWidget):
         self.alignment.setCurrentIndex(self.alignment.findData(settings.organizer_alignment))
         self.view.setCurrentIndex(self.view.findData(organizer_view(settings)))
         self.icon_size.setValue((32, 44, 60).index(settings.organizer_icon_size or 44))
-        self.glass.setChecked(settings.dock_glass)
-        self.show_dock_color()
-        if not self.dock_opacity_save.isActive():
-            self.dock_opacity.setValue(settings.dock_opacity)
+        self.refresh_taskbar_options()
         self.groups.clear()
         for group in self.manager.collections.groups:
             item = QListWidgetItem(tr("{0}\n{1} 个项目").format(group_name(group), len(group['entries'])))
@@ -202,6 +192,37 @@ class OrganizerPage(QWidget):
             self.groups.setCurrentRow(0)
         self.updating = False
         self.group_selected(self.groups.currentItem())
+
+    def refresh_taskbar_options(self):
+        controller = self.window.controller
+        settings = controller.store.settings
+        with QSignalBlocker(self.taskbar_toggle):
+            self.taskbar_toggle.setChecked(settings.taskbar_style_enabled)
+        if not self.taskbar_radius_save.isActive():
+            with QSignalBlocker(self.taskbar_radius):
+                self.taskbar_radius.setValue(settings.taskbar_radius)
+            self.taskbar_radius_label.setText(tr("任务栏圆角 · {0}").format(settings.taskbar_radius))
+        style = controller.native_taskbar_style
+        auto_hide = style is not None and style.auto_hide
+        centered = style is not None and style.centered
+        self.taskbar_intro.setText(tr("电源和搜索、应用、托盘已在同一条原生任务栏内居中。") if centered else
+                                   tr("为 Windows 原生任务栏添加圆角和留边，保留系统搜索、应用按钮和托盘。"))
+        self.taskbar_radius_label.setVisible(not centered)
+        self.taskbar_radius.setVisible(not centered)
+        self.taskbar_radius.setEnabled(settings.taskbar_style_enabled and not auto_hide)
+        if centered:
+            message = (tr("三段一起显示和隐藏，跟随 Windows 的自动隐藏设置。") if auto_hide else
+                       tr("窗口盖住底栏时三段一起隐藏，鼠标移到屏幕底部可唤出。"))
+        elif auto_hide:
+            message = tr("Windows 已开启自动隐藏，圆角暂时停用。")
+        else:
+            message = tr("颜色、透明效果和自动隐藏跟随 Windows 设置。")
+        self.taskbar_status.setText(message)
+
+    def taskbar_radius_changed(self, value):
+        self.taskbar_radius_label.setText(tr("任务栏圆角 · {0}").format(value))
+        if not self.updating:
+            self.taskbar_radius_save.start()
 
     def group_selected(self, item, previous=None):
         if self.updating:
@@ -258,33 +279,16 @@ class OrganizerPage(QWidget):
             self.refresh()
             self.manager.error.emit(str(exc))
             return
-        if key in ("dock_glass", "dock_opacity", "dock_color"):
-            dock = self.window.controller.dock
-            if dock is not None:
-                dock.refresh_theme()
+        if key == "taskbar_radius":
+            style = self.window.controller.native_taskbar_style
+            if style is not None:
+                style.schedule_refresh()
         else:
             self.manager.refresh()
 
     def set_view(self):
         if not self.updating:
             self.manager.set_view(self.view.currentData())
-
-    def choose_dock_color(self):
-        settings = self.manager.store.settings
-        color = QColorDialog.getColor(QColor(settings.dock_color), self, tr("底栏颜色"))
-        if color.isValid():
-            self.global_option("dock_color", color.name())
-            self.show_dock_color()
-
-    def show_dock_color(self):
-        swatch = QPixmap(20, 20)
-        swatch.fill(Qt.GlobalColor.transparent)
-        with QPainter(swatch) as painter:
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            painter.setBrush(QColor(self.manager.store.settings.dock_color))
-            painter.setPen(QColor("#9aa8ba"))
-            painter.drawRoundedRect(1, 1, 17, 17, 5, 5)
-        self.dock_color.setIcon(QIcon(swatch))
 
     def remove(self):
         if self.group():

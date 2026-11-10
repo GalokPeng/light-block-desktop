@@ -1,3 +1,12 @@
+# v0.7.2 · 原生任务栏优化 / Native taskbar improvements
+
+- Windows 11 x64 主屏的电源与搜索、应用和系统托盘现在由同一条原生任务栏居中显示，保留 Windows 搜索、应用切换和托盘菜单。
+- 全屏、最大化或窗口遮挡底栏时三段一起隐藏。鼠标触底唤出且保留当前应用焦点，回到桌面时恢复显示。已开启 Windows 自动隐藏时沿用系统的显隐行为。
+- 关闭美化或退出时恢复原生布局和工作区。较早版本的 Windows 保留圆角和留边美化。
+- On Windows 11 x64, Power and Search, apps, and the system tray are centered on the same native taskbar on the primary display. Windows Search, app switching, and tray menus stay native.
+- All sections hide together when fullscreen, maximized, or other windows cover the bar. Move the pointer to the bottom edge to reveal it without moving focus. The bar returns on the desktop. If Windows auto-hide is enabled, the bar follows that setting.
+- Turning off taskbar styling or exiting restores the original layout and work area. Earlier versions of Windows retain rounded taskbar styling.
+
 # v0.7.1 · 显示器切换修复 / Display switching fix
 
 - 修复显示器断开或切换主屏时，Dock 刷新可能反复提示「操作未完成」的问题。显示布局稳定后，Dock 与托盘会重新定位。

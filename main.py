@@ -3,8 +3,12 @@ import sys
 if __name__ == "__main__":
     if sys.platform != "win32":
         raise SystemExit("Still requires Windows 10 or 11.")
-    if sys.argv[1:] == ["--taskbar-style-helper"]:
-        from still.taskbar_style_native import run_helper
+    # Legacy Dock and tray helper, retained for local comparison.
+    # if sys.argv[1:] == ["--taskbar-style-helper"]:
+    #     from still.taskbar_style_native import run_helper
+    #     raise SystemExit(run_helper())
+    if sys.argv[1:] == ["--native-taskbar-style-helper"]:
+        from still.native_taskbar import run_helper
         raise SystemExit(run_helper())
     from still.app import run
     raise SystemExit(run())

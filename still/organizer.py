@@ -654,11 +654,10 @@ class DesktopShelf(QWidget):
             area = self.geometry()
             return area, area.center()
         area = screen.availableGeometry()
-        dock = getattr(self.manager.controller, "dock", None)
-        if self.alignment == "bottom" and dock is not None:
-            # The Dock releases the native work area so maximized apps can
-            # reach the bottom edge. Leave room for it on the desktop itself.
-            area.setBottom(min(area.bottom(), screen.geometry().bottom() - (dock.tray_height or 48)))
+        # Legacy Dock reserved its own space after expanding the native work area.
+        # dock = getattr(self.manager.controller, "dock", None)
+        # if self.alignment == "bottom" and dock is not None:
+        #     area.setBottom(min(area.bottom(), screen.geometry().bottom() - (dock.tray_height or 48)))
         return area, area.center()
 
     @staticmethod

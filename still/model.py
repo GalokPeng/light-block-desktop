@@ -10,10 +10,12 @@ from pathlib import Path
 
 from .i18n import tr
 
-VERSION = "0.7.1"
+VERSION = "0.7.2"
 APP_NAME = "轻块桌面"
 DEFAULT_ORGANIZER_TITLE = "桌面收纳"
 DEFAULT_CAPTURE_SHORTCUT = "Ctrl+Alt+A"
+TASKBAR_RADIUS_LIMITS = (6, 26)
+DEFAULT_TASKBAR_RADIUS = 22
 ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
 ASSETS = ROOT / "assets"
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
@@ -85,6 +87,7 @@ class Settings:
     settings_theme: str = "dark"
     settings_language: str = "system"
     taskbar_style_enabled: bool = False
+    taskbar_radius: int = DEFAULT_TASKBAR_RADIUS
     dock_glass: bool = True
     dock_opacity: int = 70
     dock_color: str = "#263038"
@@ -141,6 +144,9 @@ class Store:
                 if self.settings.settings_language not in ("system", "zh", "en"):
                     self.settings.settings_language = "system"
                 self.settings.taskbar_style_enabled = self.settings.taskbar_style_enabled is True
+                radius = self.settings.taskbar_radius
+                if type(radius) is not int or not TASKBAR_RADIUS_LIMITS[0] <= radius <= TASKBAR_RADIUS_LIMITS[1]:
+                    self.settings.taskbar_radius = DEFAULT_TASKBAR_RADIUS
                 self.settings.dock_glass = self.settings.dock_glass is True
                 color = self.settings.dock_color
                 if not isinstance(color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", color):

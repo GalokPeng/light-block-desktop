@@ -23,9 +23,11 @@ if (-not $SkipInstall) {
 }
 $previousPath = $env:PATH
 $previousFFmpeg = $env:STILL_FFMPEG
+$previousTaskbar = $env:STILL_TASKBAR_DLL
 $previousCache = $env:PYINSTALLER_CONFIG_DIR
 try {
     $env:STILL_FFMPEG = if ($FFmpegPath) { (Resolve-Path -LiteralPath $FFmpegPath).Path } else { '' }
+    $env:STILL_TASKBAR_DLL = & (Join-Path $PSScriptRoot 'tools/build_native_taskbar.ps1')
     # Collect dependencies from Python, Qt and Windows only.
     $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
     $env:PYINSTALLER_CONFIG_DIR = Join-Path $WorkPath 'pyinstaller-cache'
@@ -34,6 +36,7 @@ try {
 } finally {
     $env:PATH = $previousPath
     $env:STILL_FFMPEG = $previousFFmpeg
+    $env:STILL_TASKBAR_DLL = $previousTaskbar
     $env:PYINSTALLER_CONFIG_DIR = $previousCache
 }
 $version = & $PythonPath tools/release.py version

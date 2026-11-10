@@ -2,6 +2,7 @@
 from pathlib import Path
 from runpy import run_path
 from importlib.util import find_spec
+from shutil import copyfile
 import os
 
 root = Path(SPECPATH)
@@ -18,8 +19,16 @@ resources = [(str(root / 'assets'), 'assets'), (str(root / 'licenses'), 'license
              (str(root / 'LICENSE'), '.'), (str(root / 'THIRD_PARTY_NOTICES.md'), '.')]
 if ffmpeg:
     resources.append((ffmpeg, 'runtime'))
+taskbar = os.environ.get('STILL_TASKBAR_DLL')
+native_binaries = []
+if taskbar:
+    taskbar_dir = root / 'build' / 'native-taskbar'
+    # PyInstaller preserves the source basename. Give the packaged DLL a stable name.
+    bundled_taskbar = taskbar_dir / 'QingkuaiTaskbarLayout.dll'
+    copyfile(taskbar, bundled_taskbar)
+    native_binaries.append((str(bundled_taskbar), 'runtime'))
 analysis = Analysis(
-    [str(root / 'main.py')], pathex=[str(root)], binaries=[],
+    [str(root / 'main.py')], pathex=[str(root)], binaries=native_binaries,
     datas=resources,
     hiddenimports=[], hookspath=[], hooksconfig={}, runtime_hooks=[],
     excludes=['tkinter', 'unittest', 'PIL', 'psutil', 'numpy', 'pytest',

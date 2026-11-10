@@ -19,6 +19,8 @@ python tools/run_tests.py --desktop
 
 `release/` contains Setup, a portable ZIP, the source ZIP and SHA-256 checksums. Setup is unsigned and installs for the current user by default. It preserves settings on upgrade and uninstall. If you switch from portable to installed, toggle **Start with Windows** to update its path.
 
+The first build downloads SHA-256-verified LLVM/MinGW-w64 and C++/WinRT build tools. Setup and the portable archive include the native taskbar DLL. The installation checks verify that the DLL loads. The three-section layout requires Windows 11 22H2 or newer on x64.
+
 Setup selects English, Simplified Chinese or Traditional Chinese using the Windows display language. The app uses Simplified Chinese for Chinese display languages and English otherwise. On a Windows test machine without an existing installation, run `python tools/test_setup.py` to check language selection, startup, uninstall and config preservation in temporary directories.
 
 Recording and export require a separate FFmpeg build on PATH with `gdigrab`, `libx264`, `ffv1` and palette filters. Static, GIF and video wallpapers use the bundled runtime.

@@ -243,10 +243,13 @@ class BottomWorkArea:
         self.screen = None
 
     def expand(self, bar):
+        self.expand_bounds(bar.bounds)
+
+    def expand_bounds(self, bounds):
         before = primary_work_area()
-        if before[3] != bar.bounds[1]:
+        if before[3] != bounds[1]:
             return  # Already expanded, or another appbar also owns this edge.
-        after = (*before[:3], bar.bounds[3])
+        after = (*before[:3], bounds[3])
         try:
             self.screen = win32.target_monitor()["name"]
         except OSError:

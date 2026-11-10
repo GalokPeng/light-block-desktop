@@ -1,6 +1,7 @@
 """Derive version metadata and prepare release assets from a Git commit."""
 import argparse
 import ast
+import ctypes
 import hashlib
 import os
 from pathlib import Path
@@ -91,6 +92,16 @@ def bundle(version, dist, output):
 
 
 def smoke_at(app, data):
+    taskbar = app.parent / "_internal" / "runtime" / "QingkuaiTaskbarLayout.dll"
+    if not taskbar.is_file():
+        raise FileNotFoundError(f"Packaged native taskbar component is missing: {taskbar}")
+    library = ctypes.WinDLL(str(taskbar.resolve()))
+    free = ctypes.windll.kernel32.FreeLibrary
+    free.argtypes = (ctypes.c_void_p,)
+    try:
+        getattr(library, "DllGetClassObject")
+    finally:
+        free(library._handle)
     data.mkdir(parents=True, exist_ok=True)
     (data / "settings.json").write_text(
         '{"capture_hotkey":false,"restore_on_start":false,"settings_theme":"light"}',

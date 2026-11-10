@@ -11,6 +11,10 @@ The Windows distribution includes separate, unmodified Python and Qt libraries. 
 | Qt runtime | 6.11.2, LGPL-3.0 for the included Qt modules | [Qt 6.11.2 source](https://download.qt.io/official_releases/qt/6.11/6.11.2/single/) |
 | Qt Multimedia's shared FFmpeg libraries | LGPL, see Qt Multimedia attributions and the wheel's license notices | [Qt Multimedia 6.11.2 source](https://download.qt.io/official_releases/qt/6.11/6.11.2/submodules/) and [FFmpeg releases](https://ffmpeg.org/releases/) |
 | PyInstaller bootloader | 6.22.3, GPL-2.0-or-later with the bootloader exception | [PyInstaller v6.22.3 source](https://github.com/pyinstaller/pyinstaller/tree/v6.22.3) |
+| Native taskbar compiler runtime (LLVM and MinGW-w64) | LLVM 20.1.3, Apache-2.0 with LLVM Exceptions; MinGW-w64 13.0.0, see included runtime notices | [LLVM source](https://github.com/llvm/llvm-project/tree/llvmorg-20.1.3), [MinGW-w64 source](https://github.com/mingw-w64/mingw-w64/tree/v13.0.0) and [toolchain archive](https://github.com/ramensoftware/windhawk-dependencies/releases/tag/v1.6) |
+| C++/WinRT headers used by the native taskbar DLL | 2.0.240405.15, MIT | [C++/WinRT source](https://github.com/microsoft/cppwinrt/tree/2.0.240405.15) |
+
+The native taskbar DLL contains the linked compiler runtime. The corresponding notices are in `licenses/Native-*.txt`. Windhawk's runtime is separate from the build toolchain and is not included in the distribution.
 
 The replaceable Qt and Shiboken libraries are under `_internal` and its subdirectories. Installation into the default per-user directory gives the user access to those files. Recipients may replace them with compatible modified versions and reverse engineer the application as needed to debug those modifications under the LGPL. The application source, dependency versions and build instructions accompany the release. License texts are in `licenses/` and in the runtime license files.
 

@@ -44,7 +44,7 @@ class Controller:
         self.release_check = None
         self.window = None
         self.organizer = None
-        self.dock = None
+        self.native_taskbar_style = None
         self.workbench = None
         self.hotkeys = None
         self.closing = False
@@ -69,7 +69,8 @@ class Controller:
         if store.settings.organizer_enabled or (store.directory / "desktop-icon-state.json").exists():
             self.get_organizer()
         if store.settings.taskbar_style_enabled:
-            self.open_dock()
+            # self.open_dock()  # Legacy Dock and tray.
+            self.open_native_taskbar_style()
         self.update_tray()
         if not background or not QSystemTrayIcon.isSystemTrayAvailable():
             self.show_window()
@@ -142,10 +143,6 @@ class Controller:
             self.report_error(str(exc))
             return
         self.apply_language()
-        if self.dock is not None:
-            self.dock.setWindowTitle(tr("应用 Dock"))
-            self.dock.visuals.clear()
-            self.dock.layout_entries()
         self.build_tray_menu()
         self.update_tray()
         if self.window is not None:
@@ -203,7 +200,7 @@ class Controller:
 
     def needs_background(self):
         return (self.engine.surface is not None or self.store.settings.organizer_enabled or
-                self.dock is not None or
+                self.native_taskbar_style is not None or
                 bool(self.hotkeys and self.hotkeys.registered)
                 or (self.workbench is not None and self.workbench.needs_background()))
 
@@ -288,27 +285,48 @@ class Controller:
 
     def cleanup(self):
         self.closing = True
-        self.close_dock()
+        self.close_native_taskbar_style()
         if self.hotkeys is not None:
             self.hotkeys.cleanup()
         if self.workbench is not None:
             self.workbench.cleanup()
 
-    def open_dock(self):
-        from .dock import Dock
-        self.dock = Dock(self)
-        self.dock.taskbar_style.start()
+    # def open_dock(self):
+    #     from .dock import Dock
+    #     self.dock = Dock(self)
+    #     self.dock.taskbar_style.start()
 
-    def close_dock(self):
-        if self.dock is not None:
-            dock = self.dock
-            self.dock = None
-            dock.stop()
+    # def close_dock(self):
+    #     if self.dock is not None:
+    #         dock = self.dock
+    #         self.dock = None
+    #         dock.stop()
+
+    def open_native_taskbar_style(self):
+        from .native_taskbar_style import NativeTaskbarStyle
+        style = NativeTaskbarStyle(self.app, self.store.settings)
+        self.native_taskbar_style = style
+        style.status.connect(self.refresh_taskbar_controls)
+        style.failed.connect(self.taskbar_style_failed)
+        style.start()
+
+    def close_native_taskbar_style(self):
+        style, self.native_taskbar_style = self.native_taskbar_style, None
+        if style is not None:
+            style.stop()
+
+    def taskbar_style_failed(self, message):
+        self.set_taskbar_style(False)
+        self.report_error(message)
+
+    def refresh_taskbar_controls(self, *_):
+        if self.window is not None:
+            self.window.pages.widget(1).refresh_taskbar_options()
 
     def set_taskbar_style(self, enabled):
         settings = self.store.settings
         if not enabled:
-            self.close_dock()
+            self.close_native_taskbar_style()
         if enabled != settings.taskbar_style_enabled:
             settings.taskbar_style_enabled = enabled
             try:
@@ -318,12 +336,8 @@ class Controller:
                 self.report_error(str(exc))
             else:
                 if enabled:
-                    self.open_dock()
-        if self.window is not None:
-            toggle = self.window.pages.widget(1).taskbar_toggle
-            toggle.blockSignals(True)
-            toggle.setChecked(settings.taskbar_style_enabled)
-            toggle.blockSignals(False)
+                    self.open_native_taskbar_style()
+        self.refresh_taskbar_controls()
         QTimer.singleShot(0, self.maybe_quit)
 
     def show_organizer_settings(self):
