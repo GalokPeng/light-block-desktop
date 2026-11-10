@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import hashlib
 import logging
 import os
 from logging.handlers import RotatingFileHandler
@@ -14,9 +15,11 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 from . import win32
+from . import desktop_menu
 from .i18n import install_qt_translation, set_language, tr
 from .engine import WallpaperEngine
 from .model import APP_NAME, Store, VERSION
+from .profile import choose_directory, default_directory, legacy_directory, writable
 
 
 def make_icon():
@@ -37,10 +40,12 @@ def make_icon():
 
 
 class Controller:
-    def __init__(self, app, store, background=False, check_updates=True):
+    def __init__(self, app, store, background=False, check_updates=True, native_menu=False):
         self.app, self.store = app, store
         self.apply_language()
         self.check_updates = check_updates
+        self.native_menu = native_menu
+        self.register_desktop_menu()
         self.release_check = None
         self.window = None
         self.organizer = None
@@ -79,7 +84,7 @@ class Controller:
         if store.settings.restore_on_start and store.settings.active_id:
             QTimer.singleShot(1800 if background else 150, self.restore_last)
         elif background and self.window is None and not self.needs_background():
-            QTimer.singleShot(200, app.quit)
+            QTimer.singleShot(200, self.maybe_quit)
         if store.warning:
             QTimer.singleShot(300, lambda: self.report_error(store.warning))
 
@@ -130,6 +135,33 @@ class Controller:
         self.app.setApplicationDisplayName(tr(APP_NAME))
         install_qt_translation(self.app)
 
+    def register_desktop_menu(self):
+        if self.native_menu:
+            try:
+                desktop_menu.register()
+            except OSError:
+                logging.exception("Could not register the desktop background menu")
+
+    def desktop_action(self, action):
+        if action == "note":
+            self.get_workbench().notes().create(pinned=True)
+        elif action == "sound":
+            self.set_wallpaper_sound(not self.store.settings.wallpaper_sound)
+
+    def set_wallpaper_sound(self, enabled):
+        settings = self.store.settings
+        previous = settings.wallpaper_sound
+        settings.wallpaper_sound = enabled
+        try:
+            self.store.save()
+        except OSError as exc:
+            settings.wallpaper_sound = previous
+            self.report_error(str(exc))
+        else:
+            self.engine.sync_sound()
+        if self.window is not None:
+            self.window.refresh_wallpaper_sound()
+
     def change_language(self, preference):
         settings = self.store.settings
         previous = settings.settings_language
@@ -143,6 +175,7 @@ class Controller:
             self.report_error(str(exc))
             return
         self.apply_language()
+        self.register_desktop_menu()
         self.build_tray_menu()
         self.update_tray()
         if self.window is not None:
@@ -405,9 +438,24 @@ class Controller:
             self.tray.showMessage(tr("轻块桌面"), text, QSystemTrayIcon.MessageIcon.Warning, 8000)
 
 
+def instance_name(directory):
+    return "StillWallpaper-"+hashlib.sha256(str(directory.resolve()).casefold().encode()).hexdigest()[:16]
+
+
+def notify_instance(directory, command):
+    socket = QLocalSocket()
+    socket.connectToServer(instance_name(directory))
+    if not socket.waitForConnected(400):
+        return False
+    socket.write(command)
+    socket.waitForBytesWritten(400)
+    return True
+
+
 def run():
     parser = argparse.ArgumentParser(description=tr("轻块桌面 桌面工作台 v")+VERSION)
     parser.add_argument("--background", action="store_true", help="Start quietly in the tray")
+    parser.add_argument("--desktop-action", choices=desktop_menu.ACTIONS, help=argparse.SUPPRESS)
     parser.add_argument("--quit", action="store_true", help="Quit the running instance for this configuration")
     parser.add_argument("--data-dir", type=Path, help="Override local config directory")
     parser.add_argument("--screenshot", type=Path, help="Capture the settings window, then exit; no wallpaper applied")
@@ -423,7 +471,28 @@ def run():
     app.setApplicationVersion(VERSION)
     app.setFont(QFont("Microsoft YaHei UI", 9))
     app.setQuitOnLastWindowClosed(False)
-    store = Store(args.data_dir)
+    destination = args.data_dir or default_directory()
+    command = b"quit" if args.quit else (f"desktop:{args.desktop_action}".encode() if args.desktop_action else b"show")
+    if notify_instance(destination, command):
+        return 0
+    if args.data_dir is None:
+        legacy = legacy_directory()
+        if (destination.resolve() != legacy.resolve() and legacy.is_dir()
+                and (not destination.exists() or not writable(destination)) and notify_instance(legacy, command)):
+            return 0
+    if args.quit:
+        return 0
+    directory = destination if args.data_dir is not None else choose_directory(destination, legacy)
+    if args.data_dir is None and notify_instance(directory, command):
+        return 0
+    server_name = instance_name(directory)
+    server = QLocalServer(app)
+    QLocalServer.removeServer(server_name)
+    if not server.listen(server_name):
+        QMessageBox.critical(None, tr("轻块桌面"), tr("无法创建本地实例通道。"))
+        return 1
+    store = Store(directory)
+    store.migrate_wallpapers()
     handler = RotatingFileHandler(store.directory / "still.log", maxBytes=512000, backupCount=2, encoding="utf-8")
     logging.basicConfig(level=logging.INFO, handlers=[handler], format="%(asctime)s %(levelname)s %(message)s")
     def exception_hook(exc_type, value, tb):
@@ -432,25 +501,11 @@ def run():
         if hasattr(app, "controller"):
             app.controller.report_error(tr("操作未完成：{0}。详细信息已记录在 still.log。").format(value))
     sys.excepthook = exception_hook
-    # One instance per user/config directory. A second launch opens settings.
-    import hashlib
-    server_name = "StillWallpaper-"+hashlib.sha256(str(store.directory.resolve()).casefold().encode()).hexdigest()[:16]
-    socket = QLocalSocket()
-    socket.connectToServer(server_name)
-    if socket.waitForConnected(400):
-        socket.write(b"quit" if args.quit else b"show")
-        socket.waitForBytesWritten(400)
-        return 0
-    if args.quit:
-        return 0
-    server = QLocalServer(app)
-    QLocalServer.removeServer(server_name)
-    if not server.listen(server_name):
-        QMessageBox.critical(None, tr("轻块桌面"), tr("无法创建本地实例通道。"))
-        return 1
     if args.screenshot:
         store.settings.restore_on_start = False
-    controller = Controller(app, store, background=args.background, check_updates=not args.screenshot)
+    native_menu = bool(getattr(sys, "frozen", False) and args.data_dir is None and not args.screenshot)
+    controller = Controller(app, store, background=args.background or bool(args.desktop_action),
+                            check_updates=not args.screenshot, native_menu=native_menu)
     app.controller = controller
     def new_connection():
         while server.hasPendingConnections():
@@ -459,8 +514,10 @@ def run():
                 payload = bytes(c.readAll())
                 if payload == b"quit":
                     controller.request_quit()
-                elif payload:
+                elif payload == b"show":
                     controller.show_window()
+                elif payload in (b"desktop:note", b"desktop:sound"):
+                    controller.desktop_action(payload.decode().split(":")[1])
                 c.disconnectFromServer()
                 c.deleteLater()
             if connection.bytesAvailable():
@@ -468,6 +525,8 @@ def run():
             else:
                 connection.readyRead.connect(receive)
     server.newConnection.connect(new_connection)
+    if args.desktop_action:
+        QTimer.singleShot(0, lambda: controller.desktop_action(args.desktop_action))
     if args.screenshot:
         def capture():
             args.screenshot.parent.mkdir(parents=True, exist_ok=True)

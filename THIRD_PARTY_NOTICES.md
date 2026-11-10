@@ -13,6 +13,7 @@ The Windows distribution includes separate, unmodified Python and Qt libraries. 
 | PyInstaller bootloader | 6.22.3, GPL-2.0-or-later with the bootloader exception | [PyInstaller v6.22.3 source](https://github.com/pyinstaller/pyinstaller/tree/v6.22.3) |
 | Native taskbar compiler runtime (LLVM and MinGW-w64) | LLVM 20.1.3, Apache-2.0 with LLVM Exceptions; MinGW-w64 13.0.0, see included runtime notices | [LLVM source](https://github.com/llvm/llvm-project/tree/llvmorg-20.1.3), [MinGW-w64 source](https://github.com/mingw-w64/mingw-w64/tree/v13.0.0) and [toolchain archive](https://github.com/ramensoftware/windhawk-dependencies/releases/tag/v1.6) |
 | C++/WinRT headers used by the native taskbar DLL | 2.0.240405.15, MIT | [C++/WinRT source](https://github.com/microsoft/cppwinrt/tree/2.0.240405.15) |
+| GitHub mark from Octicons | 19.23.0, MIT | [Octicons source](https://github.com/primer/octicons/blob/v19.23.0/icons/mark-github-16.svg) and [license](licenses/Octicons-MIT.txt) |
 
 The native taskbar DLL contains the linked compiler runtime. The corresponding notices are in `licenses/Native-*.txt`. Windhawk's runtime is separate from the build toolchain and is not included in the distribution.
 

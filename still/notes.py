@@ -138,9 +138,14 @@ class NotesEngine(QObject):
         rows = self.db.query("SELECT * FROM notes WHERE id=?", (ident,))
         return rows[0] if rows else None
 
-    def create(self):
+    def create(self, *, pinned=False):
+        self.before_change.emit()
         ident = uuid.uuid4().hex
-        self.db.execute("INSERT INTO notes(id,title,body,updated) VALUES(?,?,?,?)", (ident, tr("新的便签"), "", utc_now()))
+        self.db.execute("INSERT INTO notes(id,title,body,updated,pinned) VALUES(?,?,?,?,?)",
+                        (ident, tr("新的便签"), "", utc_now(), int(pinned)))
+        if pinned:
+            self.refresh_pins()
+            self.schedule()
         self.changed.emit()
         return ident
 

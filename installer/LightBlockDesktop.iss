@@ -56,6 +56,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
 [Files]
 Source: "{#AppDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[Registry]
+Root: HKCU; Subkey: "Software\Classes\DesktopBackground\Shell\LightBlockDesktop.note"; Flags: dontcreatekey uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\DesktopBackground\Shell\LightBlockDesktop.sound"; Flags: dontcreatekey uninsdeletekey
+
 [Icons]
 Name: "{group}\{cm:AppTitle}"; Filename: "{app}\轻块桌面.exe"; WorkingDir: "{app}"
 Name: "{autodesktop}\{cm:AppTitle}"; Filename: "{app}\轻块桌面.exe"; WorkingDir: "{app}"; Tasks: desktopicon

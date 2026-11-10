@@ -1129,6 +1129,13 @@ class DesktopShelf(QWidget):
         menu.addAction(tr("添加新分组"), self.manager.create_group)
         menu.addAction(tr("打开收纳设置"), self.manager.open_settings)
         menu.addSeparator()
+        controller = self.manager.controller
+        menu.addAction(controller.icon, tr("新建便签"), lambda: controller.desktop_action("note"))
+        sound = menu.addAction(controller.icon, tr("轻块桌面声音"))
+        sound.setCheckable(True)
+        sound.setChecked(controller.store.settings.wallpaper_sound)
+        sound.toggled.connect(controller.set_wallpaper_sound)
+        menu.addSeparator()
         menu.addAction(tr("关闭收纳并恢复桌面"), lambda: self.manager.set_enabled(False))
         menu.exec(point)
 

@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import shutil
 import sys
 import uuid
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 from .i18n import tr
+from .profile import choose_directory, default_directory, legacy_directory
+from .recording_options import FRAME_RATES, RESOLUTIONS
 
-VERSION = "0.7.2"
+VERSION = "0.7.3"
 APP_NAME = "轻块桌面"
 DEFAULT_ORGANIZER_TITLE = "桌面收纳"
 DEFAULT_CAPTURE_SHORTCUT = "Ctrl+Alt+A"
@@ -61,7 +65,7 @@ def bundled_items() -> list[dict]:
         {"id": "builtin:mountain", "path": "mountain.png", "name": "雾隐青山", "kind": "image", "builtin": True},
         {"id": "builtin:glow", "path": "glow.png", "name": "深蓝引力", "kind": "image", "builtin": True},
         {"id": "builtin:motion", "path": "motion.mp4", "name": "光的呼吸", "kind": "video", "builtin": True},
-        {"id": "builtin:ripple", "path": "ripple.gif", "name": "微光涟漪", "kind": "gif", "builtin": True},
+        {"id": "builtin:ripple", "path": "startrail.gif", "name": "星轨弧光", "kind": "gif", "builtin": True},
     ]
 
 
@@ -71,6 +75,16 @@ def item_name(item: dict) -> str:
 
 def item_path(item: dict) -> Path:
     return ASSETS / item["path"] if item.get("builtin") else Path(item["path"])
+
+
+def wallpaper_folder(ident):
+    return ident if re.fullmatch(r"[0-9a-f]{32}", ident) else hashlib.sha256(ident.encode()).hexdigest()[:32]
+
+
+def managed_wallpaper(path, ident):
+    parts = Path(path).parts
+    return (len(parts) == 3 and parts[:2] == ("wallpapers", wallpaper_folder(ident))
+            and parts[-1] != ".." and ":" not in parts[-1])
 
 
 @dataclass
@@ -83,6 +97,7 @@ class Settings:
     fullscreen_pause: bool = True
     battery_pause: bool = True
     restore_on_start: bool = True
+    wallpaper_sound: bool = False
     original_wallpaper: dict | None = None
     settings_theme: str = "dark"
     settings_language: str = "system"
@@ -114,12 +129,13 @@ class Settings:
     notes_background: bool = False
     focus_active: bool = False
     record_lossless: bool = False
-    record_fps: int = 24
+    record_fps: int | None = None
+    record_resolution: int = 0
 
 
 class Store:
     def __init__(self, directory: Path | None = None):
-        self.directory = directory or Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "StillWallpaper"
+        self.directory = (directory or choose_directory(default_directory(), legacy_directory())).resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
         self.file = self.directory / "settings.json"
         self.warning = ""
@@ -136,7 +152,9 @@ class Store:
                     raise ValueError(tr("壁纸库格式不正确"))
                 self.settings.library = [i for i in self.settings.library if isinstance(i, dict)
                                          and isinstance(i.get("path"), str) and isinstance(i.get("id"), str)
-                                         and i.get("kind") in {"image", "gif", "video"}]
+                                         and isinstance(i.get("name"), str) and i.get("kind") in {"image", "gif", "video"}
+                                         and not i.get("builtin") and (Path(i["path"]).is_absolute()
+                                                                      or managed_wallpaper(i["path"], i["id"]))]
                 if self.settings.fit not in FITS:
                     self.settings.fit = "fill"
                 if self.settings.settings_theme not in ("dark", "light"):
@@ -170,6 +188,12 @@ class Store:
                     self.settings.organizer_position = None
                 if not isinstance(self.settings.capture_shortcut, str) or not self.settings.capture_shortcut:
                     self.settings.capture_shortcut = DEFAULT_CAPTURE_SHORTCUT
+                self.settings.wallpaper_sound = self.settings.wallpaper_sound is True
+                self.settings.record_lossless = self.settings.record_lossless is True
+                if type(self.settings.record_fps) is not int or self.settings.record_fps not in FRAME_RATES:
+                    self.settings.record_fps = None
+                if type(self.settings.record_resolution) is not int or self.settings.record_resolution not in RESOLUTIONS:
+                    self.settings.record_resolution = 0
             except (ValueError, TypeError, OSError) as exc:
                 backup = self.directory / f"settings.damaged-{uuid.uuid4().hex[:8]}.json"
                 self.file.replace(backup)
@@ -183,6 +207,9 @@ class Store:
     def find(self, ident: str) -> dict | None:
         return next((i for i in self.items if i["id"] == ident), None)
 
+    def path(self, item):
+        return self.directory / item_path(item)
+
     def save(self):
         for saver in self.sidecar_savers:
             saver()
@@ -195,14 +222,77 @@ class Store:
         if not path.is_file():
             raise ValueError(tr("请选择一个文件。"))
         kind = media_kind(path)
-        existing = next((i for i in self.items if item_path(i).resolve() == path), None)
+        existing = next((i for i in self.items if self.path(i).resolve() == path or i.get("source") == str(path)), None)
         if existing:
+            if not self.path(existing).is_file() and managed_wallpaper(existing["path"], existing["id"]):
+                self.copy_wallpaper(existing, path)
             return existing
-        item = {"id": uuid.uuid4().hex, "path": str(path), "name": path.stem, "kind": kind, "builtin": False}
+        item = {"id": uuid.uuid4().hex, "name": path.stem, "kind": kind, "builtin": False}
+        self.copy_wallpaper(item, path)
         self.settings.library.append(item)
-        self.save()
+        try:
+            self.save()
+        except OSError:
+            self.settings.library.pop()
+            self.delete_copy(item)
+            raise
         return item
 
+    def copy_wallpaper(self, item, source):
+        relative = Path("wallpapers") / wallpaper_folder(item["id"]) / source.name
+        destination = self.directory / relative
+        if not destination.resolve().is_relative_to(self.directory / "wallpapers"):
+            raise OSError(tr("无法写入壁纸库。"))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.parent / (".import-" + uuid.uuid4().hex + ".tmp")
+        try:
+            shutil.copyfile(source, temporary)
+            os.replace(temporary, destination)
+        finally:
+            temporary.unlink(missing_ok=True)
+        item.update(path=str(relative), source=str(source))
+
+    def migrate_wallpapers(self):
+        changed = []
+        for item in self.settings.library:
+            source = Path(item["path"])
+            if not source.is_absolute() or not source.is_file():
+                continue
+            original = item.copy()
+            try:
+                self.copy_wallpaper(item, source)
+                changed.append((item, original))
+            except OSError:
+                self.warning = tr("部分旧壁纸未能复制，仍从原位置读取。")
+        if changed:
+            try:
+                self.save()
+            except OSError:
+                for item, original in changed:
+                    self.delete_copy(item)
+                    item.clear()
+                    item.update(original)
+                self.warning = tr("部分旧壁纸未能复制，仍从原位置读取。")
+
+    def delete_copy(self, item):
+        if not managed_wallpaper(item["path"], item["id"]):
+            return
+        try:
+            path = self.path(item)
+            if path.resolve().is_relative_to(self.directory / "wallpapers"):
+                path.unlink(missing_ok=True)
+                path.parent.rmdir()
+        except OSError:
+            pass
+
     def remove(self, ident: str):
-        self.settings.library = [i for i in self.settings.library if i["id"] != ident]
-        self.save()
+        library = self.settings.library
+        self.settings.library = [i for i in library if i["id"] != ident]
+        try:
+            self.save()
+        except OSError:
+            self.settings.library = library
+            raise
+        for item in library:
+            if item["id"] == ident:
+                self.delete_copy(item)

@@ -9,7 +9,7 @@
 
 1. Download `Setup-x64.exe` from [GitHub Releases](https://github.com/GalokPeng/light-block-desktop/releases/latest). For the portable edition, extract the full `Windows-x64.zip` and run `轻块桌面.exe`.
 2. Requires Windows 10 or 11 x64. Setup uses the Windows display language and includes English, Simplified Chinese and Traditional Chinese. The app selects Simplified Chinese on Chinese Windows and defaults to English otherwise.
-3. Quit the previous version before upgrading. Settings live in `%LOCALAPPDATA%\StillWallpaper`. Installation, upgrades and uninstall preserve that folder.
+3. Quit the previous version before upgrading. Settings and wallpapers live in `data` beside the app. Existing settings are copied there. If the app folder is read-only, the app uses `%LOCALAPPDATA%\StillWallpaper`.
 
 Setup installs for the current user by default. Wallpaper playback and still screenshots work with the bundled runtime. Recording and export require the [FFmpeg command-line tool](https://ffmpeg.org/download.html) with `gdigrab`, `libx264`, `ffv1` and palette filters on PATH.
 
@@ -17,13 +17,13 @@ Setup installs for the current user by default. Wallpaper playback and still scr
 
 | Feature | How it works |
 | --- | --- |
-| Wallpaper | Import a still image, GIF or video. Live wallpaper plays from the source file. Choose a display, fit mode and automatic pause conditions |
+| Wallpaper | Import full-quality copies of images, GIFs and videos. Videos have frame-based covers and optional sound. Choose a display, fit mode and automatic pause conditions |
 | Desktop organizer | Choose a top, center or bottom layout, and sort by name, modification time or group. New desktop items are grouped automatically. Disabling the organizer restores Windows icon visibility |
 | Taskbar style | Three centered sections on the native Windows 11 x64 taskbar, with smart auto-hide and edge reveal |
 | Capture and annotation | Press `Ctrl+Alt+A` by default. Select a window or area and add text, arrows, numbers, strokes or mosaic. Save PNG, copy, or pin at the original selection |
 | Scrolling capture | Scroll inside the selected region to stitch frames. Follow the side preview or adjust the overlap manually |
 | Region recording | Press `Ctrl+Alt+R` to stop and pin a preview. Draw, crop and trim, then save or copy MP4, GIF or lossless MKV at the selected quality and frame rate |
-| Productivity | Launcher and calculator, optional clipboard history, pinned notes and tasks, file preview and batch rename, and focus workspaces |
+| Productivity | Right-click the desktop to pin a new note. Also includes task reminders, launcher and calculator, optional clipboard history, file preview and batch rename, and focus workspaces |
 
 | Desktop organizer and pinned note | Capture toolbar |
 | --- | --- |

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from PySide6.QtCore import QEvent, QEventLoop, QTimer
-from PySide6.QtGui import QMovie
+from PySide6.QtGui import QImageReader, QMovie
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import QApplication
@@ -49,11 +49,13 @@ class GifRenderingTests(unittest.TestCase):
             self.assertIsNotNone(self.engine.player)
             self.assertEqual(win32.GetParent(int(surface.winId())), self.engine.worker)
             colors, timestamps = [], []
+            source_size = QImageReader(str(item_path(self.gif))).size()
             def frame_arrived(frame):
                 if frame.isValid():
-                    self.assertEqual((frame.width(), frame.height()), (480, 270))
+                    self.assertEqual(frame.size(), source_size)
                     image = frame.toImage()
-                    colors.append(image.pixelColor(240, 135).rgba())
+                    small = image.scaled(32, 18)
+                    colors.append(bytes(small.constBits()))
                     timestamps.append(frame.startTime())
             surface.videoSink().videoFrameChanged.connect(frame_arrived)
             # Backend startup can take longer during concurrent build/driver

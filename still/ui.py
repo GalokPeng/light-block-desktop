@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QIcon, QImageReader, QKeySequence, QLinearGradient, QMovie, QPainter, QPainterPath, QPen, QPixmap, QShortcut
+from PySide6.QtCore import QPointF, QRectF, QSignalBlocker, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QImageReader, QKeySequence, QLinearGradient, QMovie, QPainter, QPainterPath, QPen, QPixmap, QShortcut
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QButtonGroup, QCheckBox, QComboBox, QFileDialog,
     QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox, QPushButton,
     QScrollArea, QSizePolicy, QStackedWidget, QToolButton, QVBoxLayout, QWidget)
@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (QAbstractButton, QApplication, QButtonGroup, QChe
 from .i18n import display_language, tr
 from . import win32
 from .model import APP_NAME, ASSETS, FITS, VERSION, item_name, item_path
+from .updates import REPO_URL
+from .video_thumbnails import VideoThumbnails
 
 ACCENT = "#a6e4ca"
 KIND_LABELS = {"image": "静态", "gif": "GIF", "video": "视频"}
@@ -193,10 +195,7 @@ def button(text: str, callback, name="") -> QPushButton:
     return widget
 
 
-def preview_image(item, width=960) -> QPixmap:
-    path = item_path(item)
-    if item["kind"] == "video":
-        path = ASSETS / "glow.png"
+def preview_image(path, width=960) -> QPixmap:
     reader = QImageReader(str(path))
     reader.setAutoTransform(True)
     size = reader.size()
@@ -254,17 +253,19 @@ class Preview(QWidget):
         self.setMinimumHeight(258)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-    def set_item(self, item):
+    def set_item(self, item, path=None, cover=None):
         if self.movie is not None:
             self.movie.stop()
+            self.movie.setFileName("")
             self.movie.deleteLater()
             self.movie = None
         self.item = item
-        self.pixmap = preview_image(item)
+        path = path or item_path(item)
+        self.pixmap = cover if cover is not None else preview_image(path)
         if item["kind"] == "gif":
-            self.movie = QMovie(str(item_path(item)), parent=self)
+            self.movie = QMovie(str(path), parent=self)
             self.movie.setCacheMode(QMovie.CacheMode.CacheNone)
-            source_size = QImageReader(str(item_path(item))).size()
+            source_size = QImageReader(str(path)).size()
             if source_size.isValid() and max(source_size.width(), source_size.height()) > 960:
                 source_size.scale(960, 960, Qt.AspectRatioMode.KeepAspectRatio)
                 self.movie.setScaledSize(source_size)
@@ -324,21 +325,21 @@ class Preview(QWidget):
         if self.item["kind"] == "gif":
             subtitle = tr("GIF 动态预览 · 应用后在桌面循环播放")
         elif self.item["kind"] == "video":
-            subtitle = tr("封面预览 · 应用后在桌面播放，保持静音")
+            subtitle = tr("封面预览 · 应用后在桌面播放")
         p.drawText(QRectF(24, self.height()-43, self.width()-48, 23), Qt.AlignmentFlag.AlignVCenter, subtitle)
 
 
 class WallpaperCard(QAbstractButton):
-    def __init__(self, item, light=False):
+    def __init__(self, item, path, pixmap, light=False):
         super().__init__()
-        self.item, self.pixmap = item, preview_image(item, 420)
+        self.item, self.pixmap = item, pixmap
         self.light = light
         self.setMinimumSize(145, 134)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setFixedHeight(139)
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip(str(item_path(item)))
+        self.setToolTip(str(path))
         self.setAccessibleName(item_name(item)+", "+tr(KIND_LABELS[item["kind"]]))
 
     def paintEvent(self, _):
@@ -382,6 +383,8 @@ class MainWindow(QMainWindow):
     def __init__(self, controller):
         super().__init__()
         self.controller, self.store, self.engine = controller, controller.store, controller.engine
+        self.thumbnails = VideoThumbnails(self.store.directory, self)
+        self.thumbnails.ready.connect(self.cover_ready)
         self.updater = controller.updater()
         self.selected = self.store.find(self.store.settings.active_id) or self.store.items[0]
         self.filter_kind = "all"
@@ -633,7 +636,12 @@ class MainWindow(QMainWindow):
             item.addWidget(check)
             item.addWidget(label(description, "muted", True))
             v.addLayout(item)
-        v.addWidget(label(tr("始终启用：静音播放 · 不抢焦点 · 锁屏与熄屏暂停"), "eyebrow", True))
+        self.wallpaper_sound = QCheckBox(tr("轻块桌面声音"))
+        self.refresh_wallpaper_sound()
+        self.wallpaper_sound.toggled.connect(self.controller.set_wallpaper_sound)
+        v.addWidget(self.wallpaper_sound)
+        v.addWidget(label(tr("开启后，含音轨的视频壁纸会播放声音。"), "muted", True))
+        v.addWidget(label(tr("始终启用：不抢焦点 · 锁屏与熄屏暂停"), "eyebrow", True))
         layout.addWidget(card)
         note = QFrame()
         note.setObjectName("panel")
@@ -659,11 +667,26 @@ class MainWindow(QMainWindow):
         c.addWidget(label(f"{tr(APP_NAME)}  /  v{VERSION}", "title"))
         c.addWidget(label(tr("给桌面一点风景，给工作一点安静。"), "section"))
         c.addWidget(label(tr("纯属个人娱乐，有BUG随便提issues，自己用得不顺就改改"), "muted", True))
-        c.addWidget(button(tr("打开配置与日志文件夹  ↗"), self.open_data_folder))
+        links = QHBoxLayout()
+        self.github_button = button(tr("GitHub 项目  ↗"), lambda: QDesktopServices.openUrl(QUrl(REPO_URL)))
+        self.github_button.setIconSize(QSize(19, 19))
+        self.update_github_icon()
+        links.addWidget(self.github_button)
+        links.addWidget(button(tr("打开配置与日志文件夹  ↗"), self.open_data_folder))
+        links.addStretch()
+        c.addLayout(links)
         c.addWidget(label(tr("所有壁纸与设置均在本机处理。无账户、无广告、无遥测。"), "eyebrow", True))
         v.addWidget(card)
         v.addStretch()
         return page
+
+    def update_github_icon(self):
+        mark = QIcon(str(ASSETS / "github-mark.svg")).pixmap(38, 38)
+        if not self.light and not mark.isNull():
+            with QPainter(mark) as painter:
+                painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+                painter.fillRect(mark.rect(), QColor("#f4f7fc"))
+        self.github_button.setIcon(QIcon(mark))
 
     def language_control(self):
         control = QToolButton()
@@ -730,13 +753,12 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(LIGHT_STYLE if self.light else STYLE)
         self.apply_frame_theme()
         self.update_theme_toggle()
+        self.update_github_icon()
         for index, button in enumerate(self.nav_buttons):
             button.setIcon(navigation_icon(index, self.light))
         for card in self.cards:
             card.light = self.light
             card.update()
-        if self.controller.dock is not None:
-            self.controller.dock.refresh_theme()
 
     def set_filter(self, kind):
         self.filter_kind = kind
@@ -768,7 +790,9 @@ class MainWindow(QMainWindow):
                  and query in item_name(i).casefold()]
         self.card_count.setText(tr("我的壁纸  {0:02d}").format(len(self.store.items)))
         for index, item in enumerate(items):
-            card = WallpaperCard(item, self.light)
+            path = self.store.path(item)
+            pixmap = self.thumbnails.get(path) if item["kind"] == "video" else preview_image(path, 420)
+            card = WallpaperCard(item, path, pixmap, self.light)
             card.setChecked(item["id"] == self.selected["id"])
             card.clicked.connect(lambda checked=False, i=item: self.select(i))
             self.grid.addWidget(card, index//3, index%3)
@@ -785,8 +809,9 @@ class MainWindow(QMainWindow):
         self.update_selection()
 
     def update_selection(self):
-        self.preview.set_item(self.selected)
-        path = item_path(self.selected)
+        path = self.store.path(self.selected)
+        cover = self.thumbnails.get(path) if self.selected["kind"] == "video" else None
+        self.preview.set_item(self.selected, path, cover)
         details = tr(KIND_LABELS[self.selected["kind"]]) + tr("壁纸")
         if self.selected["kind"] != "video":
             size = QImageReader(str(path)).size()
@@ -805,6 +830,15 @@ class MainWindow(QMainWindow):
             self.fit.setCurrentIndex(self.fit.findData("fit"))
         self.apply_button.setEnabled(path.is_file())
 
+    def cover_ready(self, path, pixmap):
+        if self.selected["kind"] == "video" and str(self.store.path(self.selected)) == path:
+            self.preview.pixmap = pixmap
+            self.preview.update()
+        for card in self.cards:
+            if card.item["kind"] == "video" and str(self.store.path(card.item)) == path:
+                card.pixmap = pixmap
+                card.update()
+
     def fit_changed(self):
         self.store.settings.fit = self.fit.currentData()
         self.store.save()
@@ -814,6 +848,10 @@ class MainWindow(QMainWindow):
         self.store.settings.screen = self.screen.currentData()
         self.store.save()
         self.show_notice(tr("显示器已保存，点击“应用到桌面”生效。"))
+
+    def refresh_wallpaper_sound(self):
+        with QSignalBlocker(self.wallpaper_sound):
+            self.wallpaper_sound.setChecked(self.store.settings.wallpaper_sound)
 
     def option_changed(self, key, value):
         setattr(self.store.settings, key, value)
@@ -847,12 +885,17 @@ class MainWindow(QMainWindow):
     def remove_selected(self):
         if self.selected.get("builtin"):
             return
-        if self.engine.active and self.engine.active["id"] == self.selected["id"]:
+        previous = self.selected
+        if self.engine.active and self.engine.active["id"] == previous["id"]:
             self.engine.stop()
-        self.store.remove(self.selected["id"])
-        self.selected = self.store.items[0]
+        self.select(self.store.items[0])
+        try:
+            self.store.remove(previous["id"])
+        except OSError as exc:
+            self.select(previous)
+            self.show_error(str(exc))
+            return
         self.refresh_cards()
-        self.update_selection()
         self.show_notice(tr("已从壁纸库移除，原文件保留。"))
 
     def import_dialog(self):
@@ -880,7 +923,7 @@ class MainWindow(QMainWindow):
             self.refresh_cards()
             self.update_selection()
             self.pages.setCurrentIndex(0)
-            self.show_notice(tr("已导入 {0} 个文件。移动原文件后需要重新导入。").format(len(imported)))
+            self.show_notice(tr("已导入 {0} 个文件，原画质副本已保存到壁纸库。").format(len(imported)))
         if errors:
             self.show_error(tr("部分文件未导入：\n")+"\n".join(errors[:8]))
 
@@ -912,5 +955,6 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.store.directory)))
 
     def closeEvent(self, event):
+        self.thumbnails.close()
         self.closed.emit()
         event.accept()

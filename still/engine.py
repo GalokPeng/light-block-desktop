@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QWidget
 
 from .i18n import tr
 from . import win32
-from .model import Store, item_path
+from .model import Store
 
 
 class NativeEvents(QAbstractNativeEventFilter):
@@ -51,6 +51,7 @@ class WallpaperEngine(QObject):
         self.store, self.app = store, app
         self.surface = None
         self.player = None
+        self.audio_output = None
         self.worker = None
         self.render_rect = None
         self.current_screen = ""
@@ -83,11 +84,13 @@ class WallpaperEngine(QObject):
         self.tick.stop()
         player, surface = self.player, self.surface
         self.player = self.surface = self.worker = None
+        self.audio_output = None
         self.render_rect = None
         if player:
             player.stop()
             player.setSource(QUrl())
             player.setVideoOutput(None)
+            player.setAudioOutput(None)
             player.deleteLater()
         if surface:
             surface.hide()
@@ -107,7 +110,7 @@ class WallpaperEngine(QObject):
             self.store.save()
 
     def apply(self, item: dict):
-        path = item_path(item)
+        path = self.store.path(item)
         if not path.is_file():
             raise FileNotFoundError(tr("原文件已移动或删除，请重新导入。"))
         fit = self.store.settings.fit
@@ -152,7 +155,7 @@ class WallpaperEngine(QObject):
             player = QMediaPlayer(self)
             player.setVideoOutput(candidate)
             player.setLoops(QMediaPlayer.Loops.Infinite)
-            player.tracksChanged.connect(lambda p=player: p.setActiveAudioTrack(-1))
+            player.tracksChanged.connect(lambda p=player: self.sync_sound() if p is self.player else None)
             player.errorOccurred.connect(lambda code, text, p=player: self._media_error(p, text))
             player.mediaStatusChanged.connect(lambda status, p=player: self._media_status(p, status))
             candidate.resize(monitor["rect"][2], monitor["rect"][3])
@@ -173,6 +176,7 @@ class WallpaperEngine(QObject):
             candidate.show()
             win32.position(int(candidate.winId()), worker, monitor["rect"])
             player.setSource(QUrl.fromLocalFile(str(path)))
+            self.sync_sound()
             player.play()
             self.tick.start()
             self.evaluate()
@@ -180,6 +184,24 @@ class WallpaperEngine(QObject):
         self.store.save()
         logging.info("Applied %s wallpaper: %s", item["kind"], item["name"])
         self.changed.emit()
+
+    def sync_sound(self):
+        player = self.player
+        if player is None or not self.active or self.active["kind"] != "video":
+            return
+        if self.store.settings.wallpaper_sound and player.audioTracks():
+            if self.audio_output is None:
+                from PySide6.QtMultimedia import QAudioOutput
+                self.audio_output = QAudioOutput(player)
+            if player.audioOutput() is None:
+                player.setAudioOutput(self.audio_output)
+            if player.activeAudioTrack() < 0:
+                player.setActiveAudioTrack(0)
+        else:
+            if player.audioOutput() is not None:
+                player.setAudioOutput(None)
+            if player.activeAudioTrack() >= 0:
+                player.setActiveAudioTrack(-1)
 
     def _media_status(self, player, status):
         if player is not self.player:

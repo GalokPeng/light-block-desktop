@@ -1,3 +1,16 @@
+# v0.7.3 · 桌面便签与壁纸体验 / Desktop notes and wallpaper improvements
+
+- 右键桌面空白处可新建便签并直接贴到桌面，也可切换视频壁纸声音。声音默认关闭，与「播放与性能」同步。Windows 11 从「显示更多选项」进入。
+- 壁纸库保存原画质副本，视频封面从实际画面生成。默认 GIF 更新为 25 帧/秒的「星轨弧光」。
+- 配置和壁纸库默认保存在安装目录的 `data`。首次启动复制旧配置，安装目录不可写时沿用原数据目录。
+- 录屏预览采用「截屏」设置中的画质和帧率，导出前仍可调整。
+- 修复明暗主题切换报错，「关于」页新增 GitHub 项目入口。
+- Right-click the desktop background to pin a new note or toggle video wallpaper sound. Sound is off by default and stays in sync with Playback Settings. On Windows 11, open Show more options.
+- The wallpaper library saves full-quality copies and generates covers from video frames. Orbital Glow replaces the default GIF with a 25 fps loop.
+- Settings and wallpapers live in the `data` folder beside the app. The first launch copies existing settings. A read-only app folder keeps using the previous location.
+- Recording previews inherit the quality and frame rate chosen in Screen Capture settings. Both can be adjusted before export.
+- Fixed an error when changing the theme. About now links to the GitHub project.
+
 # v0.7.2 · 原生任务栏优化 / Native taskbar improvements
 
 - Windows 11 x64 主屏的电源与搜索、应用和系统托盘现在由同一条原生任务栏居中显示，保留 Windows 搜索、应用切换和托盘菜单。

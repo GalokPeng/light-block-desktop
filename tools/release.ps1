@@ -32,6 +32,7 @@ foreach ($file in @('LICENSE', 'README.md', 'README.en.md', 'CHANGES.md', 'THIRD
 }
 & $PythonPath tools/release.py smoke
 if ($LASTEXITCODE -ne 0) { throw 'Portable startup check failed.' }
+if (Test-Path -LiteralPath (Join-Path $portable 'data')) { throw 'The portable tree contains a user data folder.' }
 & $IsccPath '/Qp' "/DAppVersion=$version" "/DAppDir=$portable" "/DOutputDir=$output" (Join-Path $root 'installer\LightBlockDesktop.iss')
 if ($LASTEXITCODE -ne 0) { throw 'Setup compilation failed.' }
 & $PythonPath tools/release.py bundle --dist $dist --output $output

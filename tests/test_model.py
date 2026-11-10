@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import call, patch
 
 from still.model import Store, media_kind
+from still.profile import choose_directory
 from still.organizer_model import Collections
 from still import win32
 from still.hotkeys import MOD_CTRL, MOD_SHIFT, capture_binding
@@ -78,9 +79,46 @@ class StoreTests(unittest.TestCase):
             store.settings.active_id = item["id"]
             store.save()
             loaded = Store(root / "config")
-            self.assertEqual(loaded.find(item["id"])["path"], str(media.resolve()))
+            saved = loaded.find(item["id"])
+            copy = loaded.path(saved)
+            self.assertTrue(copy.is_relative_to((root / "config" / "wallpapers").resolve()))
+            self.assertFalse(Path(saved["path"]).is_absolute())
+            moved = media.with_name("moved.png")
+            media.rename(moved)
+            self.assertEqual(copy.read_bytes(), b"original-file")
             loaded.remove(item["id"])
-            self.assertEqual(media.read_bytes(), b"original-file")
+            self.assertFalse(copy.exists())
+            self.assertEqual(moved.read_bytes(), b"original-file")
+
+    def test_legacy_profile_migrates_with_old_wallpapers_and_managed_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            legacy = root / "StillWallpaper"
+            destination = root / "install" / "data"
+            destination.parent.mkdir()
+            vault = legacy / "organizer_files"
+            vault.mkdir(parents=True)
+            document = vault / "document.txt"
+            document.write_text("owned file", encoding="utf-8")
+            wallpaper = root / "source.gif"
+            wallpaper.write_bytes(b"original animation")
+            config = {"settings_theme": "light", "active_id": "legacy-id", "library": [
+                {"id": "legacy-id", "path": str(wallpaper), "kind": "gif", "name": "Legacy"}],
+                "organizer_groups": [{"id": "g", "entries": [{"target": str(document)}]}]}
+            (legacy / "settings.json").write_text(json.dumps(config), encoding="utf-8")
+            self.assertEqual(choose_directory(destination, legacy), destination)
+            store = Store(destination)
+            store.migrate_wallpapers()
+            self.assertEqual(store.settings.settings_theme, "light")
+            self.assertEqual(store.settings.active_id, "legacy-id")
+            self.assertEqual(store.settings.organizer_groups[0]["entries"][0]["target"],
+                             str(destination / "organizer_files" / "document.txt"))
+            item = Store(destination).find("legacy-id")
+            self.assertEqual(store.path(item).read_bytes(), wallpaper.read_bytes())
+            self.assertEqual(document.read_text(encoding="utf-8"), "owned file")
+            self.assertEqual(json.loads((legacy / "settings.json").read_text(encoding="utf-8")), config)
+            with patch("still.profile.writable", return_value=False):
+                self.assertEqual(choose_directory(root / "unwritable" / "data", legacy), legacy)
 
     def test_corrupt_config_is_preserved(self):
         with tempfile.TemporaryDirectory() as temp:

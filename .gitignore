@@ -4,6 +4,7 @@
 /dist/
 /release/
 /runtime/
+/data/
 /settings.json
 /collections.json
 /collections.backup.json

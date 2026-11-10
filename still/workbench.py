@@ -278,19 +278,21 @@ class Workbench(QObject):
         from .recording_ui import RecordingBar
         from .capture_frame import CaptureFrame
         from .capture_overlay import logical_region
+        from .recording_options import DEFAULT_CAPTURE_FPS
         settings = self.controller.store.settings
         lossless = settings.record_lossless
+        fps = settings.record_fps or DEFAULT_CAPTURE_FPS
         suffix = ".mkv" if lossless else ".mp4"
         directory = self.controller.store.directory / "recordings"
         name = "Still_"+datetime.now().strftime("%Y%m%d_%H%M%S")+"_"+uuid.uuid4().hex[:6]+suffix
         geometry = logical_region(rect, screen)
         screen_area = screen.geometry()
         self.record_screen = screen
-        self.record_placement = (geometry, rect.size(), settings.record_fps)
+        self.record_placement = (geometry, rect.size(), fps)
         self.record_bar = RecordingBar(self, geometry, screen)
         self.record_frame = CaptureFrame(geometry, screen_area, recording=True)
         self.record_frame.show()
-        self.record_pending = (rect, directory/name, lossless, settings.record_fps)
+        self.record_pending = (rect, directory/name, lossless, fps)
         self.record_changed()
         self.record_timer.start(180)
 

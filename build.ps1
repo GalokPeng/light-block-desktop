@@ -17,6 +17,12 @@ if (-not $PythonPath) {
 $PythonPath = (Get-Command $PythonPath -ErrorAction Stop).Source
 if (-not $DistPath) { $DistPath = Join-Path $PSScriptRoot 'dist' }
 if (-not $WorkPath) { $WorkPath = Join-Path $PSScriptRoot 'build' }
+$version = & $PythonPath tools/release.py version
+if ($LASTEXITCODE -ne 0) { throw 'Could not read the app version.' }
+$portable = Join-Path $DistPath "Qingkuai-v$version-Windows-x64"
+if (Test-Path -LiteralPath (Join-Path $portable 'data')) {
+    throw 'The build output contains a user data folder. Choose a different -DistPath.'
+}
 if (-not $SkipInstall) {
     & $PythonPath -m pip install -r requirements.txt -r requirements-build.txt
     if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
@@ -39,6 +45,4 @@ try {
     $env:STILL_TASKBAR_DLL = $previousTaskbar
     $env:PYINSTALLER_CONFIG_DIR = $previousCache
 }
-$version = & $PythonPath tools/release.py version
-if ($LASTEXITCODE -ne 0) { throw 'Could not read the app version.' }
-Write-Host "Built: $(Join-Path $DistPath "Qingkuai-v$version-Windows-x64")"
+Write-Host "Built: $portable"

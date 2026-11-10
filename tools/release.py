@@ -74,7 +74,7 @@ def bundle(version, dist, output):
     portable_zip = output / f"{portable.name}.zip"
     with zipfile.ZipFile(portable_zip, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for file in sorted(portable.rglob("*")):
-            if file.is_file():
+            if file.is_file() and not file.is_relative_to(portable / "data"):
                 archive.write(file, file.relative_to(dist))
     source_zip = output / f"{name}-source.zip"
     subprocess.run(("git", "archive", "--format=zip", f"--prefix={name}-source/", "-o", str(source_zip), "HEAD"),

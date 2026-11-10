@@ -8,7 +8,9 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequ
 
 from .model import VERSION
 
-REPO_PATH = "/GalokPeng/light-block-desktop/releases"
+REPO_SLUG = "/GalokPeng/light-block-desktop"
+REPO_URL = f"https://github.com{REPO_SLUG}"
+REPO_PATH = f"{REPO_SLUG}/releases"
 DOWNLOAD_URL = "https://light-block-desktop.vercel.app/download/"
 SETUP_NAME = "Qingkuai-Setup-x64.exe"
 LATEST_SETUP = f"https://github.com{REPO_PATH}/latest/download/{SETUP_NAME}"

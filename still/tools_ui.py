@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QKeySequenceEdit, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QKeySequenceEdit, QScrollArea, QVBoxLayout, QWidget
 
 from .i18n import tr
+from .recording_options import choice, export_choices
 from .ui import button, label
 
 
@@ -90,21 +91,19 @@ class CapturePage(QScrollArea):
         self.hotkeys.setChecked(window.store.settings.hotkeys_enabled)
         self.hotkeys.toggled.connect(lambda value: self.hotkeys_changed("hotkeys_enabled", value))
         row.addWidget(self.hotkeys)
-        row.addStretch()
-        row.addWidget(label(tr("录屏质量"), "muted"))
-        quality = QComboBox()
-        quality.addItem(tr("高画质 MP4"), False)
-        quality.addItem(tr("无损 MKV"), True)
-        quality.setCurrentIndex(int(window.store.settings.record_lossless))
-        quality.currentIndexChanged.connect(lambda: self.option("record_lossless", quality.currentData()))
-        row.addWidget(quality)
-        fps = QComboBox()
-        for value in (15, 24, 30):
-            fps.addItem(f"{value} fps", value)
-        fps.setCurrentIndex(max(0, fps.findData(window.store.settings.record_fps)))
-        fps.currentIndexChanged.connect(lambda: self.option("record_fps", fps.currentData()))
-        row.addWidget(fps)
         form.addLayout(row)
+        row = QHBoxLayout()
+        settings = window.store.settings
+        source = choice(tr("录屏源格式"), ((tr("高画质 MP4"), False), (tr("无损 MKV"), True)), settings.record_lossless)
+        quality, fps = export_choices(settings)
+        for field, key, title in ((source, "record_lossless", tr("录屏源格式")),
+                                  (quality, "record_resolution", tr("导出画质")),
+                                  (fps, "record_fps", tr("导出帧率"))):
+            row.addWidget(label(title, "muted"))
+            row.addWidget(field, 1)
+            field.currentIndexChanged.connect(lambda _, k=key, f=field: self.option(k, f.currentData()))
+        form.addLayout(row)
+        form.addWidget(label(tr("画质和帧率会作为录屏预览的默认值，导出前可以调整。原始帧率以 24 fps 录制。"), "muted", True))
         form.addWidget(label(tr("截屏快捷键默认开启。录屏保留选区框，可用 Ctrl+Alt+R 结束。"), "muted", True))
         layout.addWidget(options)
         layout.addWidget(button(tr("编辑剪贴板图片"), lambda: window.controller.get_workbench().invoke("clipboard_image")))

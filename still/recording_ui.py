@@ -8,7 +8,7 @@ from uuid import uuid4
 from PySide6.QtCore import QElapsedTimer, QMimeData, QPoint, QProcess, QRect, QRectF, QSignalBlocker, QTimer, QUrl, Qt
 from PySide6.QtGui import QColor, QImage, QKeySequence, QPainter, QShortcut
 from PySide6.QtMultimedia import QMediaPlayer, QVideoFrame, QVideoSink
-from PySide6.QtWidgets import QApplication, QComboBox, QFileDialog, QLabel, QHBoxLayout, QProgressBar, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QFileDialog, QLabel, QHBoxLayout, QProgressBar, QSlider, QVBoxLayout, QWidget
 
 from .capture import AnnotationCanvas, PIN_GLOW_MARGIN, paint_pin_glow
 from .capture_icons import capture_icon
@@ -18,6 +18,7 @@ from .capture_frame import exclude_from_capture
 from .capture_overlay import beside_region
 from .desktop_windows import current_screen, live_screen
 from .media_tools import FFmpegJob, video_commands
+from .recording_options import choice, export_choices
 
 
 class RecordingBar(QWidget):
@@ -191,10 +192,9 @@ class RecordingResult(QWidget):
         self.bars.addWidget(timeline)
 
         exports, row = strip()
-        self.format = self.choice(tr("导出格式"), ((tr("MP4 视频"), "mp4"), (tr("GIF 动图"), "gif"), (tr("无损 MKV"), "mkv")))
-        self.quality = self.choice(tr("导出画质"), ((tr("原始分辨率"), 0), ("1080p", 1080),
-                                                   ("720p", 720), ("480p", 480)))
-        self.fps = self.choice(tr("导出帧率"), [(tr("原始帧率"), None)] + [(f"{value} fps", value) for value in (12, 15, 24, 30, 60)])
+        self.format = choice(tr("导出格式"), ((tr("MP4 视频"), "mp4"), (tr("GIF 动图"), "gif"), (tr("无损 MKV"), "mkv")),
+                             source.suffix.lstrip(".").lower())
+        self.quality, self.fps = export_choices(workbench.controller.store.settings)
         for field in (self.format, self.quality, self.fps):
             row.addWidget(field, 1)
         self.copy_button = icon_button("copy", tr("复制文件"), lambda: self.export(True))
@@ -237,15 +237,6 @@ class RecordingResult(QWidget):
         self.setGeometry(geometry.adjusted(-margin, -margin, margin, margin))
         self.player.setSource(QUrl.fromLocalFile(str(self.source)))
         self.player.play()
-
-    @staticmethod
-    def choice(name, items):
-        combo = QComboBox()
-        combo.setAccessibleName(name)
-        combo.setToolTip(name)
-        for text, value in items:
-            combo.addItem(text, value)
-        return combo
 
     def attach_options(self, panel):
         self.bars.insertWidget(1, panel)
@@ -364,6 +355,8 @@ class RecordingResult(QWidget):
         height = self.quality.currentData()
         crf = {720: 21, 480: 24}.get(height, 18)
         fps = self.fps.currentData()
+        if fps == self.source_fps:
+            fps = None
         start = self.trim_start / 1000
         length = (self.trim_end - self.trim_start) / 1000 if self.trim_end is not None else None
         unchanged = (self.source.suffix == suffix and not self.canvas.operations and not height and fps is None
