@@ -6,7 +6,7 @@
 
 ## 本地验证
 
-需要 Windows x64、Python 3.11、Git 和 [Inno Setup 6](https://jrsoftware.org/isdl.php)。先提交要打包的源码，使源码 ZIP 与可执行文件来自同一份 Git 代码。
+需要 Windows x64、Python 3.11、Git、7-Zip 和 [Inno Setup 6](https://jrsoftware.org/isdl.php)。先提交要打包的源码，使源码 ZIP 与可执行文件来自同一份 Git 代码。
 
 ```powershell
 python -m pip install -r requirements.txt
@@ -17,9 +17,9 @@ python tools/run_tests.py --desktop
 .\tools\release.ps1
 ```
 
-`release/` 包含 Setup、免安装 ZIP、同一提交的源码 ZIP 和 SHA-256。Setup 默认按当前用户安装，卸载保留应用配置目录。便携版移到安装版后，如已有自启动，可以在新版重新开启自启动以更新路径。安装包未签名。安装向导跟随 Windows 显示语言，并支持英文、简体中文和繁体中文。录屏和媒体导出需要单独安装带 `gdigrab`、`libx264` 和 `ffv1` 的 FFmpeg，并让 `ffmpeg.exe` 在 PATH 中可用。
+`release/` 包含 Setup、免安装 ZIP、同一提交的源码 ZIP、FFmpeg 对应源码 ZIP 和 SHA-256。Setup 默认按当前用户安装，卸载保留应用配置目录。便携版移到安装版后，如已有自启动，可以在新版重新开启自启动以更新路径。安装包未签名。安装向导跟随 Windows 显示语言，并支持英文、简体中文和繁体中文。
 
-首次构建会下载经过 SHA-256 校验的 LLVM/MinGW-w64 和 C++/WinRT 构建工具。Setup 和便携包自带原生任务栏 DLL。安装验证会检查 DLL 能否加载。三段式布局需要 Windows 11 22H2 或更新的 x64 系统。
+首次构建会下载经过 SHA-256 校验的原生组件工具链和 FFmpeg 源码。Setup 和便携包自带原生任务栏 DLL 和录屏所需的 FFmpeg。安装验证会检查 DLL 加载和随包 FFmpeg 的捕获设备与编码能力。三段式布局需要 Windows 11 22H2 或更新的 x64 系统。
 
 没有已安装版本的测试机上可执行 `python tools/test_setup.py`，在隔离目录检查自动选语言及中英文安装、启动、卸载和配置保留。
 

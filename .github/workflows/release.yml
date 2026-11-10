@@ -57,7 +57,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.build == 'true'
     runs-on: windows-2022
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -102,7 +102,7 @@ jobs:
           $tag = "v$env:APP_VERSION"
           $base = "Qingkuai-$tag"
           $setupName = "$base-Setup-x64.exe"
-          $names = @($setupName, "$base-Windows-x64.zip", "$base-source.zip")
+          $names = @($setupName, "$base-Windows-x64.zip", "$base-source.zip", "$base-ffmpeg-source.zip")
           $sumFile = Join-Path release "$base-SHA256SUMS.txt"
           $expected = @{}
           foreach ($line in Get-Content -LiteralPath $sumFile) {

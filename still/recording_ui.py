@@ -193,7 +193,7 @@ class RecordingResult(QWidget):
 
         exports, row = strip()
         self.format = choice(tr("导出格式"), ((tr("MP4 视频"), "mp4"), (tr("GIF 动图"), "gif"), (tr("无损 MKV"), "mkv")),
-                             source.suffix.lstrip(".").lower())
+                             self.source.suffix.lstrip(".").lower())
         self.quality, self.fps = export_choices(workbench.controller.store.settings)
         for field in (self.format, self.quality, self.fps):
             row.addWidget(field, 1)

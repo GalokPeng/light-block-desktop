@@ -9,7 +9,7 @@
 2. Requires Windows 10 or 11 x64. Setup uses the Windows display language and includes English, Simplified Chinese and Traditional Chinese. The app selects Simplified Chinese on Chinese Windows and defaults to English otherwise.
 3. Quit the previous version before upgrading. Settings and wallpapers live in `data` beside the app. Existing settings are copied there. If the app folder is read-only, the app uses `%LOCALAPPDATA%\StillWallpaper`.
 
-Setup installs for the current user by default. Wallpaper playback and still screenshots work with the bundled runtime. Recording and export require the [FFmpeg command-line tool](https://ffmpeg.org/download.html) with `gdigrab`, `libx264`, `ffv1` and palette filters on PATH.
+Setup installs for the current user by default. The installer and portable package include the components needed for wallpaper playback, screen capture, recording and media export. See the [third-party notices](THIRD_PARTY_NOTICES.md) for the recording component's license and source.
 
 ## Feature preview
 

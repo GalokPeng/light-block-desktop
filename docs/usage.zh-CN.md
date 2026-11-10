@@ -88,7 +88,7 @@ Python / Qt 无法承诺几 MB 的完整桌面工具。本版采用按需导入�
 
 ## 源码运行与构建
 
-需要 Windows x64 / Python 3.11。安装 requirements.txt 后运行 main.py。录屏 / 导出需要另外安装支持 gdigrab、libx264、ffv1 和调色板滤镜的 FFmpeg CLI。应用会从 PATH 或本地构建的 runtime/ffmpeg.exe 查找。静态、GIF 和视频壁纸可直接使用包内 Qt 运行库。
+需要 Windows x64 / Python 3.11。安装 requirements.txt 后运行 main.py。安装包和免安装版自带 FFmpeg 录屏组件。从源码运行时，可将支持 gdigrab、libx264、ffv1 和调色板滤镜的 ffmpeg.exe 放入 `runtime` 或加入 PATH。静态、GIF 和视频壁纸使用包内 Qt 运行库。
 
 ```powershell
 python -m pip install -r requirements.txt

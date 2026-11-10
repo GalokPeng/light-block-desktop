@@ -32,7 +32,7 @@ Right-click the desktop background and choose **Light Block Desktop · New Note*
 - **Scrolling capture**. Choose **Scrolling Capture** and scroll within the frame. The preview shows the stitched image. If overlap is lost, scroll back or set it manually. The image limit is 40 megapixels.
 - **Recording**. Choose **Start Recording**. The frame stays on screen. Use the stop control or `Ctrl+Alt+R` to finish. The preview starts with the quality and frame rate selected in **Screen Capture** settings. Both offer original resolution, 1080p, 720p, or 480p, and original frame rate or 12, 15, 24, 30, or 60 fps. The original frame rate setting captures at 24 fps. Save or copy MP4, GIF, or MKV. Recording is silent.
 
-Recording and media export require FFmpeg on PATH with `gdigrab`, `libx264`, `ffv1` and palette filters. Wallpaper playback uses the bundled runtime. The media editor can trim or crop clips and export to MP4, GIF or MKV.
+The installer and portable package include FFmpeg for recording and media export. When running from source, put a compatible FFmpeg executable in `runtime` or on PATH. Wallpaper playback uses the bundled Qt runtime. The media editor can trim or crop clips and export to MP4, GIF or MKV.
 
 ## Productivity tools
 

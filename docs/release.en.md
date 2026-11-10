@@ -6,7 +6,7 @@
 
 ## Local verification
 
-Use Windows x64, Python 3.11, Git and [Inno Setup 6](https://jrsoftware.org/isdl.php). Commit the exact source you want to package so the binary and source ZIP come from the same commit.
+Use Windows x64, Python 3.11, Git, 7-Zip and [Inno Setup 6](https://jrsoftware.org/isdl.php). Commit the exact source you want to package so the binary and source ZIP come from the same commit.
 
 ```powershell
 python -m pip install -r requirements.txt
@@ -17,13 +17,13 @@ python tools/run_tests.py --desktop
 .\tools\release.ps1
 ```
 
-`release/` contains Setup, a portable ZIP, the source ZIP and SHA-256 checksums. Setup is unsigned and installs for the current user by default. It preserves settings on upgrade and uninstall. If you switch from portable to installed, toggle **Start with Windows** to update its path.
+`release/` contains Setup, a portable ZIP, the app and FFmpeg source ZIPs, and SHA-256 checksums. Setup is unsigned and installs for the current user by default. It preserves settings on upgrade and uninstall. If you switch from portable to installed, toggle **Start with Windows** to update its path.
 
 The first build downloads SHA-256-verified LLVM/MinGW-w64 and C++/WinRT build tools. Setup and the portable archive include the native taskbar DLL. The installation checks verify that the DLL loads. The three-section layout requires Windows 11 22H2 or newer on x64.
 
 Setup selects English, Simplified Chinese or Traditional Chinese using the Windows display language. The app uses Simplified Chinese for Chinese display languages and English otherwise. On a Windows test machine without an existing installation, run `python tools/test_setup.py` to check language selection, startup, uninstall and config preservation in temporary directories.
 
-Recording and export require a separate FFmpeg build on PATH with `gdigrab`, `libx264`, `ffv1` and palette filters. Static, GIF and video wallpapers use the bundled runtime.
+The build verifies the FFmpeg source archives and build tools by SHA-256. Setup and the portable package include the resulting recording executable. Installation tests check that it can register the Windows capture device and encode video with a Windows-only PATH.
 
 ## First GitHub release
 

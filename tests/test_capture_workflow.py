@@ -14,7 +14,7 @@ from still.capture_overlay import CaptureOverlay, beside_region, pixel_rect
 from still.desktop_icons import DesktopIconLease
 from still.desktop_windows import screen_monitor
 from still.i18n import tr
-from still.model import Store
+from still.model import ASSETS, Store
 from still.organizer_model import Collections
 from still.scroll_capture import ScrollCapture
 from still.workbench import Workbench
@@ -85,6 +85,20 @@ class CaptureWorkflowTests(unittest.TestCase):
     def tearDown(self):
         if not self.overlay.completed:
             self.overlay.close()
+
+    def test_recording_preview_accepts_the_completed_signal_path(self):
+        from still.model import Settings
+        from still.recording_ui import RecordingResult
+
+        workbench = Mock()
+        workbench.controller.store.settings = Settings()
+        source = ASSETS / "motion.mp4"
+        preview = RecordingResult(workbench, str(source), 4, QRect(60, 60, 320, 180), QSize(1280, 720), 24)
+        try:
+            self.assertEqual(preview.source, source)
+            self.assertEqual(preview.format.currentData(), "mp4")
+        finally:
+            preview.close()
 
     def drag(self, start, end):
         QTest.mousePress(self.overlay, Qt.MouseButton.LeftButton, pos=start)

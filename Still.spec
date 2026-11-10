@@ -1,4 +1,4 @@
-# Build from the project directory: python -m PyInstaller --noconfirm Still.spec
+# Build from the project directory with build.ps1.
 from pathlib import Path
 from runpy import run_path
 from importlib.util import find_spec
@@ -10,15 +10,14 @@ metadata = run_path(str(root / 'tools' / 'release.py'))
 version = metadata['read_version'](root)
 resource = metadata['windows_version_file'](root, version)
 ffmpeg = os.environ.get('STILL_FFMPEG')
-if ffmpeg and not Path(ffmpeg).is_file():
-    raise SystemExit('STILL_FFMPEG must point to an existing ffmpeg.exe.')
+if not ffmpeg or not Path(ffmpeg).is_file() or Path(ffmpeg).name.lower() != 'ffmpeg.exe':
+    raise SystemExit('Build with build.ps1 so the screen-recording runtime is included.')
 qt_translations = Path(find_spec('PySide6').origin).parent / 'translations'
 resources = [(str(root / 'assets'), 'assets'), (str(root / 'licenses'), 'licenses'),
              (str(root / 'locales'), 'locales'),
              (str(qt_translations / 'qtbase_zh_CN.qm'), 'PySide6/translations'),
              (str(root / 'LICENSE'), '.'), (str(root / 'THIRD_PARTY_NOTICES.md'), '.')]
-if ffmpeg:
-    resources.append((ffmpeg, 'runtime'))
+resources.append((ffmpeg, 'runtime'))
 taskbar = os.environ.get('STILL_TASKBAR_DLL')
 native_binaries = []
 if taskbar:

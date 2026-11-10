@@ -32,7 +32,11 @@ $previousFFmpeg = $env:STILL_FFMPEG
 $previousTaskbar = $env:STILL_TASKBAR_DLL
 $previousCache = $env:PYINSTALLER_CONFIG_DIR
 try {
-    $env:STILL_FFMPEG = if ($FFmpegPath) { (Resolve-Path -LiteralPath $FFmpegPath).Path } else { '' }
+    if (-not $FFmpegPath) {
+        $FFmpegPath = & $PythonPath tools/build_recording_runtime.py
+        if ($LASTEXITCODE -ne 0) { throw 'Could not build the recording runtime.' }
+    }
+    $env:STILL_FFMPEG = (Resolve-Path -LiteralPath $FFmpegPath).Path
     $env:STILL_TASKBAR_DLL = & (Join-Path $PSScriptRoot 'tools/build_native_taskbar.ps1')
     # Collect dependencies from Python, Qt and Windows only.
     $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"

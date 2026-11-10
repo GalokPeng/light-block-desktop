@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import sys
 import tempfile
 import uuid
 
@@ -18,7 +19,11 @@ from .model import ROOT
 
 def ffmpeg_path():
     bundled = ROOT / "runtime" / "ffmpeg.exe"
-    path = str(bundled) if bundled.is_file() else shutil.which("ffmpeg")
+    if bundled.is_file():
+        return str(bundled)
+    if getattr(sys, "frozen", False):
+        raise FileNotFoundError(tr("录屏组件缺失，请重新安装轻块桌面。"))
+    path = shutil.which("ffmpeg")
     if not path:
         raise FileNotFoundError(tr("录屏和导出需要 FFmpeg。请安装支持 gdigrab、libx264 和 ffv1 的 Windows 版 FFmpeg 并加入 PATH。"))
     return path

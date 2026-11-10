@@ -1,3 +1,12 @@
+# v0.7.4 · 安装后直接录屏 / Recording ready after installation
+
+- Windows 安装包和免安装版内置 FFmpeg。安装或解压后即可录屏，并导出 MP4、GIF 和无损 MKV。
+- 修复停止录屏后预览打不开的问题。
+- 设置窗口标题和侧栏收起版本号，版本信息集中到「关于」。更新按钮显示当前更新状态。
+- Windows Setup and the portable package include FFmpeg for recording and MP4, GIF, and lossless MKV export.
+- Fixed a failure to open the preview after stopping a recording.
+- The About page shows the version number. The settings window title and update button show the app name and update status respectively.
+
 # v0.7.3 · 桌面便签与壁纸体验 / Desktop notes and wallpaper improvements
 
 - 右键桌面空白处可新建便签并直接贴到桌面，也可切换视频壁纸声音。声音默认关闭，与「播放与性能」同步。Windows 11 从「显示更多选项」进入。

@@ -66,7 +66,8 @@ def bundle(version, dist, output):
     portable = dist / f"{name}-Windows-x64"
     exe = portable / "轻块桌面.exe"
     setup = output / f"{name}-Setup-x64.exe"
-    for file in (exe, setup):
+    ffmpeg_sources = output / f"{name}-ffmpeg-source.zip"
+    for file in (exe, setup, ffmpeg_sources):
         if not file.is_file():
             raise FileNotFoundError(file)
     for doc in RELEASE_DOCS:
@@ -79,13 +80,13 @@ def bundle(version, dist, output):
     source_zip = output / f"{name}-source.zip"
     subprocess.run(("git", "archive", "--format=zip", f"--prefix={name}-source/", "-o", str(source_zip), "HEAD"),
                    cwd=ROOT, check=True)
-    for file in (portable_zip, source_zip):
+    for file in (portable_zip, source_zip, ffmpeg_sources):
         with zipfile.ZipFile(file) as archive:
             damaged = archive.testzip()
             if damaged:
                 raise ValueError(f"Corrupt archive entry: {damaged}")
     checksum = []
-    for file in (setup, portable_zip, source_zip):
+    for file in (setup, portable_zip, source_zip, ffmpeg_sources):
         with file.open("rb") as stream:
             checksum.append(f"{hashlib.file_digest(stream, 'sha256').hexdigest()}  {file.name}\n")
     (output / f"{name}-SHA256SUMS.txt").write_text("".join(checksum), encoding="ascii")
@@ -109,6 +110,14 @@ def smoke_at(app, data):
     screenshot = data / "settings.png"
     windows = Path(os.environ["SystemRoot"])
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen", PATH=f"{windows / 'System32'};{windows}")
+    ffmpeg = app.parent / "_internal" / "runtime" / "ffmpeg.exe"
+    devices = subprocess.check_output((str(ffmpeg.resolve()), "-hide_banner", "-devices"),
+                                      env=env, stderr=subprocess.STDOUT, text=True, timeout=15)
+    if not re.search(r"(?m)^\s*D\s+gdigrab\s", devices):
+        raise RuntimeError(f"The bundled FFmpeg is missing Windows desktop capture.\n{devices}")
+    subprocess.run((str(ffmpeg.resolve()), "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                    "-i", "testsrc2=size=64x64:rate=5", "-frames:v", "2", "-c:v", "libx264",
+                    str(data / "recording-smoke.mp4")), env=env, check=True, timeout=20)
     subprocess.run((str(app.resolve()), "--data-dir", str(data), "--screenshot", str(screenshot)),
                    env=env, check=True, timeout=40)
     if screenshot.stat().st_size < 10000 or "ERROR" in (data / "still.log").read_text(encoding="utf-8"):

@@ -26,6 +26,9 @@ $dist = Join-Path $root 'dist'
 $portable = Join-Path $dist "Qingkuai-v$version-Windows-x64"
 $output = Join-Path $root 'release'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
+$ffmpeg = & $PythonPath tools/build_recording_runtime.py
+if ($LASTEXITCODE -ne 0) { throw 'Could not locate the matching FFmpeg sources.' }
+Copy-Item -LiteralPath (Join-Path (Split-Path $ffmpeg) 'ffmpeg-source.zip') -Destination (Join-Path $output "Qingkuai-v$version-ffmpeg-source.zip")
 
 foreach ($file in @('LICENSE', 'README.md', 'README.en.md', 'CHANGES.md', 'THIRD_PARTY_NOTICES.md', 'TEST_REPORT.md')) {
     Copy-Item -LiteralPath (Join-Path $root $file) -Destination $portable

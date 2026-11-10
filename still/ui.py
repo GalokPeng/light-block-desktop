@@ -390,7 +390,7 @@ class MainWindow(QMainWindow):
         self.filter_kind = "all"
         self.cards = []
         self.light = self.store.settings.settings_theme == "light"
-        self.setWindowTitle(f"{tr(APP_NAME)} · {VERSION}")
+        self.setWindowTitle(tr(APP_NAME))
         self.setWindowIcon(controller.icon)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setAcceptDrops(True)
@@ -506,7 +506,6 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         self.update_button = button(tr("检查更新"), self.open_update)
         layout.addWidget(self.update_button)
-        layout.addWidget(label("  WINDOWS  /  v"+VERSION, "muted"))
         return side
 
     def _library(self):
@@ -720,10 +719,9 @@ class MainWindow(QMainWindow):
 
     def refresh_update(self):
         state = self.updater.state
-        messages = {"idle": tr("检查更新"), "checking": tr("正在检查更新…"),
+        messages = {"idle": tr("检查更新"), "checking": tr("正在检查更新…"), "update": tr("下载更新"),
                     "latest": tr("已是最新版本"), "error": tr("重试检查更新")}
-        title = tr("更新至 {0}").format(self.updater.version) if state == "update" else messages[state]
-        self.update_button.setText(title)
+        self.update_button.setText(messages[state])
         self.update_button.setEnabled(state in {"idle", "error", "update"})
         self.update_button.setToolTip(tr("下载安装包") if state == "update" else
                                      tr("无法检查更新，请稍后重试。") if state == "error" else "")
