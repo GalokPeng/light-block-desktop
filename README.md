@@ -19,13 +19,13 @@ Setup 默认安装到当前用户目录。安装版和免安装版均包含壁�
 
 导入本地图片、GIF 或视频，保留原画质副本。可选显示器和铺放方式，支持从实际视频帧生成封面。视频默认静音，可在设置或桌面右键菜单中切换。支持登录后恢复壁纸和全屏自动暂停。
 
-自己导入的壁纸可右键删除库内副本，原文件保留。删除正在使用的壁纸时先恢复 Windows 壁纸。在线图库目前仍为[方案文档](docs/online-wallpapers-plan.zh-CN.md)。
+自己导入的壁纸可右键删除库内副本，原文件保留。删除正在使用的壁纸时先恢复 Windows 壁纸。在线精选支持预览、搜索、原文件下载与来源署名。内置静态壁纸为「夜驰」「银河」「山海」「海岸」四张 1920×1080 原图，原有动态示例保留。
 
 ![轻块桌面的壁纸库和显示设置](site/public/media/wallpaper-zh.webp)
 
 ### 截屏与录屏
 
-默认 `Ctrl+Alt+A` 打开截屏，可选窗口或区域、添加标注、滚动拼接长图、复制 PNG 或原位贴图。录屏可用 `Ctrl+Alt+R` 停止，完成后直接贴屏预览，可涂鸦、裁剪画面和截取时间片段，按选定画质与帧率导出 MP4、GIF 或无损 MKV。
+默认 `Ctrl+Alt+A` 打开截屏，可选窗口或区域、添加标注、滚动拼接长图、复制 PNG 或原位贴图。录屏可用 `Ctrl+Alt+R` 停止，完成后直接贴屏预览，可涂鸦、裁剪画面和拖动双端时间指针截取片段。点击指针后可用方向键逐帧微调，Shift＋方向键移动十帧。按选定画质与帧率导出 MP4、GIF 或无损 MKV；GIF 提供快速／精细调色。
 
 | 截屏选区与标注 | 录屏预览与导出 |
 | --- | --- |
@@ -33,13 +33,13 @@ Setup 默认安装到当前用户目录。安装版和免安装版均包含壁�
 
 ### 桌面收纳与原生任务栏美化
 
-收纳支持居上、居中和居下，可按名称、修改时间或分组排列，并搜索桌面项目。关闭收纳会恢复原生图标显示状态。
+收纳支持居上、居中和居下，可按名称、修改时间或分组排列，并搜索桌面项目。新增桌面文件先显示为图标，右键可放入收纳或指定分组。关闭收纳会恢复原生图标显示状态。
 
 ![示例桌面的收纳分组](site/public/media/organizer-zh.webp)
 
-可选的任务栏美化在 Windows 11 22H2 或更新版本的 x64 主屏上，将电源与搜索、应用、系统托盘分三段居中。保留 Windows 搜索和托盘菜单，支持智能隐藏与触底唤出。
+可选的任务栏美化在 Windows 11 22H2 或更新版本的 x64 主屏上，将电源／设置／任务管理器／原生搜索、应用、系统托盘分三段居中。保留 Windows 搜索和托盘菜单，支持智能隐藏与触底唤出。
 
-![原生任务栏布局示意，从左到右为电源与搜索、应用、系统托盘](site/public/media/taskbar-layout.svg)
+![原生任务栏布局示意，从左到右为快捷工具与搜索、应用、系统托盘](site/public/media/taskbar-layout-zh-light.svg)
 
 *原生任务栏三段式布局示意*
 
@@ -49,7 +49,11 @@ Setup 默认安装到当前用户目录。安装版和免安装版均包含壁�
 
 ![便签与任务窗口以及贴在示例桌面上的本周计划](site/public/media/notes-zh.webp)
 
-演示截图使用内置素材和虚构数据。程序在本机处理内容，无账户、广告或遥测。更多功能包括快速启动、剪贴板历史、文件工作台和专注计时。[完整使用指南](docs/usage.zh-CN.md)
+演示截图使用内置素材和虚构数据。设置和下载的壁纸保存在本机，无账户、广告或遥测。在线图库按需访问素材来源。更多功能包括快速启动、剪贴板历史、文件工作台和专注计时。[完整使用指南](docs/usage.zh-CN.md)
+
+「本地壁纸 / 在线壁纸」支持切换：静态 20 张、GIF 10 款、视频 20 段，仅按媒体类型筛选。10 款 GIF 按维护者确认保留，与本地复看版一致。所有来源文件至少 1920 × 1080，单项不超过 20 MB；GIF 要求原始 1080p、16:9 的完整循环场景。GIF 不以点赞／收藏作为门槛，公开热度如实记录；静图、视频继续参考公开支持票或收藏筛选。沿用来源文件，不自行压缩、裁短或放大。支持中英文搜索、按需预览、下载进度与取消、已下载状态及应用。GitHub 只保存 URL 和授权目录。关闭设置时正式下载继续，退出软件会取消未完成下载。[评估与筛选记录](docs/wallpaper-evaluation.md)
+
+![在线壁纸精选与来源信息](site/public/media/online-wallpaper-zh.webp)
 
 ## 开发与发布
 
@@ -70,5 +74,11 @@ Windows x64，Python 3.11 和 PySide6。修改之前可把 [二开 Skill](skills
 [![Star History Chart](https://api.star-history.com/svg?repos=GalokPeng/light-block-desktop&type=Date)](https://www.star-history.com/#GalokPeng/light-block-desktop&Date)
 
 # 致谢与交流
+
+[Wikimedia Commons](https://commons.wikimedia.org/) — 在线壁纸的原始媒体与预览来源。作品版权归各原作者，分别依照其公开许可使用；软件详情与下载记录保留作者、来源及许可。[逐项素材署名](docs/wallpaper-sources.md)
+
+[Internet Archive](https://archive.org/) · [Jeffrey Beach / Beachfront Productions](https://beachfrontprod.blogspot.com/) — 原作者公开提供的 CC BY 3.0 高清视频、预览及浏览与收藏记录，软件保留来源和署名。
+
+[NASA](https://www.nasa.gov/) — 部分 GIF 的原始科学影像来源；具体作品的公有领域或开放许可见逐项署名。
 
 [Linux Do](https://linux.do/)

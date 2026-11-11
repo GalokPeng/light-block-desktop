@@ -38,14 +38,14 @@ class LocalizationTests(unittest.TestCase):
         entry = {"name": "此电脑", "system": "computer"}
         with patch("still.i18n.display_language", return_value="en"):
             self.assertEqual(tr("打开"), "Open")
-            self.assertEqual(item_name(item), "Dusk Dunes")
+            self.assertEqual(item_name(item), "Night Drive · City-edge Highway")
             self.assertEqual(group_name(group), "Folders")
             self.assertEqual(entry_name(entry), "This PC")
             self.assertEqual(group_name(dict(group, name="我的文件")), "我的文件")
-            self.assertEqual(item_name(dict(item, builtin=False)), "暮色沙丘")
+            self.assertEqual(item_name(dict(item, builtin=False)), "夜驰 · 城郊高速跑车")
             self.assertEqual(group_name(dict(group, name="")), "")
         with patch("still.i18n.display_language", return_value="zh"):
             self.assertEqual(tr("打开"), "打开")
-            self.assertEqual(item_name(item), "暮色沙丘")
+            self.assertEqual(item_name(item), "夜驰 · 城郊高速跑车")
             self.assertEqual(group_name(group), "文件夹")
             self.assertEqual(entry_name(entry), "此电脑")

@@ -53,7 +53,7 @@ def main():
             report["measurements"]["idle_engine"] = sample()
             engine.apply(store.items[0])
             pump(0.5)
-            assert win32.current_wallpaper()["path"] == str(ASSETS / "dunes.png")
+            assert win32.current_wallpaper()["path"] == str(ASSETS / "night-drive.jpg")
             assert engine.surface is None and not engine.tick.isActive()
             report["checks"].append("Static original PNG applied through Windows; no decoder/timer")
             engine.restore_original()

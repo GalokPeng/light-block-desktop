@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from math import ceil
 from tempfile import TemporaryDirectory
 from uuid import uuid4
 
-from PySide6.QtCore import QElapsedTimer, QMimeData, QPoint, QProcess, QRect, QRectF, QSignalBlocker, QTimer, QUrl, Qt
+from PySide6.QtCore import QElapsedTimer, QMimeData, QPoint, QProcess, QRect, QRectF, QTimer, QUrl, Qt
 from PySide6.QtGui import QColor, QImage, QKeySequence, QPainter, QShortcut
 from PySide6.QtMultimedia import QMediaPlayer, QVideoFrame, QVideoSink
-from PySide6.QtWidgets import QApplication, QFileDialog, QLabel, QHBoxLayout, QProgressBar, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QFileDialog, QLabel, QHBoxLayout, QProgressBar, QVBoxLayout, QWidget
 
 from .capture import AnnotationCanvas, PIN_GLOW_MARGIN, paint_pin_glow
 from .capture_icons import capture_icon
@@ -19,6 +20,7 @@ from .capture_overlay import beside_region
 from .desktop_windows import current_screen, live_screen
 from .media_tools import FFmpegJob, video_commands
 from .recording_options import choice, export_choices
+from .recording_timeline import RecordingTimeline
 
 
 class RecordingBar(QWidget):
@@ -178,16 +180,12 @@ class RecordingResult(QWidget):
         row.addWidget(icon_button("cancel", tr("关闭预览"), self.close))
 
         timeline, row = strip()
-        self.timeline = QSlider(Qt.Orientation.Horizontal)
-        self.timeline.setRange(0, 0)
-        self.timeline.setAccessibleName(tr("播放进度"))
-        self.timeline.sliderReleased.connect(lambda: self.player.setPosition(self.timeline.value()))
-        self.timeline.valueChanged.connect(self.seek)
+        self.timeline = RecordingTimeline(source_fps)
+        self.timeline.seekRequested.connect(self.seek)
+        self.timeline.trimChanged.connect(self.change_trim)
         row.addWidget(self.timeline, 1)
         self.clock = QLabel("0:00 / 0:00")
         row.addWidget(self.clock)
-        row.addWidget(icon_button("trim_start", tr("设为片段起点"), lambda: self.mark_trim(start=True)))
-        row.addWidget(icon_button("trim_end", tr("设为片段终点"), lambda: self.mark_trim(start=False)))
         row.addWidget(icon_button("reset", tr("取消时间裁剪"), self.clear_trim))
         self.bars.addWidget(timeline)
 
@@ -197,6 +195,11 @@ class RecordingResult(QWidget):
         self.quality, self.fps = export_choices(workbench.controller.store.settings)
         for field in (self.format, self.quality, self.fps):
             row.addWidget(field, 1)
+        self.gif_speed = choice(tr("GIF 调色"), ((tr("快速调色"), True), (tr("精细调色"), False)), True)
+        self.gif_speed.setToolTip(tr("快速调色更省时，精细调色适合丰富渐变；两者均保留所选尺寸和帧率。"))
+        row.addWidget(self.gif_speed)
+        self.gif_speed.setVisible(self.format.currentData() == "gif")
+        self.format.currentIndexChanged.connect(lambda: (self.gif_speed.setVisible(self.format.currentData() == "gif"), self.position_toolbar()))
         self.copy_button = icon_button("copy", tr("复制文件"), lambda: self.export(True))
         self.save_button = icon_button("save", tr("保存录屏"), lambda: self.export(False))
         row.addWidget(self.copy_button)
@@ -224,7 +227,7 @@ class RecordingResult(QWidget):
             QShortcut(QKeySequence.StandardKey.Save, target, lambda: self.export(False))
         self.player.playbackStateChanged.connect(self.update_play_button)
         self.player.positionChanged.connect(self.update_timeline)
-        self.player.durationChanged.connect(self.timeline.setMaximum)
+        self.player.durationChanged.connect(self.timeline.setDuration)
         self.player.errorOccurred.connect(lambda _, message: self.set_status(message))
         self.select_tool("move")
         margin = PIN_GLOW_MARGIN
@@ -281,36 +284,27 @@ class RecordingResult(QWidget):
             paint_pin_glow(painter, self.rect())
 
     def seek(self, value):
-        if not self.timeline.isSliderDown():
-            self.player.setPosition(value)
+        self.player.pause()
+        self.player.setPosition(value)
 
     def update_timeline(self, milliseconds):
-        if (self.player.isPlaying() and not self.timeline.isSliderDown()
+        if (self.player.isPlaying() and not self.timeline.dragging
                 and (milliseconds < self.trim_start or self.trim_end is not None and milliseconds >= self.trim_end)):
             self.player.setPosition(self.trim_start)
             return
-        if not self.timeline.isSliderDown():
-            with QSignalBlocker(self.timeline):
-                self.timeline.setValue(milliseconds)
+        if not self.timeline.dragging:
+            self.timeline.setPosition(milliseconds)
         elapsed, total = milliseconds//1000, self.player.duration()//1000
         self.clock.setText(f"{elapsed//60}:{elapsed%60:02d} / {total//60}:{total%60:02d}")
 
-    def mark_trim(self, start):
-        total = self.player.duration()
-        step = round(1000 / self.source_fps)
-        if total < step:
-            return
+    def change_trim(self, start, end):
         self.player.pause()
-        at = self.player.position()
-        if start:
-            self.trim_start = min(at, (self.trim_end if self.trim_end is not None else total) - step)
-        else:
-            self.trim_end = min(total, max(at, self.trim_start + step))
+        self.trim_start = start
+        self.trim_end = None if end == self.timeline.duration else end
         self.update_trim_label()
 
     def clear_trim(self):
-        self.trim_start, self.trim_end = 0, None
-        self.update_trim_label()
+        self.timeline.reset()
 
     def update_trim_label(self):
         if self.trim_start or self.trim_end is not None:
@@ -357,8 +351,13 @@ class RecordingResult(QWidget):
         fps = self.fps.currentData()
         if fps == self.source_fps:
             fps = None
-        start = self.trim_start / 1000
-        length = (self.trim_end - self.trim_start) / 1000 if self.trim_end is not None else None
+        # Export the same source frame boundaries as the handles, independently
+        # of the rounded milliseconds used by Qt's seek API and clock labels.
+        start = self.timeline.first / self.source_fps
+        selected_frames = self.timeline.last - self.timeline.first
+        length = selected_frames / self.source_fps if self.trim_end is not None else None
+        trimmed = self.timeline.first != 0 or self.timeline.last != self.timeline.frames
+        frame_limit = max(1, ceil(selected_frames * (fps or self.source_fps) / self.source_fps)) if trimmed else None
         unchanged = (self.source.suffix == suffix and not self.canvas.operations and not height and fps is None
                      and not start and length is None)
         if copy and unchanged:
@@ -402,7 +401,8 @@ class RecordingResult(QWidget):
                         palette = folder / "palette.png"
                 commands = video_commands(self.source, self.partial, start, length, self.canvas.crop.getRect(),
                                           "lossless" if mode == "mkv" else mode, fps=fps or self.source_fps,
-                                          palette=palette, overlay=overlay, max_height=height, output_fps=fps, crf=crf)
+                                          palette=palette, overlay=overlay, max_height=height, output_fps=fps, crf=crf,
+                                          gif_fast=self.gif_speed.currentData(), frame_limit=frame_limit)
             self.player.pause()
             self.set_busy(True)
             self.set_status(tr("正在导出 ")+mode.upper()+"…")
@@ -412,7 +412,7 @@ class RecordingResult(QWidget):
             self.done(False, str(exc))
 
     def set_busy(self, busy):
-        for widget in (self.format, self.quality, self.fps, self.save_button, self.copy_button):
+        for widget in (self.format, self.quality, self.fps, self.gif_speed, self.save_button, self.copy_button, self.timeline):
             widget.setEnabled(not busy)
         self.progress.setVisible(busy)
         self.cancel_button.setVisible(busy)

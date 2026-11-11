@@ -1,3 +1,21 @@
+# v0.9.0 · 壁纸精选与交互优化 / Wallpapers and interaction improvements
+
+- 原有三张内置静态壁纸替换为「夜驰」「银河」「山海」「海岸」四张 1920×1080 JPEG，保留原文件字节。现有 GIF、视频和应用布局不变，旧内置壁纸选择自动迁移。
+- 官网更新无个人信息的中英文功能展示图，新增雾白／石墨明暗主题、跟随系统和记忆选择。
+- 优化录屏 GIF 导出：默认快速调色，另提供精细调色；在所选尺寸与帧率不变的情况下减少调色计算，限制抖色计算区域，两个阶段显示进度，保持流式内存使用。
+- 录屏预览使用双端拖动裁剪条，点击手柄后左右键逐帧微调，Shift＋左右键移动十帧，显示毫秒级起止时间。
+- 收纳开启期间新增的桌面文件先显示为可拖动的桌面图标，气泡提示右键放入收纳；分组模式可指定目标分组。原文件始终保留在桌面，待收纳状态随清单保存。
+- 原生任务栏取消两端留白，在电源右侧增加任务栏设置、任务管理器图标按钮，再接原生搜索。三个按钮采用固定紧凑尺寸，不改变应用图标间距。驻留组件按构建标识隔离，更新时先恢复旧布局再应用新组件。
+- 新增本地／在线壁纸切换，仅保留静态、GIF、视频三个入口，支持中英标题及标签搜索、页内预览、原文件下载、进度取消和下载状态同步。
+- 在线精选包含静态 20 张、GIF 10 款、视频 20 段，全部原生至少 1920 × 1080、单项不超过 20 MB。按维护者确认保留本地复看版的 10 款 GIF；GIF 不设点赞／收藏门槛，仍要求原始 1080p、16:9 多帧循环动画。静图／视频继续按公开支持票或收藏结合观感筛选，详情保留公开统计与依据链接。不自行压缩、放大或裁短凑数。
+- 移除原 300 项和内容分类，schema 4 拒绝旧目录及大文件缓存恢复条目，并强制体积、像素、数量与热度证据。新增 Internet Archive 原作者 CC BY 3.0 高清视频来源及 README 友链，支持原始 WMV、OGV 播放与识别。
+- 来源提供的较小视频预览使用独立缓存；下载原文件不会复用较小预览，保留原文件字节、分辨率与来源记录。
+- GIF 列表封面在取得首个完整画面后停止传输，避免加载整个动画；同一时刻只保留一个主动预览。
+- 动态预览按需缓存后播放，限制缓存容量；正式下载复用并重新校验预览缓存，遇到来源限流时暂停请求。停止预览或离开页面释放播放器。
+- Replaces only the three bundled static wallpapers with four maintainer-supplied, byte-preserved 1920×1080 JPEGs. Existing GIF/video assets and application layout remain unchanged. The website has new bilingual demo images and light/dark/system themes.
+- Adds a reviewed URL-only gallery with 20 images, 10 GIFs and 20 videos, all at least native 1920 × 1080 and within 20 MB. The maintainer approved retaining the ten GIFs from the local review build; GIFs require native 1080p, 16:9 looping frames, without a likes/favorites threshold. Images/videos retain their public-vote or favorite-based selection; available metrics accompany all attribution records. Schema 4 retires the old 300 entries, content categories and oversized selections. Original GIF, WMV, WebM and OGV bytes are preserved without app-side recompression.
+- Motion previews use bounded, verified local caches. Original downloads can reuse and reverify cached bytes. Rate-limited sources are paused; stopping previews releases their players.
+
 # v0.8.1 · 更新重启与启动命令修复 / Update restart and startup commands
 
 - 包含 v0.8.0 的软件内更新、官网分语言下载、壁纸右键删除与任务栏稳定性改进。旧版本首次取得更新器仍需手动安装一次。

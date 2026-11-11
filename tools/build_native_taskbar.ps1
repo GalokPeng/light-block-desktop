@@ -46,7 +46,8 @@ $name = "QingkuaiTaskbarLayout-$hash.dll"
 $output = Join-Path $target $name
 if (-not (Test-Path -LiteralPath $output)) {
     & $ClangPath --target=x86_64-w64-mingw32 -std=c++23 -DUNICODE -D_UNICODE -DWINVER=0x0A00 -D_WIN32_WINNT=0x0A00 `
-        -Wno-dll-attribute-on-redeclaration -shared -static -O2 $source -o $output -ladvapi32 -lole32 -loleaut32 -lruntimeobject -luuid
+        "-DQINGKUAI_LAYOUT_BUILD=0x${hash}ULL" `
+        -Wno-dll-attribute-on-redeclaration -shared -static -O2 $source -o $output -ladvapi32 -lole32 -loleaut32 -lruntimeobject -luuid -lshell32
     if ($LASTEXITCODE -ne 0) { throw 'Could not build the native taskbar layout.' }
 }
 Set-Content -LiteralPath (Join-Path $target 'current.txt') -Value $name -Encoding ascii

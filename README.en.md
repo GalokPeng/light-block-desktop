@@ -19,13 +19,13 @@ Starting with v0.8.0, click **Update now** in the sidebar to download an update 
 
 Import full-quality copies of local images, GIFs and videos. Choose a display and fit mode, and identify videos by their frame-based covers. Video wallpapers start muted. Toggle sound in Settings or the desktop context menu. Restore the last wallpaper at sign-in and pause it on full screen.
 
-Right-click an imported wallpaper to delete its library copy while keeping the original. Deleting the active wallpaper first restores Windows wallpaper. Online browsing remains a [design proposal](docs/online-wallpapers-plan.zh-CN.md).
+Right-click an imported wallpaper to delete its library copy while keeping the original. Deleting the active wallpaper first restores Windows wallpaper. The online gallery supports previews, search, original downloads and source attribution. Four bundled 1920×1080 static wallpapers—Night Drive, Milky Way, Mountain Bay and Coastline—replace the previous still images, while existing motion demos remain.
 
 ![Wallpaper library and display settings in Light Block Desktop](site/public/media/wallpaper-en.webp)
 
 ### Screenshots and screen recording
 
-Press `Ctrl+Alt+A` by default to pick a window or region. Annotate, stitch a scrolling region, copy a PNG or pin the capture in place. Stop a recording with `Ctrl+Alt+R` to open a pinned preview. Draw, crop and trim, then export MP4, GIF or lossless MKV at your chosen quality and frame rate.
+Press `Ctrl+Alt+A` by default to pick a window or region. Annotate, stitch a scrolling region, copy a PNG or pin the capture in place. Stop a recording with `Ctrl+Alt+R` to open a pinned preview. Draw, crop and drag the two timeline handles to trim. After selecting a handle, use arrow keys for one source frame, or Shift + arrow keys for ten. Export MP4, GIF or lossless MKV at your chosen quality and frame rate; GIF offers fast and fine palette modes.
 
 | Capture selection and annotation | Recording preview and export |
 | --- | --- |
@@ -33,13 +33,13 @@ Press `Ctrl+Alt+A` by default to pick a window or region. Annotate, stitch a scr
 
 ### Desktop organizer and native taskbar styling
 
-Place the organizer at the top, center or bottom. Sort by name, modification time or group, and search for desktop items. Turning the organizer off restores the original icon visibility.
+Place the organizer at the top, center or bottom. Sort by name, modification time or group, and search for desktop items. New desktop files appear as icons first; right-click to put them away or choose a group. Turning the organizer off restores the original icon visibility.
 
 ![Folder groups on a sample desktop](site/public/media/organizer-en.webp)
 
-Optional styling centers power and search, apps and the system tray on the native taskbar of the primary display on Windows 11 22H2 or later, x64. Windows Search and tray menus stay available. The bar can hide when covered and reappear when you move the pointer to the bottom edge.
+Optional styling centers power, settings, Task Manager and native search in the first section, apps in the middle and the system tray in the third section on the native taskbar of the primary display on Windows 11 22H2 or later, x64. Windows Search and tray menus stay available. The bar can hide when covered and reappear when you move the pointer to the bottom edge.
 
-![Native taskbar diagram showing power and search, apps and the system tray](site/public/media/taskbar-layout.svg)
+![Native taskbar diagram showing power and search, apps and the system tray](site/public/media/taskbar-layout-en-light.svg)
 
 *Diagram of the three-section native taskbar*
 
@@ -49,7 +49,11 @@ Right-click the desktop background to create and pin a note. On Windows 11, star
 
 ![Notes and Tasks editor beside a weekly checklist pinned to a sample desktop](site/public/media/notes-en.webp)
 
-Screenshots use bundled media and fictional data. The app runs locally with no account, ads or telemetry. It also includes a launcher, clipboard history, a file workbench and focus timers. [User guide](docs/usage.en.md)
+Screenshots use bundled media and fictional data. Settings and downloaded wallpapers stay on your device. The online gallery contacts media sources on demand. No account, ads or telemetry. The app also includes a launcher, clipboard history, a file workbench and focus timers. [User guide](docs/usage.en.md)
+
+The online gallery has 20 images, 10 GIFs and 20 videos, with media-type filters and bilingual search. The maintainer approved retaining the ten GIFs from the local review build. Every source file is at least 1920 × 1080 and no larger than 20 MB, without app-side recompression, trimming or upscaling. GIF candidates must be original 1080p, 16:9 complete looping scenes. GIFs have no likes/favorites threshold; available metrics are recorded as reported. Images and videos retain their public-vote or favorite-based selection. It supports on-demand previews, byte-preserving downloads, progress/cancellation, downloaded status and Apply. GitHub stores URL and attribution metadata only. Downloads continue when settings close; quitting cancels unfinished downloads. [Evaluation and selection](docs/wallpaper-evaluation.md)
+
+![Online wallpaper gallery and source information](site/public/media/online-wallpaper-en.webp)
 
 ## Development and releases
 
@@ -68,3 +72,15 @@ The application source uses the [MIT license](LICENSE). Bundled dependencies kee
 [![GitHub stars](https://img.shields.io/github/stars/GalokPeng/light-block-desktop?style=flat)](https://github.com/GalokPeng/light-block-desktop/stargazers)
 
 [![Star History Chart](https://api.star-history.com/svg?repos=GalokPeng/light-block-desktop&type=Date)](https://www.star-history.com/#GalokPeng/light-block-desktop&Date)
+
+## Wallpaper sources
+
+[Wikimedia Commons](https://commons.wikimedia.org/) provides the original media and previews used by the online gallery. Works remain copyrighted by their respective authors and follow their individual public licenses. The app and download records retain each author, source and license. [Individual credits](docs/wallpaper-sources.md)
+
+[Internet Archive](https://archive.org/) · [Jeffrey Beach / Beachfront Productions](https://beachfrontprod.blogspot.com/) provide the creator's CC BY 3.0 HD footage, previews and public view/favorite records. The app retains source and attribution.
+
+[NASA](https://www.nasa.gov/) provides the original scientific imagery for some GIFs. Each work’s public-domain or open-license status is recorded in the individual credits.
+
+## Thanks and community
+
+[Linux Do](https://linux.do/)

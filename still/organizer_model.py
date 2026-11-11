@@ -92,6 +92,10 @@ class Collections:
         self._load_independent_manifest()
         if not isinstance(store.settings.organizer_groups, list):
             store.settings.organizer_groups = []
+        if not isinstance(store.settings.organizer_loose, list):
+            store.settings.organizer_loose = []
+        self.loose[:] = [e for e in self.loose if isinstance(e, dict)
+                        and isinstance(e.get("id"), str) and isinstance(e.get("target"), str)]
         self.groups[:] = [g for g in self.groups if isinstance(g, dict) and isinstance(g.get("id"), str)]
         for group in self.groups:
             if not isinstance(group.get("name"), str):
@@ -120,6 +124,7 @@ class Collections:
                     raise ValueError("Invalid collection manifest")
                 self.store.settings.organizer_groups = data["groups"]
                 self.store.settings.organizer_pending = data["pending"]
+                self.store.settings.organizer_loose = data.get("loose", [])
                 if file == self.backup:
                     damaged = self.manifest.with_name("collections.damaged-"+identifier()[:8]+".json")
                     if self.manifest.exists():
@@ -130,7 +135,7 @@ class Collections:
                 continue
 
     def write_manifest(self):
-        data = {"version": 1, "groups": self.groups, "pending": self.store.settings.organizer_pending}
+        data = {"version": 1, "groups": self.groups, "pending": self.store.settings.organizer_pending, "loose": self.loose}
         self.manifest.parent.mkdir(parents=True, exist_ok=True)
         if self.manifest.exists():
             try:
@@ -188,6 +193,10 @@ class Collections:
     def groups(self):
         return self.store.settings.organizer_groups
 
+    @property
+    def loose(self):
+        return self.store.settings.organizer_loose
+
     def find(self, ident):
         return next((g for g in self.groups if g["id"] == ident), None)
 
@@ -202,9 +211,11 @@ class Collections:
             self.store.save()
         return group
 
-    def classify_desktop(self, roots, next_rect=None, *, snapshot=None, only_new=False):
+    def classify_desktop(self, roots, next_rect=None, *, snapshot=None, only_new=False, defer_new=False):
         """Build file references in a single manifest write, leaving Desktop files in place."""
         known = {os.path.normcase(e["target"]) for g in self.groups for e in g["entries"]}
+        known.update(os.path.normcase(e["target"]) for e in self.loose)
+        new_loose = []
         buckets = {key: [] for key, _, _, _ in DESKTOP_CATEGORIES}
         listed, observed = {}, {}
         for root in roots:
@@ -234,14 +245,15 @@ class Collections:
                 seen.add(normalized)
                 key = "folders" if stat.S_ISDIR(info.st_mode) else SUFFIX_CATEGORY.get(path.suffix.lower(), "other")
                 name = path.stem if key == "shortcuts" else path.name
-                buckets[key].append({"id": identifier(), "name": name, "target": target, "managed": False,
-                                     "desktop_auto": True})
+                entry = {"id": identifier(), "name": name, "target": target, "managed": False, "desktop_auto": True}
+                (new_loose if defer_new else buckets[key]).append(entry)
                 known.add(normalized)
         for key, (name, target) in SYSTEM_ENTRIES.items():
             if os.path.normcase(target) not in known:
                 buckets["system"].append({"id": identifier(), "name": name, "target": target, "managed": False, "system": key})
         original_groups = self.groups[:]
         original_entries = [(g, g["entries"][:]) for g in original_groups]
+        original_loose = self.loose[:]
         removed = 0
         for group, entries in original_entries:
             kept = []
@@ -255,7 +267,12 @@ class Collections:
                 kept.append(entry)
             group["entries"][:] = kept
         initialized = self.store.settings.organizer_auto_classified
-        count = 0
+        self.loose[:] = [e for e in self.loose if
+                        os.path.normcase(str(Path(e["target"]).parent)) not in listed or
+                        os.path.normcase(e["target"]) in listed[os.path.normcase(str(Path(e["target"]).parent))]]
+        removed += len(original_loose) - len(self.loose)
+        self.loose.extend(new_loose)
+        count = len(new_loose)
         for key, name, color, _ in DESKTOP_CATEGORIES:
             entries = buckets[key]
             group = next((g for g in self.groups if g.get("auto_category") == key), None)
@@ -276,10 +293,41 @@ class Collections:
             self.groups[:] = original_groups
             for group, entries in original_entries:
                 group["entries"][:] = entries
+            self.loose[:] = original_loose
             raise
         if snapshot is not None:
             snapshot.update(observed)
         return count
+
+    def put_away(self, entry, group=None):
+        """Move a loose reference into a group; never move the desktop file."""
+        if entry not in self.loose:
+            return
+        if not Path(entry["target"]).exists():
+            raise FileNotFoundError(tr("找不到：{0}").format(entry["name"]))
+        previous_groups = self.groups[:]
+        previous_loose = self.loose[:]
+        if group is None:
+            path = Path(entry["target"])
+            category = "folders" if path.is_dir() else SUFFIX_CATEGORY.get(path.suffix.lower(), "other")
+            group = next((g for g in self.groups if g.get("auto_category") == category), None)
+            if group is None:
+                _, name, color, _ = next(c for c in DESKTOP_CATEGORIES if c[0] == category)
+                group = self.create(name, color, save=False)
+                group["auto_category"] = category
+        if group not in self.groups:
+            raise ValueError("Unknown collection group")
+        previous_entries = group["entries"][:]
+        if not any(os.path.normcase(e["target"]) == os.path.normcase(entry["target"]) for e in group["entries"]):
+            group["entries"].append(entry)
+        self.loose.remove(entry)
+        try:
+            self.write_manifest()
+        except OSError:
+            self.groups[:] = previous_groups
+            self.loose[:] = previous_loose
+            group["entries"][:] = previous_entries
+            raise
 
     def add_paths(self, group, paths):
         paths = [Path(path).absolute() for path in paths]

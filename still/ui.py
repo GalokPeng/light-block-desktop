@@ -389,6 +389,8 @@ class MainWindow(QMainWindow):
         self.selected = self.store.find(self.store.settings.active_id) or self.store.items[0]
         self.filter_kind = "all"
         self.cards = []
+        self.library_mode, self.online_page = "local", None
+        self.library_dirty = False
         self.light = self.store.settings.settings_theme == "light"
         self.setWindowTitle(tr(APP_NAME))
         self.setWindowIcon(controller.icon)
@@ -509,6 +511,43 @@ class MainWindow(QMainWindow):
         return side
 
     def _library(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+        tabs = QHBoxLayout()
+        group = QButtonGroup(page)
+        self.library_tabs = {}
+        for mode, text in (("local", tr("本地壁纸")), ("online", tr("在线壁纸"))):
+            tab = button(text, lambda checked=False, m=mode: self.set_library_mode(m), "pill")
+            tab.setCheckable(True)
+            tab.setChecked(mode == "local")
+            group.addButton(tab)
+            self.library_tabs[mode] = tab
+            tabs.addWidget(tab)
+        tabs.addStretch()
+        layout.addLayout(tabs)
+        self.library_stack = QStackedWidget()
+        self.library_stack.addWidget(self._local_library())
+        self.library_stack.addWidget(QWidget())
+        layout.addWidget(self.library_stack, 1)
+        return page
+
+    def set_library_mode(self, mode):
+        if mode == "online" and self.online_page is None:
+            from .online_ui import OnlinePage
+            self.online_page = OnlinePage(self, self.controller.online_wallpapers())
+            placeholder = self.library_stack.widget(1)
+            self.library_stack.removeWidget(placeholder)
+            placeholder.deleteLater()
+            self.library_stack.addWidget(self.online_page)
+        self.library_mode = mode
+        if mode == "local" and self.library_dirty:
+            self.refresh_cards()
+        self.library_tabs[mode].setChecked(True)
+        self.library_stack.setCurrentIndex(1 if mode == "online" else 0)
+
+    def _local_library(self):
         page = QWidget()
         row = QHBoxLayout(page)
         row.setContentsMargins(0, 0, 0, 0)
@@ -675,7 +714,7 @@ class MainWindow(QMainWindow):
         links.addWidget(button(tr("打开配置与日志文件夹  ↗"), self.open_data_folder))
         links.addStretch()
         c.addLayout(links)
-        c.addWidget(label(tr("所有壁纸与设置均在本机处理。无账户、无广告、无遥测。"), "eyebrow", True))
+        c.addWidget(label(tr("设置保存在本机。在线图库按需访问素材来源，无账户、无广告、无遥测。"), "eyebrow", True))
         v.addWidget(card)
         v.addStretch()
         return page
@@ -768,6 +807,8 @@ class MainWindow(QMainWindow):
         for card in self.cards:
             card.light = self.light
             card.update()
+        if self.online_page is not None:
+            self.online_page.set_theme(self.light)
 
     def set_filter(self, kind):
         self.filter_kind = kind
@@ -789,6 +830,7 @@ class MainWindow(QMainWindow):
             self.controller.get_workbench().invoke("capture" if index == 2 else "launcher")
 
     def refresh_cards(self):
+        self.library_dirty = False
         while self.grid.count():
             child = self.grid.takeAt(0)
             if child.widget():
@@ -931,7 +973,7 @@ class MainWindow(QMainWindow):
 
     def import_dialog(self):
         paths, _ = QFileDialog.getOpenFileNames(self, tr("导入壁纸 · 原文件不会被移动或修改"), "",
-            tr("壁纸文件 (*.png *.jpg *.jpeg *.bmp *.webp *.tif *.tiff *.gif *.mp4 *.mkv *.mov *.webm *.avi *.m4v);;所有文件 (*)"))
+            tr("壁纸文件 (*.png *.jpg *.jpeg *.bmp *.webp *.tif *.tiff *.gif *.mp4 *.mkv *.mov *.webm *.avi *.m4v *.ogv *.wmv);;所有文件 (*)"))
         self.import_files(paths)
 
     def import_files(self, paths):
@@ -979,6 +1021,9 @@ class MainWindow(QMainWindow):
         self.memory.setText(tr("本进程内存  {0:.0f} MB").format(win32.memory_mb()))
         self.pause_button.setEnabled(self.engine.surface is not None)
         self.pause_button.setText(tr("继续动态壁纸") if self.engine.manual_pause else tr("暂停动态壁纸"))
+        if self.online_page is not None and self.online_page.isVisible():
+            self.online_page.update_details()
+            self.online_page.view.viewport().update()
 
     def open_data_folder(self):
         from PySide6.QtCore import QUrl
@@ -987,5 +1032,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.thumbnails.close()
+        if self.online_page is not None:
+            self.online_page.close_preview()
         self.closed.emit()
         event.accept()

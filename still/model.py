@@ -14,7 +14,7 @@ from .i18n import tr
 from .profile import choose_directory, default_directory, legacy_directory
 from .recording_options import FRAME_RATES, RESOLUTIONS
 
-VERSION = "0.8.1"
+VERSION = "0.9.0"
 APP_NAME = "轻块桌面"
 DEFAULT_ORGANIZER_TITLE = "桌面收纳"
 DEFAULT_CAPTURE_SHORTCUT = "Ctrl+Alt+A"
@@ -22,8 +22,10 @@ TASKBAR_RADIUS_LIMITS = (6, 26)
 DEFAULT_TASKBAR_RADIUS = 22
 ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
 ASSETS = ROOT / "assets"
+LEGACY_BUILTIN_IDS = {"builtin:dunes": "builtin:nightdrive", "builtin:mountain": "builtin:mountainbay",
+                      "builtin:glow": "builtin:milkyway"}
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
-VIDEO_EXT = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v"}
+VIDEO_EXT = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v", ".ogv", ".wmv"}
 FITS = {"fill": "填充屏幕", "fit": "完整显示", "stretch": "拉伸铺满", "center": "原始尺寸"}
 APPS_FOLDER = "shell:AppsFolder\\"
 
@@ -61,15 +63,21 @@ def media_kind(path: Path) -> str:
 
 def bundled_items() -> list[dict]:
     return [
-        {"id": "builtin:dunes", "path": "dunes.png", "name": "暮色沙丘", "kind": "image", "builtin": True},
-        {"id": "builtin:mountain", "path": "mountain.png", "name": "雾隐青山", "kind": "image", "builtin": True},
-        {"id": "builtin:glow", "path": "glow.png", "name": "深蓝引力", "kind": "image", "builtin": True},
+        {"id": "builtin:nightdrive", "path": "night-drive.jpg", "name": "夜驰 · 城郊高速跑车", "kind": "image", "builtin": True},
+        {"id": "builtin:milkyway", "path": "milky-way.jpg", "name": "银河 · 高山湖泊星空", "kind": "image", "builtin": True},
+        {"id": "builtin:mountainbay", "path": "mountain-bay.jpg", "name": "山海 · 晨光与海湾", "kind": "image", "builtin": True},
+        {"id": "builtin:raincoast", "path": "rain-coast.jpg", "name": "海岸 · 雨夜弯道", "kind": "image", "builtin": True},
         {"id": "builtin:motion", "path": "motion.mp4", "name": "光的呼吸", "kind": "video", "builtin": True},
         {"id": "builtin:ripple", "path": "startrail.gif", "name": "星轨弧光", "kind": "gif", "builtin": True},
     ]
 
 
 def item_name(item: dict) -> str:
+    if isinstance(item.get("online_titles"), dict):
+        from .i18n import display_language
+        name = item["online_titles"].get(display_language())
+        if isinstance(name, str) and name:
+            return name
     return tr(item["name"]) if item.get("builtin") else item["name"]
 
 
@@ -115,6 +123,7 @@ class Settings:
     organizer_title: str = DEFAULT_ORGANIZER_TITLE
     organizer_groups: list = field(default_factory=list)
     organizer_pending: list = field(default_factory=list)
+    organizer_loose: list = field(default_factory=list)
     organizer_opacity: int = 165
     organizer_glass: bool = True
     organizer_mesh: bool = True
@@ -148,6 +157,8 @@ class Store:
                     raise ValueError(tr("设置不是 JSON 对象"))
                 allowed = {f.name for f in fields(Settings)}
                 self.settings = Settings(**{k: v for k, v in data.items() if k in allowed})
+                if isinstance(self.settings.active_id, str):
+                    self.settings.active_id = LEGACY_BUILTIN_IDS.get(self.settings.active_id, self.settings.active_id)
                 if not isinstance(self.settings.library, list):
                     raise ValueError(tr("壁纸库格式不正确"))
                 self.settings.library = [i for i in self.settings.library if isinstance(i, dict)
@@ -205,6 +216,8 @@ class Store:
         return bundled_items() + self.settings.library
 
     def find(self, ident: str) -> dict | None:
+        if isinstance(ident, str):
+            ident = LEGACY_BUILTIN_IDS.get(ident, ident)
         return next((i for i in self.items if i["id"] == ident), None)
 
     def path(self, item):
@@ -281,6 +294,8 @@ class Store:
             path = self.path(item)
             if path.resolve().is_relative_to(self.directory / "wallpapers"):
                 path.unlink(missing_ok=True)
+                if item.get("online_id"):
+                    (path.parent / "origin.json").unlink(missing_ok=True)
                 path.parent.rmdir()
         except OSError:
             pass

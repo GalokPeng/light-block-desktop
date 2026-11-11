@@ -1,41 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="212" viewBox="0 0 1200 212">
-  <defs>
-    <linearGradient id="desktop" x2="1" y2="1">
-      <stop stop-color="#233b3e"/>
-      <stop offset="1" stop-color="#101e28"/>
-    </linearGradient>
-  </defs>
-  <rect width="1200" height="212" fill="url(#desktop)"/>
-  <path fill="#4d746c" opacity=".24" d="M0 116C180 63 234 134 376 99c149-37 220-107 359-62 129 42 245 81 465-4v179H0Z"/>
-  <path fill="#0e2129" opacity=".56" d="M0 155c166-19 242-30 392-14 211 22 225-71 410-55 143 12 261 74 398 43v83H0Z"/>
-  <g fill="#17262b" stroke="#6a8b87" stroke-width="2">
-    <rect x="185" y="86" width="162" height="72" rx="23"/>
-    <rect x="357" y="86" width="350" height="72" rx="23"/>
-    <rect x="717" y="86" width="298" height="72" rx="23"/>
-  </g>
-  <rect x="203" y="101" width="42" height="42" rx="11" fill="#2d514b"/>
-  <rect x="259" y="101" width="69" height="42" rx="11" fill="#284046"/>
-  <g fill="none" stroke="#d8eee7" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M224 112v9m-6-5a10 10 0 1 0 12 0"/>
-    <circle cx="291" cy="120" r="8"/><path d="m297 126 7 7"/>
-    <path d="m742 123 7-7 7 7"/>
-    <path d="M779 119a18 18 0 0 1 24 0m-20 5a12 12 0 0 1 16 0m-12 5a6 6 0 0 1 8 0m-4 4h.1"/>
-    <path d="M827 119h6l7-6v19l-7-6h-6zm17-2a7 7 0 0 1 0 11m4-14a12 12 0 0 1 0 17"/>
-    <rect x="871" y="114" width="23" height="15" rx="3"/><path d="M895 119h3v5h-3m-19-5h12v5h-12"/>
-  </g>
-  <path fill="#edbd66" d="M392 114a5 5 0 0 1 5-5h11l6 5h17a5 5 0 0 1 5 5v17a5 5 0 0 1-5 5h-34a5 5 0 0 1-5-5Z"/>
-  <path fill="#ffe29f" d="M392 122h44v14a5 5 0 0 1-5 5h-34a5 5 0 0 1-5-5Z"/>
-  <rect x="463" y="102" width="41" height="40" rx="11" fill="#60b8d0"/>
-  <path fill="#173a52" d="M497 122a13.5 13.5 0 1 1-13.5-13.5A13.5 13.5 0 0 1 497 122Zm-22 0a8.5 8.5 0 1 0 8.5-8.5A8.5 8.5 0 0 0 475 122Z"/>
-  <rect x="531" y="102" width="41" height="40" rx="10" fill="#a6ddc8"/>
-  <path d="M543 114h17m-17 8h17m-17 8h12" stroke="#23574d" stroke-width="3" stroke-linecap="round"/>
-  <rect x="600" y="102" width="41" height="40" rx="10" fill="#afb8ed"/>
-  <path d="m609 132 8-12 6 7 5-5 5 10Zm19-18h.1" fill="none" stroke="#424c83" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-  <g fill="#a6ddc8">
-    <circle cx="414" cy="148" r="2.2"/><circle cx="483.5" cy="148" r="2.2"/><circle cx="551.5" cy="148" r="2.2"/>
-  </g>
-  <g fill="#d8eee7" font-family="Segoe UI, sans-serif" text-anchor="end">
-    <text x="993" y="121" font-size="21">10:24</text>
-    <text x="993" y="141" font-size="14">2026-10-08</text>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="212" viewBox="0 0 1200 212" role="img" aria-label="原生任务栏 · 三段居中">
+<rect width="1200" height="212" rx="18" fill="#f0f4fa"/>
+<g font-family="Segoe UI,Microsoft YaHei UI,Arial,sans-serif" fill="#25354c">
+<text x="36" y="40" font-size="18" font-weight="600">原生任务栏 · 三段居中</text>
+<rect x="130" y="76" width="280" height="70" rx="20" fill="#ffffff" stroke="#cdd8e7"/>
+<rect x="418" y="76" width="360" height="70" rx="20" fill="#ffffff" stroke="#cdd8e7"/>
+<rect x="786" y="76" width="286" height="70" rx="20" fill="#ffffff" stroke="#cdd8e7"/>
+<g stroke="#25354c" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+<path d="M151 103a11 11 0 1 0 14 0M158 97v12"/>
+<circle cx="194" cy="111" r="8"/><circle cx="194" cy="111" r="3"/>
+<path d="M194 99v3m0 18v3m-12-12h3m18 0h3m-21-9 2 2m14 14 2 2m-18 0 2-2m14-14 2-2"/>
+<circle cx="270" cy="109" r="7"/><path d="m275 114 5 5"/>
+</g><g fill="#25354c"><rect x="222" y="111" width="3" height="10" rx="1"/><rect x="228" y="101" width="3" height="20" rx="1"/><rect x="234" y="106" width="3" height="15" rx="1"/></g>
+<text x="290" y="117" font-size="17" fill="#64748b">搜索</text>
+<rect x="434" y="94" width="32" height="32" rx="9" fill="#e6ad43"/><circle cx="450" cy="135" r="2" fill="#25354c"/>
+<rect x="492" y="94" width="32" height="32" rx="9" fill="#3d8ed9"/><circle cx="508" cy="135" r="2" fill="#25354c"/>
+<rect x="550" y="94" width="32" height="32" rx="9" fill="#6d7bce"/><circle cx="566" cy="135" r="2" fill="#25354c"/>
+<rect x="608" y="94" width="32" height="32" rx="9" fill="#48a997"/><circle cx="624" cy="135" r="2" fill="#25354c"/>
+<rect x="666" y="94" width="32" height="32" rx="9" fill="#5c9bd8"/><circle cx="682" cy="135" r="2" fill="#25354c"/>
+<rect x="724" y="94" width="32" height="32" rx="9" fill="#c0809e"/><circle cx="740" cy="135" r="2" fill="#25354c"/>
+<g stroke="#25354c" stroke-width="1.8" fill="none" stroke-linecap="round"><path d="m806 112 5-5 5 5"/><circle cx="840" cy="111" r="7"/><rect x="861" y="104" width="13" height="13" rx="2"/><rect x="902" y="103" width="17" height="12" rx="2"/><path d="M910 115v5m-4 0h8m23-12h4l5-4v15l-5-4h-4Z"/></g>
+<text x="883" y="117" font-size="15">中</text>
+<text x="1049" y="107" text-anchor="end" font-size="15">09:41</text><text x="1049" y="128" text-anchor="end" font-size="12" fill="#64748b">2026/11/11</text>
+<g fill="#64748b" font-size="13"><text x="130" y="181">电源 · 设置 · 任务管理器 · 搜索</text><text x="418" y="181">应用</text><text x="786" y="181">系统托盘</text></g></g></svg>

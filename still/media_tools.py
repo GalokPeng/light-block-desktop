@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from math import floor
 from pathlib import Path
 import re
 import shutil
@@ -38,19 +39,26 @@ def parse_media_info(text):
 
 
 def video_commands(source, output, start, duration, crop, mode, fps=12, gif_width=0, palette=None, *,
-                   overlay=None, max_height=0, output_fps=None, crf=18):
+                   overlay=None, max_height=0, output_fps=None, crf=18, gif_fast=True, frame_limit=None):
     source, output = Path(source), Path(output)
     if source.resolve() == output.resolve():
         raise ValueError(tr("输出文件必须与原文件不同。"))
     if duration is not None and duration <= 0:
         raise ValueError(tr("结束时间必须晚于开始时间。"))
+    if frame_limit is not None and (type(frame_limit) is not int or frame_limit < 1):
+        raise ValueError("Frame limit must be a positive integer")
     filters = []
+    # Discard unused frames before crop, annotation compositing and scaling.
+    if mode == "gif" or output_fps:
+        filters.append(f"fps={int(fps if mode == 'gif' else output_fps)}")
     x, y, width, height = crop
     if width > 0 and height > 0:
         filters.append(f"crop={int(width)}:{int(height)}:{int(x)}:{int(y)}:exact=1")
-    seek = ["-ss", str(round(start, 3))]
+    # Millisecond rounding can skip the selected frame (e.g. frame 1 at 24
+    # fps is 41.666… ms). Seek just before its microsecond boundary instead.
+    seek = ["-ss", f"{floor(start * 1000000) / 1000000:.6f}"]
     if duration is not None:
-        seek += ["-t", str(round(duration, 3))]
+        seek += ["-t", f"{max(1, floor(duration * 1000000)) / 1000000:.6f}"]
     seek += ["-i", str(source)]
     common = ["-hide_banner", "-n"]
     graph = ""
@@ -60,22 +68,32 @@ def video_commands(source, output, start, duration, crop, mode, fps=12, gif_widt
         graph = f"[0:v]{','.join(filters) or 'null'}[base];[base][1:v]overlay=format=auto:alpha=straight[marked];"
         video = "[marked]"
         filters.clear()
-    if mode == "gif" or output_fps:
-        filters.append(f"fps={int(fps if mode == 'gif' else output_fps)}")
     if max_height:
         filters.append(f"scale=-2:'min(ih,{int(max_height)})':flags=lanczos")
     if mode == "gif":
         if gif_width:
             filters.append(f"scale={int(gif_width)}:-1:flags=lanczos")
-        chain = ",".join(filters)
+        chain = ",".join(filters) or "null"
         if palette is None:
             raise ValueError(tr("GIF 导出需要独立调色板临时文件。"))
         palette_input = 2 if overlay is not None else 1
+        analysis = f"{graph}{video}{chain}"
+        if gif_fast:
+            # Only the color analysis is sampled. The output still uses every
+            # requested frame and pixel. Separate passes bound memory on long
+            # recordings; a split/global-palette graph queues the whole video.
+            # Round upward at EOF so even a one-frame trim has a palette.
+            # Reuse fps from the bundled runtime; no extra codec/filter install.
+            analysis = analysis.replace(f"fps={int(fps)}", f"fps={min(8, int(fps))}:round=up", 1)
+            analysis += ",scale=w='min(iw,640)':h=-2:flags=area"
+        dithering = "bayer:bayer_scale=3" if gif_fast else "sierra2_4a"
         return [common + seek + ["-filter_complex_threads", "1", "-filter_complex",
-                                 f"{graph}{video}{chain},palettegen=stats_mode=diff", "-frames:v", "1", str(palette)],
+                                 f"{analysis},palettegen=stats_mode=diff", "-frames:v", "1",
+                                 "-progress", "pipe:1", str(palette)],
                 common + seek + ["-i", str(palette), "-filter_complex_threads", "1", "-filter_complex",
-                                 f"{graph}{video}{chain}[v];[v][{palette_input}:v]paletteuse=dither=sierra2_4a",
-                                 "-an", "-loop", "0", "-progress", "pipe:1", str(output)]]
+                                 f"{graph}{video}{chain}[v];[v][{palette_input}:v]paletteuse=dither={dithering}:diff_mode=rectangle",
+                                 "-an", "-loop", "0"] + (["-frames:v", str(frame_limit)] if frame_limit is not None else []) +
+                                ["-progress", "pipe:1", str(output)]]
     args = common + seek
     if mode != "lossless":
         filters.append("pad=ceil(iw/2)*2:ceil(ih/2)*2")
@@ -88,6 +106,8 @@ def video_commands(source, output, start, duration, crop, mode, fps=12, gif_widt
         args += ["-c:v", "ffv1", "-level", "3", "-c:a", "flac"]
     else:
         args += ["-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
+    if frame_limit is not None:
+        args += ["-frames:v", str(frame_limit)]
     return [args + ["-progress", "pipe:1", str(output)]]
 
 

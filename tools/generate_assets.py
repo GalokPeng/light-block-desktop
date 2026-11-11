@@ -163,8 +163,7 @@ if __name__ == "__main__":
     if sys.argv[1:] == ["--gif-only"]:
         raise SystemExit()
     from PIL import Image
-    for name in ("dunes", "mountain", "glow"):
-        artwork(name).save(str(DEST / (name+".png")))
+    # The four curated JPEG wallpapers are source assets, not regenerated demos.
     with tempfile.TemporaryDirectory() as temp:
         temp = Path(temp)
         for n in range(96):

@@ -1,5 +1,6 @@
 // Windows 11 Explorer taskbar layout for Light Block Desktop.
 #include <windows.h>
+#include <shellapi.h>
 #include <ocidl.h>
 #include <xamlom.h>
 #undef GetCurrentTime
@@ -33,7 +34,17 @@ using Windows::UI::Core::CoreDispatcherPriority;
 namespace {
 constexpr CLSID layoutId{0x1024237c, 0xb66a, 0x4f25, {0xba,0x99,0xfb,0x65,0xe9,0x4e,0x76,0x03}};
 constexpr double sectionGap = 5;
-constexpr wchar_t channel[] = L"Local\\Qingkuai.TaskbarLayout.v3.";
+constexpr double commandSize = 28;
+constexpr double commandGap = 2;
+constexpr double commandInset = 3;
+constexpr double commandContentWidth = 3*commandSize+2*commandGap;
+constexpr double commandSlotWidth = commandContentWidth+2*commandInset;
+#ifndef QINGKUAI_LAYOUT_BUILD
+#define QINGKUAI_LAYOUT_BUILD 0ULL
+#endif
+std::wstring component_channel() {
+    return L"Local\\Qingkuai.TaskbarLayout.v3." + std::to_wstring(QINGKUAI_LAYOUT_BUILD) + L".";
+}
 
 // Geometry and counters only. Never include application names, paths or icons.
 struct Status {
@@ -45,7 +56,7 @@ static_assert(sizeof(Status) == 80);
 enum State { waiting, healthy, repairing, incompatible, conflict };
 
 void publish(Status* status, State state, LONG repairs=0, LONG rebuilds=0, LONG error=0,
-             double host=0, double frame=0, double tray=0, double left=0, double right=0, LONG changes=0) {
+             double host=0, double frame=0, double tray=0, double left=0, double right=0, LONG changes=0, LONG gutters=0) {
     if (!status) return;
     InterlockedIncrement(&status->sequence);
     status->version = 3;
@@ -54,6 +65,7 @@ void publish(Status* status, State state, LONG repairs=0, LONG rebuilds=0, LONG 
     status->rebuilds = rebuilds;
     status->error = error;
     status->changes = changes;
+    status->reserved = gutters;
     status->hostWidth = host;
     status->frameWidth = frame;
     status->trayWidth = tray;
@@ -70,7 +82,7 @@ struct Handle {
 };
 
 Handle event_handle(wchar_t const* suffix, DWORD access) {
-    auto name = std::wstring(channel) + std::to_wstring(GetCurrentProcessId()) + L"." + suffix;
+    auto name = component_channel() + std::to_wstring(GetCurrentProcessId()) + L"." + suffix;
     return {OpenEventW(access, FALSE, name.c_str())};
 }
 
@@ -131,6 +143,60 @@ void power_action(int action) {
     }
 }
 
+void launch_taskbar_tool(int tool) {
+    std::wstring target;
+    if (tool==0) {
+        target=L"ms-settings:taskbar";
+    } else if (tool==1) {
+        wchar_t system[MAX_PATH]{};
+        if (GetSystemDirectoryW(system,MAX_PATH)) target=std::wstring(system)+L"\\Taskmgr.exe";
+    }
+    bool opened=!target.empty() && reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr,L"open",target.c_str(),nullptr,nullptr,SW_SHOWNORMAL))>32;
+    if (!opened) MessageBoxW(nullptr,chinese()?L"Windows 无法打开此工具。":L"Windows couldn't open this tool.",
+                             L"Qingkuai",MB_OK|MB_ICONWARNING);
+}
+
+Button command_button(wchar_t const* id, wchar_t const* label, UIElement const& icon) {
+    Button button;
+    button.Name(id);
+    Automation::AutomationProperties::SetAutomationId(button,id);
+    Automation::AutomationProperties::SetName(button,label);
+    ToolTipService::SetToolTip(button,box_value(label));
+    button.Content(icon);
+    button.Padding({0,0,0,0});
+    button.BorderThickness({0,0,0,0});
+    button.Background(Media::SolidColorBrush(Color{0,0,0,0}));
+    button.CornerRadius({7,7,7,7});
+    button.MinWidth(0);
+    button.MinHeight(0);
+    button.Width(commandSize);
+    button.Height(32);
+    return button;
+}
+
+FontIcon command_glyph(wchar_t const* glyph) {
+    FontIcon icon;
+    icon.FontFamily(Media::FontFamily(L"Segoe Fluent Icons"));
+    icon.Glyph(glyph);
+    icon.FontSize(17);
+    return icon;
+}
+
+PathIcon task_manager_icon() {
+    // Native vector geometry also works on older Windows 11 icon fonts.
+    Media::GeometryGroup chart;
+    for (auto bounds : {Windows::Foundation::Rect{0,7,3,9}, {6,0,3,16}, {12,4,3,12}}) {
+        Media::RectangleGeometry bar;
+        bar.Rect(bounds);
+        chart.Children().Append(bar);
+    }
+    PathIcon icon;
+    icon.Data(chart);
+    icon.Width(16);
+    icon.Height(16);
+    return icon;
+}
+
 struct Layout {
     struct Property {
         DependencyObject target{nullptr};
@@ -139,6 +205,7 @@ struct Layout {
         Data::BindingBase binding{nullptr};
         std::function<bool()> matches;
         int64_t token{};
+        LONG mask{};
         bool watching{};
 
         void remember() {
@@ -163,7 +230,10 @@ struct Layout {
     Grid host{nullptr};
     Canvas back{nullptr};
     Border controls{nullptr}, apps{nullptr}, trayBack{nullptr};
-    Button power{nullptr};
+    Button power{nullptr}, settingsButton{nullptr}, taskManagerButton{nullptr};
+    StackPanel commands{nullptr};
+    std::function<void(int)> launchTool=launch_taskbar_tool;
+    std::vector<FrameworkElement> nativeControls;
     event_token arranged{};
     std::vector<std::function<void()>> undo;
     std::vector<std::shared_ptr<Property>> properties;
@@ -208,6 +278,7 @@ struct Layout {
             auto actual=unbox_value<Value>(target.GetValue(property));
             if constexpr (std::is_same_v<Value,double>) {
                 if (std::isnan(actual) && std::isnan(value)) return true;
+                if (std::isfinite(actual) && std::isfinite(value)) return std::abs(actual-value)<.01;
             }
             return actual==value;
         };
@@ -215,9 +286,11 @@ struct Layout {
         properties.push_back(lease);
         target.SetValue(property,lease->wanted);
         LONG mask=32;
-        if (property==FrameworkElement::WidthProperty()) mask=target==frame ? 1 : target==tray ? 2 : 4;
+        if (property==FrameworkElement::WidthProperty()) mask=target==frame ? 1 : target==tray ? 2 : target==start ? 128 : 4;
+        else if (property==UIElement::RenderTransformProperty()) mask=256;
         else if (property==Grid::ColumnProperty() || property==Grid::ColumnSpanProperty()) mask=8;
         else if (property==FrameworkElement::HorizontalAlignmentProperty() || property==FrameworkElement::MarginProperty()) mask=16;
+        lease->mask=mask;
         lease->token=target.RegisterPropertyChangedCallback(property,[this, mask, weak=std::weak_ptr(lease)](auto const&,auto const&) {
             try {
                 auto property=weak.lock();
@@ -312,6 +385,11 @@ struct Layout {
         set(start, UIElement::IsHitTestVisibleProperty(), false);
         set(start, Control::IsTabStopProperty(), false);
         set(start, Automation::AutomationProperties::AccessibilityViewProperty(), Automation::Peers::AccessibilityView::Raw);
+        // A compact, fixed slot for three actual commands, with no blank gutters.
+        // Do not derive it from ActualWidth: that can still reflect the previous
+        // component while XAML is completing its restore layout pass.
+        set(start, FrameworkElement::WidthProperty(), commandSlotWidth);
+        nativeControls=search_controls();
 
         auto theme = panel.ActualTheme();
         back = Canvas();
@@ -326,22 +404,11 @@ struct Layout {
         trayBack.Margin({0,3,0,3});
         add(host, trayBack, true);
 
-        power = Button();
-        power.Name(L"QingkuaiPowerButton");
-        Automation::AutomationProperties::SetAutomationId(power,L"QingkuaiPowerButton");
-        Automation::AutomationProperties::SetName(power,chinese() ? L"电源" : L"Power");
-        ToolTipService::SetToolTip(power,box_value(chinese() ? L"电源" : L"Power"));
-        FontIcon icon;
-        icon.FontFamily(Media::FontFamily(L"Segoe Fluent Icons"));
-        icon.Glyph(L"\uE7E8");
-        icon.FontSize(17);
-        power.Content(icon);
-        power.Padding({0,0,0,0});
-        power.BorderThickness({0,0,0,0});
-        power.Background(Media::SolidColorBrush(Color{0,0,0,0}));
-        power.HorizontalAlignment(HorizontalAlignment::Left);
-        power.VerticalAlignment(VerticalAlignment::Center);
-        power.Height(34);
+        power=command_button(L"QingkuaiPowerButton",chinese()?L"电源":L"Power",command_glyph(L"\uE7E8"));
+        settingsButton=command_button(L"QingkuaiTaskbarSettingsButton",chinese()?L"任务栏设置":L"Taskbar settings",command_glyph(L"\uE713"));
+        taskManagerButton=command_button(L"QingkuaiTaskManagerButton",chinese()?L"任务管理器":L"Task Manager",task_manager_icon());
+        settingsButton.Click([action=launchTool](auto const&,auto const&) { action(0); });
+        taskManagerButton.Click([action=launchTool](auto const&,auto const&) { action(1); });
         power.Click([](Windows::Foundation::IInspectable const& sender, RoutedEventArgs const&) {
             try {
                 MenuFlyout menu;
@@ -357,7 +424,17 @@ struct Layout {
                 menu.ShowAt(sender.as<FrameworkElement>());
             } catch (...) {}
         });
-        add(panel, power, false);
+        commands=StackPanel();
+        commands.Orientation(Orientation::Horizontal);
+        commands.Spacing(commandGap);
+        commands.Width(commandContentWidth);
+        commands.Height(32);
+        commands.HorizontalAlignment(HorizontalAlignment::Left);
+        commands.VerticalAlignment(VerticalAlignment::Center);
+        commands.Children().Append(power);
+        commands.Children().Append(settingsButton);
+        commands.Children().Append(taskManagerButton);
+        add(panel, commands, false);
         arranged = panel.LayoutUpdated([this](auto const&, auto const&) {
             try {
                 if (!columns_match()) schedule();
@@ -386,7 +463,10 @@ struct Layout {
         auto columns=host.ColumnDefinitions();
         bool changed=!columns_match();
         if (changed) changes|=64;
-        for (auto const& property : properties) changed=changed || !property->matches();
+        for (auto const& property : properties) if (!property->matches()) {
+            changed=true;
+            changes|=property->mask;
+        }
         if (!changed) return;
         auto now=GetTickCount64();
         if (now-burstStart>5000) { burstStart=now; burst=0; }
@@ -420,7 +500,19 @@ struct Layout {
     bool connected() const {
         return Media::VisualTreeHelper::GetParent(frame)==host && child_named(frame,L"RootGrid")==panel &&
                child_named(panel,L"TaskbarFrameRepeater")==repeater && Media::VisualTreeHelper::GetParent(tray)==host &&
-               Media::VisualTreeHelper::GetParent(start)==repeater;
+               Media::VisualTreeHelper::GetParent(start)==repeater && search_controls()==nativeControls;
+    }
+
+    std::vector<FrameworkElement> search_controls() const {
+        std::vector<FrameworkElement> result;
+        for (int i=0; i<Media::VisualTreeHelper::GetChildrenCount(repeater); ++i) {
+            auto child=Media::VisualTreeHelper::GetChild(repeater,i).try_as<FrameworkElement>();
+            if (!child) continue;
+            auto id=Automation::AutomationProperties::GetAutomationId(child);
+            if (get_class_name(child)==L"Taskbar.TaskbarExtensionElement" || id==L"SearchButton" || id==L"SearchBoxButton")
+                result.push_back(child);
+        }
+        return result;
     }
 
     void border_geometry(Border const& border, double x, double width, double height) {
@@ -446,7 +538,7 @@ struct Layout {
                 if (x>=left && x+child.ActualWidth()<=width+1) contentRight=std::max(contentRight,x+child.ActualWidth());
             }
             if (child && child.Visibility() == Visibility::Visible &&
-                get_class_name(child) == L"Taskbar.TaskbarExtensionElement" && child.ActualWidth() > 5) {
+                std::find(nativeControls.begin(),nativeControls.end(),child)!=nativeControls.end() && child.ActualWidth() > 5) {
                 auto x = child.TransformToVisual(panel).TransformPoint({0,0}).X;
                 if (x >= left && x + child.ActualWidth() <= width+1) seam = std::max(seam,x+child.ActualWidth());
             }
@@ -455,15 +547,29 @@ struct Layout {
         border_geometry(controls,left,std::max(0.,seam-left-sectionGap/2),height);
         // A transient full-width frame must not paint an empty screen-wide pill.
         border_geometry(apps,appsLeft,std::max(0.,contentRight-appsLeft),height);
-        if (power.Margin().Left != left+3) power.Margin({left+3,0,0,0});
-        if (power.Width() != powerWidth-6) power.Width(powerWidth-6);
+        if (std::abs(commands.Margin().Left-(left+commandInset))>.01) commands.Margin({left+commandInset,0,0,0});
         auto origin=frame.TransformToVisual(host).TransformPoint({0,0}).X;
         auto trayX=tray.TransformToVisual(host).TransformPoint({0,0}).X;
         auto end=trayX+tray.ActualWidth();
+        auto commandLeft=commands.TransformToVisual(panel).TransformPoint({0,0}).X;
+        auto commandRight=commandLeft+commands.ActualWidth();
+        double controlsRight=commandRight;
+        bool controlsFit=std::abs(powerWidth-commandSlotWidth)<1 &&
+                         std::abs(commands.ActualWidth()-commandContentWidth)<1;
+        for (auto const& control : nativeControls) if (control.Visibility()==Visibility::Visible && control.ActualWidth()>5) {
+            auto x=control.TransformToVisual(panel).TransformPoint({0,0}).X;
+            controlsFit=controlsFit && x>=commandRight-1;
+            controlsRight=std::max(controlsRight,x+control.ActualWidth());
+        }
+        auto leftGutter=commandLeft-left;
+        auto rightGutter=seam-sectionGap/2-controlsRight;
         auto valid=origin>=-1 && trayX>=origin+contentRight-1 && end<=host.ActualWidth()+1 &&
-                   std::abs((origin+left+end)-host.ActualWidth())<=8;
+                   std::abs((origin+left+end)-host.ActualWidth())<=8 && controlsFit &&
+                   leftGutter>=0 && leftGutter<=6 && rightGutter>=-3 && rightGutter<=6;
+        LONG gutters=(static_cast<LONG>(std::clamp(std::round(rightGutter*100),0.,32767.))<<16) |
+                     static_cast<LONG>(std::clamp(std::round(leftGutter*100),0.,32767.));
         publish(status,valid ? healthy : repairing,repairCount,rebuildCount,0,host.ActualWidth(),width,
-                tray.ActualWidth(),origin+left,end,changes);
+                tray.ActualWidth(),origin+left,end,changes,gutters);
     }
 
     ~Layout() {
@@ -515,7 +621,7 @@ struct Watcher : implements<Watcher,IVisualTreeServiceCallback2> {
 
     explicit Watcher(IUnknown* site) {
         check_hresult(site->QueryInterface(IID_PPV_ARGS(diagnostics.put())));
-        auto name=std::wstring(channel)+std::to_wstring(GetCurrentProcessId())+L".Status";
+        auto name=component_channel()+std::to_wstring(GetCurrentProcessId())+L".Status";
         mapping.value=OpenFileMappingW(FILE_MAP_WRITE,FALSE,name.c_str());
         if (mapping.value) status=static_cast<Status*>(MapViewOfFile(mapping.value,FILE_MAP_WRITE,0,0,sizeof(Status)));
     }
@@ -682,3 +788,4 @@ extern "C" __declspec(dllexport) HRESULT WINAPI DllGetClassObject(REFCLSID id, R
 }
 
 extern "C" __declspec(dllexport) HRESULT WINAPI DllCanUnloadNow() { return S_FALSE; }
+extern "C" __declspec(dllexport) unsigned long long WINAPI QingkuaiLayoutBuild() { return QINGKUAI_LAYOUT_BUILD; }

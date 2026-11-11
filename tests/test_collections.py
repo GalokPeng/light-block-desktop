@@ -81,6 +81,52 @@ class CollectionTests(unittest.TestCase):
         self.collections.remove_group(target)
         self.assertEqual(source.read_text(encoding="utf-8"), "original")
 
+    def test_new_desktop_files_stay_loose_until_explicitly_put_away(self):
+        snapshot = {}
+        self.collections.classify_desktop([self.desktop], snapshot=snapshot)
+        new_file = self.desktop / "New.txt"
+        new_file.write_text("original bytes", encoding="utf-8")
+        self.assertEqual(self.collections.classify_desktop([self.desktop], snapshot=snapshot,
+                                                          only_new=True, defer_new=True), 1)
+        self.assertFalse(any(e["target"] == str(new_file) for g in self.collections.groups for e in g["entries"]))
+        entry = self.collections.loose[0]
+        entry["desktop_position"] = [120, 180]
+        self.collections.write_manifest()
+        reloaded = Collections(Store(self.store.directory))
+        self.assertEqual(reloaded.loose[0]["desktop_position"], [120, 180])
+        # Restart and explicit sync must not silently collect a deferred file.
+        reloaded.classify_desktop([self.desktop])
+        self.assertEqual(len(reloaded.loose), 1)
+        reloaded.put_away(reloaded.loose[0], reloaded.find(self.group["id"]))
+        self.assertFalse(reloaded.loose)
+        self.assertEqual(reloaded.find(self.group["id"])["entries"][0]["target"], str(new_file))
+        self.assertEqual(new_file.read_text(encoding="utf-8"), "original bytes")
+
+    def test_loose_rename_delete_and_default_group_and_failed_save(self):
+        snapshot = {}
+        self.collections.classify_desktop([self.desktop], snapshot=snapshot)
+        path = self.desktop / "Created.txt"
+        path.touch()
+        self.collections.classify_desktop([self.desktop], snapshot=snapshot, only_new=True, defer_new=True)
+        renamed = path.rename(self.desktop / "Renamed.txt")
+        self.collections.classify_desktop([self.desktop], snapshot=snapshot, only_new=True, defer_new=True)
+        self.assertEqual([e["target"] for e in self.collections.loose], [str(renamed)])
+        entry = self.collections.loose[0]
+        with patch.object(self.collections, "write_manifest", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                self.collections.put_away(entry)
+        self.assertEqual(self.collections.loose, [entry])
+        self.assertFalse(any(entry in g["entries"] for g in self.collections.groups))
+        self.collections.put_away(entry)
+        documents = next(g for g in self.collections.groups if g.get("auto_category") == "documents")
+        self.assertEqual(documents["entries"], [entry])
+        other = self.desktop / "Another.txt"
+        other.touch()
+        self.collections.classify_desktop([self.desktop], snapshot=snapshot, only_new=True, defer_new=True)
+        other.unlink()
+        self.collections.classify_desktop([self.desktop], snapshot=snapshot, only_new=True, defer_new=True)
+        self.assertFalse(self.collections.loose)
+
     def test_collect_and_restore_never_overwrites_a_collision(self):
         source = self.desktop / "快捷方式.lnk"
         source.write_bytes(b"original-shortcut")

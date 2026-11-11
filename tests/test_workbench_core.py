@@ -66,6 +66,20 @@ class WorkbenchCoreTests(unittest.TestCase):
         self.assertIn("palettegen", " ".join(commands[0]))
         self.assertIn("paletteuse", " ".join(commands[1]))
         self.assertNotIn("split", " ".join(commands[0]))
+        self.assertIn("diff_mode=rectangle", " ".join(commands[1]))
+        self.assertIn("fps=8:round=up", " ".join(commands[0]))
+        marked = video_commands(Path("source.mp4"), Path("marked.gif"), 0, 1, (0,0,100,80), "gif",
+                                palette=Path("palette.png"), overlay=Path("annotation.png"))
+        self.assertIn("[marked]null", " ".join(marked[0]))
+        self.assertNotIn("[marked],", " ".join(marked[0]))
+        fine = video_commands(Path("source.mp4"), Path("fine.gif"), 0, 1, (0,0,100,80), "gif",
+                              palette=Path("palette.png"), gif_fast=False)
+        self.assertNotIn("round=up", " ".join(fine[0]))
+        self.assertIn("dither=sierra2_4a", " ".join(fine[1]))
+        frame = video_commands(Path("source.mp4"), Path("one.gif"), 1/24, 1/24, (0,0,100,80), "gif",
+                               fps=24, palette=Path("palette.png"), frame_limit=1)
+        self.assertEqual(frame[1][frame[1].index("-ss")+1], "0.041666")
+        self.assertEqual(frame[1][frame[1].index("-frames:v")+1], "1")
         with self.assertRaises(ValueError):video_commands(Path("same.mp4"),Path("same.mp4"),0,2,(0,0,0,0),"mp4")
         info=parse_media_info("Duration: 00:01:02.50, start: 0\nStream #0:0: Video: h264, yuv420p, 1920x1080, 24fps")
         self.assertEqual(info,{"duration":62.5,"width":1920,"height":1080})

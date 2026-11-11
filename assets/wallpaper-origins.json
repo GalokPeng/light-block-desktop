@@ -1,0 +1,38 @@
+{
+  "source": "Project maintainer supplied these files for distribution.",
+  "app_files": "Original JPEG bytes preserved.",
+  "wallpapers": [
+    {
+      "filename": "night-drive.jpg",
+      "provided_filename": "01_夜驰_城郊高速_1920x1080.jpg",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 585328,
+      "sha256": "e4c92cddb84870768107b3a456f4e86b4356706103161ac41c10627b8faaae31"
+    },
+    {
+      "filename": "milky-way.jpg",
+      "provided_filename": "02_银河_静夜_1920x1080.jpg",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 968180,
+      "sha256": "8d728e05f3e4ffcd226c13dc6bd98e9b78b4d5ee20f266cd0d5e0b981c4f02dc"
+    },
+    {
+      "filename": "mountain-bay.jpg",
+      "provided_filename": "03_山海_晨光_1920x1080.jpg",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 1208734,
+      "sha256": "a14ded031019b7ba1ecde862a4582449b6bdabbd4c937de0a8b28e36861d2e21"
+    },
+    {
+      "filename": "rain-coast.jpg",
+      "provided_filename": "04_海岸_雨夜弯道_1920x1080.jpg",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 1024437,
+      "sha256": "706b1d0d40e577365dc43d263c155fa5547d25342bbbaa270099095c809cbf3f"
+    }
+  ]
+}

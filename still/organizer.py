@@ -1157,6 +1157,7 @@ class OrganizerManager(QObject):
         self.controller, self.store = controller, controller.store
         self.collections = Collections(self.store)
         self.shelf = None
+        self.loose_icons = {}
         self.desktop_icons = DesktopIconLease(self.store.directory)
         self.provider = QFileIconProvider()
         self.icons = OrderedDict()
@@ -1231,7 +1232,8 @@ class OrganizerManager(QObject):
                 if wanted - current:
                     self.desktop_paths.addPaths(list(wanted - current))
             previous_count = sum(len(group["entries"]) for group in self.collections.groups)
-            count = self.collections.classify_desktop(roots, snapshot=self.desktop_snapshot, only_new=automatic)
+            count = self.collections.classify_desktop(roots, snapshot=self.desktop_snapshot, only_new=automatic,
+                                                       defer_new=automatic)
             if refresh and (not automatic or count or previous_count != sum(len(group["entries"]) for group in self.collections.groups)):
                 self.refresh()
             elif automatic and self.shelf is not None and organizer_view(self.store.settings) == "time":
@@ -1287,6 +1289,7 @@ class OrganizerManager(QObject):
             shelf.deleteLater()
 
     def refresh(self):
+        from .desktop_loose import refresh_loose_icons
         if self.enabled:
             if self.shelf is None:
                 self.shelf = DesktopShelf(self)
@@ -1295,9 +1298,17 @@ class OrganizerManager(QObject):
             self.shelf.show()
         else:
             self.close_shelf()
+        refresh_loose_icons(self)
         used = {e["target"] for g in self.collections.groups for e in g["entries"]} if self.enabled else set()
         self.icons = OrderedDict((key, icon) for key, icon in self.icons.items() if key in used)
         self.changed.emit()
+
+    def put_away(self, entry, group=None):
+        try:
+            self.collections.put_away(entry, group)
+            self.refresh()
+        except OSError as exc:
+            self.error.emit(str(exc))
 
     def screen_changed(self, *_):
         if self.enabled:
@@ -1323,6 +1334,8 @@ class OrganizerManager(QObject):
         self.watcher.start()
         self.close_shelf()
         self.refresh()
+        for icon in self.loose_icons.values():
+            native.desktop_layer(int(icon.winId()))
         self.desktop_sync.start()
 
     def icon_for(self, entry):
@@ -1479,6 +1492,12 @@ class OrganizerManager(QObject):
         self.stop_desktop_updates()
         self.repair_timer.stop()
         self.close_shelf()
+        if hasattr(self, "loose_refresh"):
+            self.loose_refresh.stop()
+        for icon in self.loose_icons.values():
+            icon.hide()
+            icon.deleteLater()
+        self.loose_icons.clear()
         try:
             if self.desktop_icons.handle or self.desktop_icons.path.exists():
                 self.desktop_icons.restore()

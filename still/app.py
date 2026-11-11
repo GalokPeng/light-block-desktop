@@ -47,6 +47,7 @@ class Controller:
         self.native_menu = native_menu
         self.register_desktop_menu()
         self.release_check = None
+        self.online_library = None
         self.window = None
         self.organizer = None
         self.native_taskbar_style = None
@@ -190,6 +191,8 @@ class Controller:
             old.closed.disconnect(self.window_closed)
             old.close()
             new.show()
+            if getattr(old, "library_mode", "local") == "online":
+                new.set_library_mode("online")
             new.activateWindow()
 
     def updater(self):
@@ -200,6 +203,13 @@ class Controller:
             self.release_check.downloaded.connect(lambda path: self.release_check.prepare_install(path, self.store.directory))
             self.release_check.install_ready.connect(self.request_quit)
         return self.release_check
+
+    def online_wallpapers(self):
+        if self.online_library is None:
+            from .online_wallpapers import OnlineLibrary
+            self.online_library = OnlineLibrary(self.store, self.app)
+            self.online_library.changed.connect(lambda: QTimer.singleShot(0, self.maybe_quit))
+        return self.online_library
 
     def activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
@@ -236,6 +246,7 @@ class Controller:
 
     def needs_background(self):
         return (self.engine.surface is not None or self.store.settings.organizer_enabled or
+                bool(getattr(self, "online_library", None) and self.online_library.busy) or
                 bool(self.release_check and self.release_check.busy) or
                 self.native_taskbar_style is not None or
                 bool(self.hotkeys and self.hotkeys.registered)
@@ -324,6 +335,8 @@ class Controller:
         self.closing = True
         if self.release_check is not None:
             self.release_check.close()
+        if self.online_library is not None:
+            self.online_library.close()
         self.close_native_taskbar_style()
         if self.hotkeys is not None:
             self.hotkeys.cleanup()

@@ -6,12 +6,59 @@ from unittest.mock import Mock, patch
 
 from still import native_taskbar
 from still.model import DEFAULT_TASKBAR_RADIUS, Store
-from still.native_taskbar_xaml import LayoutStatus, NativeTaskbarLayout, stage_runtime_library
+from still.native_taskbar_xaml import CHANNEL, LayoutStatus, NativeTaskbarLayout, component_channel, stage_runtime_library, stop_resident
 from still.taskbar_visibility import TaskbarVisibilityLease, bottom_strip, measured_strip
 from still.taskbar_style_native import HIDDEN_SHAPE
 
 
 class NativeTaskbarTests(unittest.TestCase):
+    def test_native_builds_get_distinct_resident_channels(self):
+        module = Mock()
+        module._handle = 123
+        free = Mock()
+        with patch("still.native_taskbar_xaml.C.WinDLL", return_value=module), patch("still.native_taskbar_xaml.win32.bind", return_value=free):
+            module.QingkuaiLayoutBuild.return_value = 123456
+            first = component_channel(Path("first.dll"))
+            module.QingkuaiLayoutBuild.return_value = 654321
+            second = component_channel(Path("second.dll"))
+        self.assertEqual(first, CHANNEL+"123456.")
+        self.assertNotEqual(first, second)
+        self.assertEqual(free.call_count, 2)
+
+    def test_old_resident_restores_before_replacement_and_events_are_closed(self):
+        with patch("still.native_taskbar_xaml.open_event", side_effect=[1,2,3,4]) as opened, \
+             patch("still.native_taskbar_xaml.wait_for", return_value=0) as wait, \
+             patch("still.native_taskbar_xaml.reset_event") as reset, \
+             patch("still.native_taskbar_xaml.set_event") as signal, \
+             patch("still.native_taskbar_xaml.close_handle") as close:
+            stop_resident(CHANNEL, 42)
+        self.assertTrue(all(CHANNEL+"42." in c.args[2] for c in opened.call_args_list))
+        self.assertEqual([c.args[0] for c in reset.call_args_list], [4,3])
+        signal.assert_called_once_with(2)
+        self.assertEqual(wait.call_args_list[-1].args, (3,2300))
+        self.assertEqual([c.args[0] for c in close.call_args_list], [1,2,3,4])
+
+    def test_unresponsive_old_resident_prevents_new_layout_and_closes_handles(self):
+        with patch("still.native_taskbar_xaml.open_event", side_effect=[1,2,3,4]), \
+             patch("still.native_taskbar_xaml.wait_for", side_effect=[0,258]), \
+             patch("still.native_taskbar_xaml.reset_event"),patch("still.native_taskbar_xaml.set_event"), \
+             patch("still.native_taskbar_xaml.close_handle") as close:
+            with self.assertRaises(OSError):
+                stop_resident(CHANNEL, 42)
+        self.assertEqual(close.call_count, 4)
+
+    def test_component_initialization_failure_is_retryable(self):
+        layout = NativeTaskbarLayout(Path("not-loaded.dll"))
+        layout.visibility = Mock()
+        with patch("still.native_taskbar_xaml.win32.FindWindow", return_value=1), \
+             patch("still.native_taskbar_xaml.win32.FindWindowEx", return_value=2), \
+             patch("still.native_taskbar_xaml.process_id", return_value=42), \
+             patch.object(layout, "make_events", side_effect=OSError("old component busy")):
+            for _ in range(2):
+                with self.assertRaises(OSError):
+                    layout.update()
+                self.assertIsNone(layout.pid)
+
     def test_new_explorer_process_reconnects_instead_of_disabling_styling(self):
         layout = NativeTaskbarLayout(Path("not-loaded.dll"))
         layout.pid, layout.visibility = 10, Mock()
@@ -72,6 +119,9 @@ class NativeTaskbarTests(unittest.TestCase):
         self.assertEqual(snapshot["repairs"], 3)
         self.assertEqual(snapshot["host_width"], 1706.67)
         self.assertNotIn("sequence", snapshot)
+        status.reserved = (1950 << 16) | 2533
+        gutters = LayoutStatus.read(C.addressof(status))
+        self.assertEqual((gutters["controls_gutter_left"], gutters["controls_gutter_right"]), (25.33,19.5))
         status.sequence = 3
         self.assertIsNone(LayoutStatus.read(C.addressof(status)))
         status.sequence, status.version = 4, 1

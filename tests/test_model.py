@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import call, patch
 
-from still.model import Store, media_kind
+from still.model import ASSETS, LEGACY_BUILTIN_IDS, Store, bundled_items, media_kind
 from still.profile import choose_directory
 from still.organizer_model import Collections
 from still import win32
@@ -12,6 +12,21 @@ from still.hotkeys import MOD_CTRL, MOD_SHIFT, capture_binding
 
 
 class StoreTests(unittest.TestCase):
+    def test_curated_default_wallpapers_and_legacy_selection_survive_upgrade(self):
+        images=[item for item in bundled_items() if item["kind"]=="image"]
+        self.assertEqual([item["path"] for item in images],
+                         ["night-drive.jpg","milky-way.jpg","mountain-bay.jpg","rain-coast.jpg"])
+        self.assertTrue(all((ASSETS/item["path"]).is_file() for item in images))
+        for old,new in LEGACY_BUILTIN_IDS.items():
+            with tempfile.TemporaryDirectory() as folder:
+                root=Path(folder)
+                (root/"settings.json").write_text(json.dumps({"active_id":old,"restore_on_start":True}),encoding="utf-8")
+                store=Store(root)
+                self.assertEqual(store.settings.active_id,new)
+                self.assertEqual(store.find(old)["id"],new)
+                store.save()
+                self.assertEqual(Store(root).settings.active_id,new)
+
     def test_dock_color_persists_independently_of_the_settings_theme(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

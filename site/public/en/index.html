@@ -8,6 +8,8 @@
   <meta property="og:title" content="Light Block Desktop">
   <meta property="og:description" content="Set live wallpapers, capture and record your screen, organize your desktop, style the native Windows taskbar and pin notes.">
   <link rel="icon" href="/media/icon.png">
+  <meta name="color-scheme" content="light dark">
+  <script src="/theme.js"></script>
   <link rel="stylesheet" href="/site.css">
   <script type="module" src="/downloads.mjs"></script>
 
@@ -21,6 +23,10 @@
         <a class="section-link" href="#features">Features</a>
         <a class="section-link" href="#install">Install</a>
         <a href="https://github.com/GalokPeng/light-block-desktop">GitHub</a>
+        <div class="theme-controls" role="group" aria-label="Appearance">
+          <button class="theme-control" type="button" data-theme-toggle aria-label="Switch color theme" title="Switch color theme"><svg class="theme-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.1A8.7 8.7 0 0 1 9.9 3.5 8.7 8.7 0 1 0 20.5 14.1Z"/></svg><svg class="theme-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+          <button class="theme-control" type="button" data-theme-system aria-label="Use system theme" title="Use system theme" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></svg></button>
+        </div>
         <a class="lang" href="/?lang=zh" lang="zh-CN">简体中文</a>
       </nav>
     </div>
@@ -38,12 +44,13 @@
           <p class="fine">MIT licensed · Installer and portable ZIP</p>
         </div>
         <figure>
-          <a class="frame" href="/media/wallpaper-en.webp"><img src="/media/wallpaper-en.webp" alt="Wallpaper library and display settings" width="1920" height="1290" fetchpriority="high"></a>
-          <figcaption>Light Block Desktop · bundled sample media</figcaption>
+          <a class="frame" data-theme-link href="/media/wallpaper-en-light.webp"><img data-theme-image="/media/wallpaper-en" src="/media/wallpaper-en-light.webp" alt="Wallpaper library and display settings" width="1920" height="1290" fetchpriority="high"></a>
+          <figcaption>Real app interface · included wallpapers</figcaption>
         </figure>
       </div>
     </section>
     <div class="wrap strip"><div><strong>Full-quality wallpaper copies</strong></div><div><strong>English and Simplified Chinese</strong></div><div><strong>Local data</strong></div></div>
+    <section class="wrap section wallpaper-collection" id="included-wallpapers"><div class="gallery-intro"><div><p class="kicker">INCLUDED WALLPAPERS</p><h2>Four scenes. A different state of mind.</h2></div><p>An open highway, the Milky Way, a morning bay and a rainy coast. Four included wallpapers, ready when you are.</p></div><div class="wallpaper-grid"><figure class="wallpaper-card"><a href="/media/wallpapers/night-drive.jpg"><img src="/media/wallpapers/night-drive.webp" alt="Night Drive · City-edge Highway" width="1920" height="1080" loading="lazy"></a><figcaption>Night Drive · City-edge Highway<small>1920 × 1080 · Included wallpaper</small></figcaption></figure><figure class="wallpaper-card"><a href="/media/wallpapers/milky-way.jpg"><img src="/media/wallpapers/milky-way.webp" alt="Milky Way · Alpine Lake" width="1920" height="1080" loading="lazy"></a><figcaption>Milky Way · Alpine Lake<small>1920 × 1080 · Included wallpaper</small></figcaption></figure><figure class="wallpaper-card"><a href="/media/wallpapers/mountain-bay.jpg"><img src="/media/wallpapers/mountain-bay.webp" alt="Mountain Bay · Morning Light" width="1920" height="1080" loading="lazy"></a><figcaption>Mountain Bay · Morning Light<small>1920 × 1080 · Included wallpaper</small></figcaption></figure><figure class="wallpaper-card"><a href="/media/wallpapers/rain-coast.jpg"><img src="/media/wallpapers/rain-coast.webp" alt="Coastline · Rainy Curves" width="1920" height="1080" loading="lazy"></a><figcaption>Coastline · Rainy Curves<small>1920 × 1080 · Included wallpaper</small></figcaption></figure></div></section>
     <section class="wrap section" id="features">
       <p class="kicker">FEATURE PREVIEW</p>
       <h2>Make the desktop your own</h2>
@@ -58,9 +65,10 @@
           <ul>
             <li>Video wallpapers start muted. Toggle sound in Playback Settings or the desktop context menu.</li>
             <li>Restore the last wallpaper at sign-in. Pause live wallpaper on full screen, lock, display off or battery power.</li>
+            <li>Browse 20 images, 10 GIFs and 20 videos online. Search, preview and download original files with author and license details.</li>
           </ul>
         </div>
-        <a class="frame" href="/media/wallpaper-en.webp"><img src="/media/wallpaper-en.webp" alt="Wallpaper library and display settings" width="1920" height="1290" loading="lazy"></a>
+        <div class="feature-visuals"><figure><a class="frame" data-theme-link href="/media/wallpaper-en-light.webp"><img data-theme-image="/media/wallpaper-en" src="/media/wallpaper-en-light.webp" alt="Wallpaper library and display settings" width="1920" height="1290" loading="lazy"></a><figcaption>Your local wallpaper library</figcaption></figure><figure><a class="frame" data-theme-link href="/media/online-wallpaper-en-light.webp"><img data-theme-image="/media/online-wallpaper-en" src="/media/online-wallpaper-en-light.webp" alt="Online images, GIFs and videos with search and source information" width="1920" height="1290" loading="lazy"></a><figcaption>Online gallery · Preview and download on demand</figcaption></figure></div>
       </article>
       <article class="feature" id="capture">
         <div>
@@ -68,13 +76,13 @@
           <h3>Annotate screenshots and edit recordings</h3>
           <p>Press <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>A</kbd> to pick a window or region. Annotate a screenshot, stitch a scrolling region, copy a PNG or pin the capture in place.</p>
           <ul>
-            <li>Finished recordings open in a pinned preview. Draw on the video, crop the frame and trim the clip.</li>
-            <li>Choose quality and frame rate, then save or copy MP4, GIF or lossless MKV.</li>
+            <li>Finished recordings open in a pinned preview. Drag either trim handle and use arrow keys for frame-by-frame precision.</li>
+            <li>Choose quality and frame rate, then export MP4, GIF or lossless MKV. GIF offers fast and fine palette modes.</li>
           </ul>
         </div>
         <div class="feature-visuals">
-          <figure><a class="frame" href="/media/capture-en.webp"><img src="/media/capture-en.webp" alt="Screen selection with a box, arrow and numbered marker on a sample release board" width="1800" height="1104" loading="lazy"></a><figcaption>Capture selection and annotation toolbar</figcaption></figure>
-          <figure><a class="frame" href="/media/recording-en.webp"><img src="/media/recording-en.webp" alt="Pinned recording with a timeline, export format, quality and frame rate controls" width="1200" height="736" loading="lazy"></a><figcaption>Recording preview, timeline and export controls</figcaption></figure>
+          <figure><a class="frame" data-theme-link href="/media/capture-en-light.webp"><img data-theme-image="/media/capture-en" src="/media/capture-en-light.webp" alt="Screen selection with a box, arrow and numbered marker on a sample release board" width="1800" height="1104" loading="lazy"></a><figcaption>Capture selection and annotation toolbar</figcaption></figure>
+          <figure><a class="frame" data-theme-link href="/media/recording-en-light.webp"><img data-theme-image="/media/recording-en" src="/media/recording-en-light.webp" alt="Pinned recording with a timeline, export format, quality and frame rate controls" width="1200" height="736" loading="lazy"></a><figcaption>Recording preview, timeline and export controls</figcaption></figure>
         </div>
       </article>
       <article class="feature" id="desktop">
@@ -85,11 +93,12 @@
           <ul>
             <li>Optional taskbar styling centers power and search, apps and the system tray on the primary display on Windows 11 22H2 or later, x64. Windows Search and tray menus stay available.</li>
             <li>The bar can hide when a full-screen app or window covers it. Move the pointer to the bottom edge to reveal it.</li>
+            <li>Open Taskbar Settings or Task Manager beside the power button. New desktop files appear as icons first; right-click to put them away or choose a group.</li>
           </ul>
         </div>
         <div class="feature-visuals">
-          <figure><a class="frame" href="/media/organizer-en.webp"><img src="/media/organizer-en.webp" alt="Translucent folder groups on a sample desktop" width="1200" height="736" loading="lazy"></a><figcaption>Desktop organizer groups</figcaption></figure>
-          <figure><a class="frame" href="/media/taskbar-layout.svg"><img src="/media/taskbar-layout.svg" alt="Power and search, apps and the system tray centered on one taskbar" width="1200" height="212" loading="lazy"></a><figcaption>Diagram of the three-section native taskbar</figcaption></figure>
+          <figure><a class="frame" data-theme-link href="/media/organizer-en-light.webp"><img data-theme-image="/media/organizer-en" src="/media/organizer-en-light.webp" alt="Translucent folder groups on a sample desktop" width="1200" height="736" loading="lazy"></a><figcaption>Desktop organizer groups</figcaption></figure>
+          <figure><a class="frame" data-theme-link href="/media/taskbar-layout-en-light.svg"><img data-theme-image="/media/taskbar-layout-en" data-theme-ext="svg" src="/media/taskbar-layout-en-light.svg" alt="Power, settings, Task Manager and search, apps and system tray centered in three sections" width="1200" height="212" loading="lazy"></a><figcaption>Diagram of the three-section native taskbar</figcaption></figure>
         </div>
       </article>
       <article class="feature" id="notes">
@@ -99,7 +108,7 @@
           <p>Right-click the desktop background and choose <strong>Light Block Desktop · New Note</strong> to pin a note. On Windows 11, open <strong>Show more options</strong> first. Drag the note to move it, or double-click to edit.</p>
           <ul><li>Search, set reminders, mark tasks done or archive them in Notes &amp; Tasks.</li><li>Notes save locally. Pinned notes stay visible when you close Settings.</li></ul>
         </div>
-        <figure><a class="frame" href="/media/notes-en.webp"><img src="/media/notes-en.webp" alt="Notes and Tasks editor beside a pinned weekly checklist on a sample desktop" width="1200" height="736" loading="lazy"></a><figcaption>Notes editor and a pinned desktop note</figcaption></figure>
+        <figure><a class="frame" data-theme-link href="/media/notes-en-light.webp"><img data-theme-image="/media/notes-en" src="/media/notes-en-light.webp" alt="Notes and Tasks editor beside a pinned weekly checklist on a sample desktop" width="1200" height="736" loading="lazy"></a><figcaption>Notes editor and a pinned desktop note</figcaption></figure>
       </article>
     </section>
     <section class="wrap section">
@@ -120,13 +129,13 @@
         <div class="actions"><a class="button primary" data-setup-download href="https://github.com/GalokPeng/light-block-desktop/releases/latest/download/Qingkuai-Setup-x64.exe">Download Windows Setup ↓</a></div>
       </div>
       <div>
-        <details><summary>How do I upgrade?</summary><p>Quit the previous version and run the new installer. It keeps your existing settings. Extract the full portable ZIP before launching.</p></details>
+        <details><summary>How do I upgrade?</summary><p>Click Update now in the app sidebar to download with progress. After verifying Setup, the app exits and starts the installer, preserving existing settings. You can also download Setup manually.</p></details>
         <details><summary>How do I start recording?</summary><p>Starting with v0.7.4, the installer and portable package include the recording component. Press Ctrl+Alt+A, select a region, then click Record on the toolbar. After stopping, preview and export as MP4, GIF, or lossless MKV.</p></details>
         <details><summary>Where is my data stored?</summary><p>Settings and wallpapers live in the <code>data</code> folder beside the app. The first launch copies your previous settings. A read-only app folder uses <code>%LOCALAPPDATA%\StillWallpaper</code>.</p></details>
         <details><summary>How is the language selected?</summary><p>The app follows the Windows display language by default. Switch between English and Simplified Chinese in the upper-right corner of Settings. Setup also includes Traditional Chinese.</p></details>
       </div>
     </section>
   </main>
-  <footer><div class="wrap footer"><p>Light Block Desktop · MIT open source</p><a href="https://github.com/GalokPeng/light-block-desktop/issues">Report an issue ↗</a></div></footer>
+  <footer><div class="wrap footer"><p>Light Block Desktop · MIT open source</p><a href="https://github.com/GalokPeng/light-block-desktop/blob/main/docs/wallpaper-sources.md">Media sources &amp; credits</a><a href="https://github.com/GalokPeng/light-block-desktop/issues">Report an issue ↗</a></div></footer>
 </body>
 </html>

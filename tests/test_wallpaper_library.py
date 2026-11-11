@@ -76,7 +76,7 @@ class WallpaperLibraryTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "wallpaper.png"
-            source.write_bytes((ASSETS / "dunes.png").read_bytes())
+            source.write_bytes((ASSETS / "night-drive.jpg").read_bytes())
             other = root / "other.png"
             other.write_bytes(source.read_bytes())
             store = Store(root / "profile")
@@ -101,7 +101,7 @@ class WallpaperLibraryTests(unittest.TestCase):
             with self.subTest(name=name), TemporaryDirectory() as directory:
                 root = Path(directory)
                 source = root / name
-                source.write_bytes((ASSETS / ("startrail.gif" if source.suffix == ".gif" else "dunes.png")).read_bytes())
+                source.write_bytes((ASSETS / ("startrail.gif" if source.suffix == ".gif" else "night-drive.jpg")).read_bytes())
                 store = Store(root / "profile")
                 item = store.add(source)
                 managed = store.path(item)
@@ -133,7 +133,7 @@ class WallpaperLibraryTests(unittest.TestCase):
 
             self.assertFalse(self.open_delete_menu(window.cards[0]))
             window.remove_selected()
-            self.assertEqual(len(store.items), 5)
+            self.assertEqual(len(store.items), 6)
             window.thumbnails.cancel.assert_not_called()
             window.deleteLater()
 
@@ -141,7 +141,7 @@ class WallpaperLibraryTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "picture.png"
-            source.write_bytes((ASSETS / "dunes.png").read_bytes())
+            source.write_bytes((ASSETS / "night-drive.jpg").read_bytes())
             store = Store(root / "profile")
             item = store.add(source)
             window = LibraryWindow(store)

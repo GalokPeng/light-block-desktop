@@ -4,6 +4,10 @@
 
 The static site ships Chinese and English HTML, shared CSS, and local demo images. It uses the browser language at `/`. Open `/?lang=zh` for Chinese or `/en/` for English.
 
+官网默认跟随系统明暗主题；太阳／月亮按钮直接切换并记忆选择，显示器按钮恢复系统跟随。`theme.js` 在样式加载前确定主题，展示图随主题切换。应用本身的主题和布局不受官网样式影响。
+
+The site follows the system appearance by default. The sun/moon button remembers a manual choice; the monitor button restores system mode. Theme selection runs before CSS, and demo images follow the palette. Website styling does not change the desktop application's layout or appearance.
+
 英文页面默认从 GitHub 官方下载，中文页面默认 `gh-proxy.com` 加速。下载按钮旁可以切换 `GitHub`、`gh-proxy.com`、`ghfast.top`，选择按页面语言分别保存在浏览器中。下载由浏览器直接连接所选源，不再要求整个安装包先经过 Vercel 转发。不同网络的实际速度不同，不保证某个加速源始终最快。
 
 English defaults to official GitHub downloads; Chinese defaults to `gh-proxy.com`. The selector offers GitHub, `gh-proxy.com`, and `ghfast.top`, with separate browser preferences for each language. Downloads connect directly to the selected source rather than relaying the complete installer through Vercel. Mirror speed depends on the user's network.
@@ -31,4 +35,4 @@ python -m http.server 8080 --bind 127.0.0.1 --directory site/public
 
 Visit [the local site](http://127.0.0.1:8080/). Test `/download/` on Vercel, where the download function runs. Replace images only with isolated app fixtures and bundled media. Do not include actual desktop icons, user paths or data.
 
-Run `node --test tests/test_website_downloads.mjs` to verify language defaults, source switching, version pinning, metadata, checksums and legacy downloads without using external services.
+Run `node --test tests/test_website_downloads.mjs tests/test_website_theme.mjs` to verify downloads and appearance without external services. Render isolated bilingual app views with `.venv/Scripts/python.exe tools/render_showcase.py zh light` (also `zh dark`, `en light`, `en dark`), then run `python tools/prepare_website_media.py` with Pillow installed to prepare website derivatives. See [demo media provenance](../site/public/media/README.md) for screenshot and wallpaper licenses. Never capture the user's desktop for public documentation.

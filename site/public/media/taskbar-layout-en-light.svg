@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="212" viewBox="0 0 1200 212" role="img" aria-label="Native Windows taskbar · Three centered sections">
+<rect width="1200" height="212" rx="18" fill="#f0f4fa"/>
+<g font-family="Segoe UI,Microsoft YaHei UI,Arial,sans-serif" fill="#25354c">
+<text x="36" y="40" font-size="18" font-weight="600">Native Windows taskbar · Three centered sections</text>
+<rect x="130" y="76" width="280" height="70" rx="20" fill="#ffffff" stroke="#cdd8e7"/>
+<rect x="418" y="76" width="360" height="70" rx="20" fill="#ffffff" stroke="#cdd8e7"/>
+<rect x="786" y="76" width="286" height="70" rx="20" fill="#ffffff" stroke="#cdd8e7"/>
+<g stroke="#25354c" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+<path d="M151 103a11 11 0 1 0 14 0M158 97v12"/>
+<circle cx="194" cy="111" r="8"/><circle cx="194" cy="111" r="3"/>
+<path d="M194 99v3m0 18v3m-12-12h3m18 0h3m-21-9 2 2m14 14 2 2m-18 0 2-2m14-14 2-2"/>
+<circle cx="270" cy="109" r="7"/><path d="m275 114 5 5"/>
+</g><g fill="#25354c"><rect x="222" y="111" width="3" height="10" rx="1"/><rect x="228" y="101" width="3" height="20" rx="1"/><rect x="234" y="106" width="3" height="15" rx="1"/></g>
+<text x="290" y="117" font-size="17" fill="#64748b">Search</text>
+<rect x="434" y="94" width="32" height="32" rx="9" fill="#e6ad43"/><circle cx="450" cy="135" r="2" fill="#25354c"/>
+<rect x="492" y="94" width="32" height="32" rx="9" fill="#3d8ed9"/><circle cx="508" cy="135" r="2" fill="#25354c"/>
+<rect x="550" y="94" width="32" height="32" rx="9" fill="#6d7bce"/><circle cx="566" cy="135" r="2" fill="#25354c"/>
+<rect x="608" y="94" width="32" height="32" rx="9" fill="#48a997"/><circle cx="624" cy="135" r="2" fill="#25354c"/>
+<rect x="666" y="94" width="32" height="32" rx="9" fill="#5c9bd8"/><circle cx="682" cy="135" r="2" fill="#25354c"/>
+<rect x="724" y="94" width="32" height="32" rx="9" fill="#c0809e"/><circle cx="740" cy="135" r="2" fill="#25354c"/>
+<g stroke="#25354c" stroke-width="1.8" fill="none" stroke-linecap="round"><path d="m806 112 5-5 5 5"/><circle cx="840" cy="111" r="7"/><rect x="861" y="104" width="13" height="13" rx="2"/><rect x="902" y="103" width="17" height="12" rx="2"/><path d="M910 115v5m-4 0h8m23-12h4l5-4v15l-5-4h-4Z"/></g>
+<text x="883" y="117" font-size="15">EN</text>
+<text x="1049" y="107" text-anchor="end" font-size="15">09:41</text><text x="1049" y="128" text-anchor="end" font-size="12" fill="#64748b">2026/11/11</text>
+<g fill="#64748b" font-size="13"><text x="130" y="181">Power · Settings · Task Manager · Search</text><text x="418" y="181">Apps</text><text x="786" y="181">System tray</text></g></g></svg>
