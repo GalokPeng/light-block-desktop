@@ -246,6 +246,7 @@ class Controller:
 
     def needs_background(self):
         return (self.engine.surface is not None or self.store.settings.organizer_enabled or
+                bool(getattr(self.engine, "busy", False)) or
                 bool(getattr(self, "online_library", None) and self.online_library.busy) or
                 bool(self.release_check and self.release_check.busy) or
                 self.native_taskbar_style is not None or
@@ -418,6 +419,7 @@ class Controller:
         self.stop_action.setEnabled(dynamic)
         self.pause_action.setText(tr("继续动态壁纸") if self.engine.manual_pause else tr("暂停动态壁纸"))
         self.tray.setToolTip(tr("轻块桌面 · ")+self.engine.reason)
+        QTimer.singleShot(0, self.maybe_quit)
 
     def restore_last(self):
         item = self.store.find(self.store.settings.active_id)
@@ -441,7 +443,7 @@ class Controller:
             self.engine.restore_original()
             if self.window is None and not self.needs_background():
                 self.app.quit()
-        except OSError as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             self.report_error(str(exc))
 
     def stop(self):

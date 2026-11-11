@@ -10,5 +10,8 @@ if __name__ == "__main__":
     if sys.argv[1:] == ["--native-taskbar-style-helper"]:
         from still.native_taskbar import run_helper
         raise SystemExit(run_helper())
+    if sys.argv[1:] == ["--static-wallpaper-helper"]:
+        from still.static_wallpaper import run_helper
+        raise SystemExit(run_helper())
     from still.app import run
     raise SystemExit(run())

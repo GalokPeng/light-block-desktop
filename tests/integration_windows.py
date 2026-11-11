@@ -28,6 +28,13 @@ def pump(seconds):
     loop.exec()
 
 
+def wait_static(engine):
+    deadline = time.monotonic() + 50
+    while engine.busy and time.monotonic() < deadline:
+        pump(.02)
+    assert not engine.busy, "Static wallpaper task exceeded its deadline"
+
+
 def sample(seconds=2):
     process = psutil.Process()
     before = sum(process.cpu_times()[:2])
@@ -41,7 +48,7 @@ def main():
     app = QApplication([])
     app.setQuitOnLastWindowClosed(False)
     original = win32.current_wallpaper()
-    hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in ASSETS.iterdir() if p.suffix in {".png", ".mp4", ".gif"}}
+    hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in ASSETS.iterdir() if p.suffix in {".jpg", ".png", ".mp4", ".gif"}}
     report = {"platform": sys.getwindowsversion().build, "monitor": win32.monitors(), "checks": [], "measurements": {}}
     with tempfile.TemporaryDirectory() as temp:
         store = Store(Path(temp))
@@ -52,11 +59,13 @@ def main():
         try:
             report["measurements"]["idle_engine"] = sample()
             engine.apply(store.items[0])
-            pump(0.5)
+            wait_static(engine)
+            assert not errors, errors
             assert win32.current_wallpaper()["path"] == str(ASSETS / "night-drive.jpg")
             assert engine.surface is None and not engine.tick.isActive()
-            report["checks"].append("Static original PNG applied through Windows; no decoder/timer")
+            report["checks"].append("Static original JPEG applied asynchronously through Windows; no decoder/timer")
             engine.restore_original()
+            wait_static(engine)
             report["checks"].append("Original Windows wallpaper restored")
             gif = next(i for i in store.items if i["kind"] == "gif")
             engine.apply(gif)
@@ -151,8 +160,14 @@ def main():
                             pass
             report["checks"].append("Startup registry enable/disable round trip; original value restored")
         finally:
-            engine.cleanup()
-            win32.set_wallpaper(original["path"], original=original)
+            engine.static_task.close()
+            store.settings.original_wallpaper = original
+            try:
+                engine.restore_original()
+                wait_static(engine)
+                assert win32.current_wallpaper() == original
+            finally:
+                engine.cleanup()
             pump(0.2)
     report["result"] = "PASS"
     print(json.dumps(report, ensure_ascii=False, indent=2))

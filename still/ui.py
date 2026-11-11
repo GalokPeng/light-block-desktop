@@ -391,6 +391,7 @@ class MainWindow(QMainWindow):
         self.cards = []
         self.library_mode, self.online_page = "local", None
         self.library_dirty = False
+        self._pending_remove = None
         self.light = self.store.settings.settings_theme == "light"
         self.setWindowTitle(tr(APP_NAME))
         self.setWindowIcon(controller.icon)
@@ -468,6 +469,9 @@ class MainWindow(QMainWindow):
         self.updater.changed.connect(self.refresh_update)
         self.refresh_update()
         self.engine.changed.connect(self.refresh_status)
+        self.engine.applied.connect(self.wallpaper_applied)
+        self.engine.restored.connect(self.restore_finished)
+        self.engine.error.connect(self.clear_pending_remove)
         self.refresh_cards()
         self.update_selection()
         self.refresh_status()
@@ -647,7 +651,8 @@ class MainWindow(QMainWindow):
         v.addWidget(self.apply_button)
         self.pause_button = button(tr("暂停动态壁纸"), self.engine.pause)
         v.addWidget(self.pause_button)
-        v.addWidget(button(tr("恢复 Windows 壁纸"), self.restore, "text"))
+        self.restore_button = button(tr("恢复 Windows 壁纸"), self.restore, "text")
+        v.addWidget(self.restore_button)
         return panel
 
     def _performance(self):
@@ -861,10 +866,11 @@ class MainWindow(QMainWindow):
             return
         self.select(item)
         menu = QMenu(self)
-        menu.addAction(tr("应用到桌面  →"), self.apply_selected).setEnabled(self.store.path(item).is_file())
+        busy = getattr(self.engine, "busy", False) is True
+        menu.addAction(tr("应用到桌面  →"), self.apply_selected).setEnabled(not busy and self.store.path(item).is_file())
         menu.addSeparator()
         remove = menu.addAction(tr("删除壁纸"), self.remove_selected)
-        remove.setEnabled(not item.get("builtin"))
+        remove.setEnabled(not busy and not item.get("builtin"))
         remove.setToolTip(tr("内置壁纸不能删除。") if item.get("builtin") else
                           tr("删除壁纸库中的副本，保留导入时的原文件。"))
         try:
@@ -898,7 +904,8 @@ class MainWindow(QMainWindow):
         self.fit.model().item(center_index).setEnabled(self.selected["kind"] == "image")
         if self.selected["kind"] != "image" and self.fit.currentData() == "center":
             self.fit.setCurrentIndex(self.fit.findData("fit"))
-        self.apply_button.setEnabled(path.is_file())
+        self._selected_file_exists = path.is_file()
+        self.apply_button.setEnabled(self._selected_file_exists and not self.engine.busy)
 
     def cover_ready(self, path, pixmap):
         if self.selected["kind"] == "video" and str(self.store.path(self.selected)) == path:
@@ -941,15 +948,35 @@ class MainWindow(QMainWindow):
     def apply_selected(self):
         try:
             self.engine.apply(self.selected)
-            self.show_notice(tr("已应用「{0}」 · 可关闭窗口，继续使用电脑。").format(item_name(self.selected)))
+            if self.engine.busy:
+                self.show_notice(tr("正在切换壁纸…"))
         except (OSError, ValueError, RuntimeError) as exc:
             self.show_error(str(exc))
+
+    def wallpaper_applied(self, item):
+        self.show_notice(tr("已应用「{0}」 · 可关闭窗口，继续使用电脑。").format(item_name(item)))
+
+    def clear_pending_remove(self, _error):
+        self._pending_remove = None
+
+    def restore_finished(self):
+        pending, self._pending_remove = self._pending_remove, None
+        if pending is None:
+            self.show_notice(tr("已恢复 Windows 壁纸。"))
+            return
+        selected = self.selected
+        if self.store.find(pending["id"]) is not None:
+            self.selected = pending
+            self.remove_selected()
+            if selected["id"] != pending["id"] and self.store.find(selected["id"]) is not None:
+                self.select(selected)
 
     def restore(self):
         try:
             self.engine.restore_original()
-            self.show_notice(tr("已恢复 Windows 壁纸。"))
-        except OSError as exc:
+            if self.engine.busy:
+                self.show_notice(tr("正在切换壁纸…"))
+        except (OSError, ValueError, RuntimeError) as exc:
             self.show_error(str(exc))
 
     def remove_selected(self):
@@ -959,12 +986,15 @@ class MainWindow(QMainWindow):
         try:
             if self.engine.active and self.engine.active["id"] == previous["id"]:
                 self.engine.restore_original()
+                if getattr(self.engine, "busy", False) is True:
+                    self._pending_remove = previous
+                    return
             # Release GIF preview and any queued/in-flight video cover before
             # removing the managed file on Windows.
             self.thumbnails.cancel(self.store.path(previous))
             self.select(self.store.items[0])
             self.store.remove(previous["id"])
-        except OSError as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             self.select(previous)
             self.show_error(str(exc))
             return
@@ -1021,6 +1051,11 @@ class MainWindow(QMainWindow):
         self.memory.setText(tr("本进程内存  {0:.0f} MB").format(win32.memory_mb()))
         self.pause_button.setEnabled(self.engine.surface is not None)
         self.pause_button.setText(tr("继续动态壁纸") if self.engine.manual_pause else tr("暂停动态壁纸"))
+        busy = self.engine.busy
+        self.apply_button.setEnabled(not busy and getattr(self, "_selected_file_exists", False))
+        self.apply_button.setText(tr("正在切换壁纸…") if busy else tr("应用到桌面  →"))
+        self.restore_button.setEnabled(not busy)
+        self.remove_button.setEnabled(not busy)
         if self.online_page is not None and self.online_page.isVisible():
             self.online_page.update_details()
             self.online_page.view.viewport().update()

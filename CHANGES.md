@@ -1,3 +1,10 @@
+# v0.9.1 · 静态壁纸切换卡死修复 / Static wallpaper switching fix
+
+- 静态壁纸的原壁纸备份、全尺寸格式转换及 Windows 设置调用移至独立任务，避免系统或文件访问等待阻塞界面。任务具有准备及系统调用超时，退出时清理子进程。
+- 保存原壁纸记录后才允许修改系统设置；成功后才更新当前壁纸并提示完成。切换期间禁止重复应用，失败可重试；删除当前壁纸等待恢复成功后再移除库内文件。
+- 增加切换阶段与耗时日志。GIF／视频旧渲染器先断开输出及信号再释放。
+- Static image preparation and Windows calls run in a bounded helper process. The GUI stays responsive, records the original before system changes, and reports success only after completion. Active-wallpaper deletion waits for restoration; failures allow retry. Switching stages and elapsed times are logged for diagnosis.
+
 # v0.9.0 · 壁纸精选与交互优化 / Wallpapers and interaction improvements
 
 - 原有三张内置静态壁纸替换为「夜驰」「银河」「山海」「海岸」四张 1920×1080 JPEG，保留原文件字节。现有 GIF、视频和应用布局不变，旧内置壁纸选择自动迁移。

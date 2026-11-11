@@ -379,7 +379,7 @@ class OnlinePage(QWidget):
         limited = self.library.limited(entry["download_url"])
         self.download_button.setEnabled(state != "downloaded" and (not limited or cached or state == "downloading"))
         self.preview_button.setEnabled(not limited or cached or bool(self.playing_id))
-        self.apply_button.setEnabled(state == "downloaded")
+        self.apply_button.setEnabled(state == "downloaded" and not self.window.engine.busy)
         self.progress.setVisible(state == "downloading")
         received, total = self.library.progress.get(entry["id"], (0, entry["bytes"]))
         self.progress.setValue(min(100, received * 100 // total) if total else 0)

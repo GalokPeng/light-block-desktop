@@ -20,11 +20,14 @@ class LibraryWindow(QMainWindow):
     select = MainWindow.select
     wallpaper_menu = MainWindow.wallpaper_menu
     remove_selected = MainWindow.remove_selected
+    restore_finished = MainWindow.restore_finished
+    clear_pending_remove = MainWindow.clear_pending_remove
 
     def __init__(self, store):
         super().__init__()
         self.store = store
         self.selected = store.items[0]
+        self._pending_remove = None
         self.engine = Mock(active=None)
         self.light, self.filter_kind = False, "all"
         self.cards = []
@@ -135,6 +138,46 @@ class WallpaperLibraryTests(unittest.TestCase):
             window.remove_selected()
             self.assertEqual(len(store.items), 6)
             window.thumbnails.cancel.assert_not_called()
+            window.deleteLater()
+
+    def test_active_wallpaper_is_not_deleted_until_async_restore_succeeds(self):
+        with TemporaryDirectory() as directory:
+            root=Path(directory)
+            source=root/'picture.jpg'
+            source.write_bytes((ASSETS/'night-drive.jpg').read_bytes())
+            store=Store(root/'profile')
+            item=store.add(source)
+            window=LibraryWindow(store)
+            window.select(item)
+            window.engine.active=item
+            window.engine.busy=False
+            window.engine.restore_original.side_effect=lambda:setattr(window.engine,'busy',True)
+            window.remove_selected()
+            self.assertIsNotNone(store.find(item['id']))
+            self.assertTrue(store.path(item).exists())
+            window.engine.active=None
+            window.engine.busy=False
+            window.restore_finished()
+            self.assertIsNone(store.find(item['id']))
+            self.assertTrue(source.exists())
+            window.deleteLater()
+
+    def test_failed_async_restore_retains_the_wallpaper_for_retry(self):
+        with TemporaryDirectory() as directory:
+            root=Path(directory)
+            source=root/'picture.jpg'
+            source.write_bytes((ASSETS/'night-drive.jpg').read_bytes())
+            store=Store(root/'profile')
+            item=store.add(source)
+            window=LibraryWindow(store)
+            window.select(item)
+            window.engine.active=item
+            window.engine.busy=True
+            window.remove_selected()
+            window.clear_pending_remove('restore failed')
+            self.assertIsNone(window._pending_remove)
+            self.assertIsNotNone(store.find(item['id']))
+            self.assertTrue(store.path(item).exists())
             window.deleteLater()
 
     def test_failed_save_keeps_the_import_and_restores_preview_selection(self):

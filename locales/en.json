@@ -779,5 +779,10 @@
   "夜驰 · 城郊高速跑车": "Night Drive · City-edge Highway",
   "银河 · 高山湖泊星空": "Milky Way · Alpine Lake",
   "山海 · 晨光与海湾": "Mountain Bay · Morning Light",
-  "海岸 · 雨夜弯道": "Coastline · Rainy Curves"
+  "海岸 · 雨夜弯道": "Coastline · Rainy Curves",
+  "正在切换壁纸…": "Switching wallpaper…",
+  "正在切换壁纸，请稍候再试。": "A wallpaper switch is already in progress. Please wait.",
+  "Windows 壁纸切换超时，请重试。": "Windows took too long to change the wallpaper. Please retry.",
+  "壁纸切换任务返回了无效结果。": "The wallpaper task returned an invalid result.",
+  "壁纸切换任务意外结束，请重试。": "The wallpaper task ended unexpectedly. Please retry."
 }

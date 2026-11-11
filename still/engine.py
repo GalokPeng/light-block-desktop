@@ -3,10 +3,9 @@ from __future__ import annotations
 import ctypes as C
 from ctypes import wintypes as W
 import logging
-from pathlib import Path
+from time import monotonic
 
 from PySide6.QtCore import QAbstractNativeEventFilter, QObject, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QImageReader
 from PySide6.QtWidgets import QWidget
 
 from .i18n import tr
@@ -45,6 +44,8 @@ class NativeEvents(QAbstractNativeEventFilter):
 class WallpaperEngine(QObject):
     changed = Signal()
     error = Signal(str)
+    applied = Signal(object)
+    restored = Signal()
 
     def __init__(self, store: Store, app):
         super().__init__()
@@ -59,6 +60,11 @@ class WallpaperEngine(QObject):
         self.manual_pause = False
         self._reason = "尚未应用壁纸"
         self.state = "idle"
+        from .static_wallpaper import StaticWallpaperTask
+        self.static_task = StaticWallpaperTask(self)
+        self.static_task.prepared.connect(self._static_prepared)
+        self.static_task.finished.connect(self._static_complete)
+        self._static_request = None
         self.tick = QTimer(self)
         self.tick.setInterval(2000)
         self.tick.setTimerType(Qt.TimerType.CoarseTimer)
@@ -81,61 +87,91 @@ class WallpaperEngine(QObject):
         self.app.aboutToQuit.connect(self.cleanup)
 
     def _release(self):
+        started = monotonic()
         self.tick.stop()
         player, surface = self.player, self.surface
         self.player = self.surface = self.worker = None
         self.audio_output = None
         self.render_rect = None
         if player:
-            player.stop()
-            player.setSource(QUrl())
+            logging.info("Wallpaper renderer release started")
+            player.blockSignals(True)
             player.setVideoOutput(None)
             player.setAudioOutput(None)
+            player.stop()
+            player.setSource(QUrl())
             player.deleteLater()
         if surface:
             surface.hide()
             surface.close()
             surface.deleteLater()
+        if player or surface:
+            logging.info("Wallpaper renderer released in %.3fs", monotonic() - started)
 
-    def _remember_original(self):
-        if self.store.settings.original_wallpaper is None:
-            import shutil
-            original = win32.current_wallpaper()
-            source = Path(original["path"])
-            if original["path"] and source.is_file():
-                backup = self.store.directory / ("original-wallpaper" + (source.suffix or ".bmp"))
-                shutil.copyfile(source, backup)
-                original["path"] = str(backup)
-            self.store.settings.original_wallpaper = original
+    @property
+    def busy(self):
+        return self.static_task.busy
+
+    def _begin_static(self, item=None):
+        if self.busy:
+            raise RuntimeError(tr("正在切换壁纸，请稍候再试。"))
+        self._static_request = item
+        self.static_task.start({"path": str(self.store.path(item)) if item else "",
+            "directory": str(self.store.directory), "fit": self.store.settings.fit,
+            "original": self.store.settings.original_wallpaper, "restore": item is None})
+        self.changed.emit()
+
+    def _static_prepared(self, original):
+        try:
+            if self.store.settings.original_wallpaper is None:
+                if not isinstance(original, dict) or any(not isinstance(original.get(k), str)
+                        for k in ("path", "WallpaperStyle", "TileWallpaper")):
+                    raise ValueError(tr("壁纸切换任务返回了无效结果。"))
+                self.store.settings.original_wallpaper = original
+                try:
+                    self.store.save()
+                except OSError:
+                    self.store.settings.original_wallpaper = None
+                    raise
+            self.static_task.acknowledge()
+        except (OSError, ValueError) as exc:
+            self.static_task.abort(str(exc))
+
+    def _static_complete(self, success, error):
+        item, self._static_request = self._static_request, None
+        if not success:
+            if error:
+                self.error.emit(error)
+            self.changed.emit()
+            return
+        self._release()
+        self.active = item
+        self.store.settings.active_id = item["id"] if item else ""
+        self._reason, self.state = (("Windows 原生静态壁纸 · 无后台解码", "static") if item else
+                                   ("已恢复原来的 Windows 壁纸", "idle"))
+        try:
             self.store.save()
+        except OSError as exc:
+            self.error.emit(str(exc))
+        else:
+            if item:
+                logging.info("Applied image wallpaper: %s", item["name"])
+                self.applied.emit(item)
+            else:
+                self.restored.emit()
+        self.changed.emit()
 
     def apply(self, item: dict):
+        if self.busy:
+            raise RuntimeError(tr("正在切换壁纸，请稍候再试。"))
         path = self.store.path(item)
+        if item["kind"] == "image":
+            self._begin_static(dict(item))
+            return
         if not path.is_file():
             raise FileNotFoundError(tr("原文件已移动或删除，请重新导入。"))
         fit = self.store.settings.fit
-        if item["kind"] == "image":
-            reader = QImageReader(str(path))
-            reader.setAutoTransform(True)
-            if not reader.canRead():
-                raise ValueError(tr("无法读取这张图片，请检查文件内容。"))
-            # Windows reads these originals directly. Other supported formats use
-            # a full-resolution lossless PNG; no JPEG encoding or thumbnail input.
-            native_path = path
-            if path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".bmp"}:
-                image = reader.read()
-                if image.isNull():
-                    raise ValueError(reader.errorString())
-                native_path = self.store.directory / "native-wallpaper.png"
-                if not image.save(str(native_path), "PNG"):
-                    raise OSError(tr("无法写入原分辨率 PNG。"))
-                del image
-            self._remember_original()
-            win32.set_wallpaper(str(native_path), fit)
-            self._release()
-            self.active = item
-            self._reason, self.state = "Windows 原生静态壁纸 · 无后台解码", "static"
-        else:
+        if item["kind"] != "image":
             monitor = win32.target_monitor(self.store.settings.screen)
             worker = win32.desktop_worker()
             # GIF and video must share the native video presentation path. A
@@ -183,6 +219,7 @@ class WallpaperEngine(QObject):
         self.store.settings.active_id = item["id"]
         self.store.save()
         logging.info("Applied %s wallpaper: %s", item["kind"], item["name"])
+        self.applied.emit(item)
         self.changed.emit()
 
     def sync_sound(self):
@@ -225,7 +262,7 @@ class WallpaperEngine(QObject):
 
     @property
     def reason(self):
-        return tr(self._reason)
+        return tr("正在切换壁纸…") if self.busy else tr(self._reason)
 
     def pause(self):
         if not self.surface:
@@ -276,6 +313,8 @@ class WallpaperEngine(QObject):
             self.changed.emit()
 
     def stop(self):
+        self._static_request = None
+        self.static_task.abort()
         self._release()
         self.active = None
         self.store.settings.active_id = ""
@@ -286,12 +325,15 @@ class WallpaperEngine(QObject):
     def restore_original(self):
         original = self.store.settings.original_wallpaper
         if original is not None:
-            win32.set_wallpaper(original["path"], original=original)
+            self._begin_static()
+            return
         self.stop()
         self._reason = "已恢复原来的 Windows 壁纸" if original else "已显示 Windows 壁纸"
         self.changed.emit()
+        self.restored.emit()
 
     def cleanup(self):
+        self.static_task.close()
         self._release()
         self.app.removeNativeEventFilter(self.events)
         if self.power_handle:

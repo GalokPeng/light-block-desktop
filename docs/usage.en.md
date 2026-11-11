@@ -18,6 +18,8 @@ Enable **Start with Windows** to start quietly after sign-in. With live wallpape
 
 Right-click an imported wallpaper and choose **Delete wallpaper**, or use the matching button in the inspector. This removes the library copy and keeps the original imported file. Deleting the active wallpaper first restores the original Windows wallpaper. Built-in samples cannot be deleted.
 
+For static wallpaper, the button shows **Switching wallpaper…** until Windows completes the change. Image preparation and system calls run in a separate bounded task, keeping Settings responsive. Retry after a failure or timeout. Closing Settings lets the task finish; quitting the app ends it.
+
 ### Online wallpapers
 
 Choose Online wallpapers in the library: 20 images, 10 GIFs and 20 videos, with Static selected by default and no content categories. Search bilingual titles, original filenames or tags within the current type. Every source file is at least 1920 × 1080 and no larger than 20 MB. The maintainer approved retaining the ten GIFs from the local review build; native 1080p, 16:9, 20 MB and explicit licensing remain required, without a likes/favorites threshold. Select a card to see its author, license and available dated support votes, views or favorites. Popularity evidence opens the source statistics; GIF views sum reported dates only, with the period and available-day count in the tooltip. Unpublished metrics are not inferred. Start preview opens an image or muted animation inside the page; Stop preview returns to the cards. Downloads preserve the publisher-provided bytes. GIF, WMV, WebM and OGV files play without additional components.

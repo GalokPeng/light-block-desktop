@@ -5,7 +5,7 @@ Windows 10 / 11 x64，Python 3.11，PySide6。运行 `python main.py`，也可�
 | 领域 | 入口与验证重点 |
 | --- | --- |
 | 启动与设置 | `main.py` 调用 `still/app.py`。`still/model.py` 的 `Store` 保存设置和素材索引，`ui.py` 构建主设置页。读取旧设置后再检查新设置落盘 |
-| 壁纸 | `engine.py` 和 `win32.py`。静态壁纸由 Windows 显示，GIF 和视频通过 Qt 原生输出读取原文件。测试 WorkerW 关系、连续帧、暂停和退出清理 |
+| 壁纸 | `engine.py`、`static_wallpaper.py` 和 `win32.py`。静态准备／系统调用通过 `main.py --static-wallpaper-helper` 的异步进程执行；原始记录保存并确认后才能设置，成功后再提交当前 ID。关闭设置须保持任务存活，退出清理任务，删除当前文件须等待恢复成功。`test_static_wallpaper.py` 独立 QApplication 验证响应、失败和生命周期。静态壁纸由 Windows 显示，GIF 和视频通过 Qt 原生输出读取原文件。测试 WorkerW 关系、连续帧、暂停和退出清理 |
 | 在线壁纸 | `online_catalog.py` 校验 schema 4 的 URL、原生 1080p、20 MB、每类最多 20 项、授权与摘要；静图／视频要求正向热度，GIF 要求实际多帧循环和 16:9；旧 schema 可解析但不能替换当前目录。`online_wallpapers.py` 负责限流、流式下载及缓存复用，独立小预览不能充当来源文件。`online_ui.py` 只保留静态／GIF／视频和搜索；静图 20、视频 20，GIF 按壁纸观感重新筛选，演示类批次已撤下。播放器与媒体识别支持 WMV、OGV。Controller 按需创建服务，关闭设置后正式下载继续、退出时取消。测试 `test_online_wallpapers.py`；`tools/check_wallpaper_catalog.py` 校验，`tools/build_wallpaper_catalog.py --credits-only` 同步署名。评估见 `docs/wallpaper-evaluation.md`，维护见 `docs/online-wallpapers-plan.zh-CN.md`；媒体文件不进入仓库 |
 | 桌面收纳和便签 | `organizer.py`、`organizer_model.py`、`desktop_icons.py`、`notes.py` 与 `desktop_windows.py`。收纳入口引用原文件，旧托管文件有恢复逻辑。面板由 Explorer 桌面层拥有，保持不抢焦点。验证关闭后原生桌面图标状态恢复，便签位置和分组正常重载 |
 | 截屏与热键 | `workbench.py`、`hotkeys.py`、`capture_overlay.py`、`capture.py`、`capture_text.py`。验证原生全局热键、150% 缩放下的选区和导出像素。右键重选和滚轮调标注与长图滚动各自独立 |

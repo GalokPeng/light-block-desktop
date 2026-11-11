@@ -34,12 +34,14 @@ def main():
     # Network integration pumps a real event loop for much longer than the
     # synchronous Shell tests, which deliberately use mocked native handles.
     # Keep its QApplication and queued native events in a separate process.
-    suite = unittest.TestSuite(test for test in cases(suite) if not test.id().startswith("test_online_wallpapers."))
+    suite = unittest.TestSuite(test for test in cases(suite) if not test.id().startswith(("test_online_wallpapers.", "test_static_wallpaper.")))
     passed = unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful()
     print("Running online network/UI integration in an isolated QApplication process.", flush=True)
     online = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", str(ROOT / "tests"),
                              "-p", "test_online_wallpapers.py", "-v"], cwd=ROOT)
-    return 0 if passed and online.returncode == 0 else 1
+    static = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", str(ROOT / "tests"),
+                             "-p", "test_static_wallpaper.py", "-v"], cwd=ROOT)
+    return 0 if passed and online.returncode == 0 and static.returncode == 0 else 1
 
 
 if __name__ == "__main__":
