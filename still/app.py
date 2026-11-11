@@ -455,6 +455,10 @@ def notify_instance(directory, command):
         return False
     socket.write(command)
     socket.waitForBytesWritten(400)
+    # Keep the client alive until the receiver has consumed the message and
+    # closed the pipe, including commands sent while the UI is starting.
+    if socket.state() == QLocalSocket.LocalSocketState.ConnectedState:
+        socket.waitForDisconnected(1500)
     return True
 
 
@@ -531,6 +535,9 @@ def run():
             else:
                 connection.readyRead.connect(receive)
     server.newConnection.connect(new_connection)
+    # Native widget initialization can pump events before this handler is
+    # connected. Drain any connections accepted during that interval.
+    QTimer.singleShot(0, new_connection)
     if args.desktop_action:
         QTimer.singleShot(0, lambda: controller.desktop_action(args.desktop_action))
     if args.screenshot:

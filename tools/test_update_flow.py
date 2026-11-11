@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 
 def parent_session(folder, base, helper):
+    import ctypes
     sys.path.insert(0, str(ROOT))
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     os.environ["QINGKUAI_UPDATE_PARENT_PID"] = str(os.getpid())
@@ -65,6 +66,8 @@ def parent_session(folder, base, helper):
     updater.failed.connect(lambda _message: app.quit())
     app.aboutToQuit.connect(lambda: (folder / "trace.json").write_text(json.dumps(trace), encoding="utf-8"))
     QTimer.singleShot(30000, app.quit)
+    # Simulate the frozen bootloader's inherited nonstandard DLL directory.
+    ctypes.windll.kernel32.SetDllDirectoryW(str(folder))
     with (patch("still.update_installer.launcher_library", return_value=helper),
           patch("still.update_installer.installed_directory", return_value=folder / "installed app 空格"),
           patch("still.update_installer.sys.frozen", True, create=True)):
@@ -176,6 +179,7 @@ Source: "{fixture}"; DestDir: "{{app}}"; Flags: ignoreversion
                 raise RuntimeError("Setup did not finish and restart the synthetic app.")
             result = marker.read_text(encoding="utf-8")
             assert result.startswith("parent-exited\n"), result
+            assert "independent-environment\n" in result and "clean-dll-search\n" in result, result
             assert str(app_dir / "轻块桌面.exe") in result, result
             assert "--data-dir\n" + str(folder / "用户配置 空格") in result, result
             assert preserved.read_text(encoding="utf-8") == "preserve this user data"

@@ -7,10 +7,10 @@ import unittest
 from unittest.mock import MagicMock, Mock, patch
 
 from PySide6.QtCore import QEvent, QObject, Signal
-from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
+from PySide6.QtNetwork import QLocalSocket, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import QApplication
 
-from still.app import Controller
+from still.app import Controller, notify_instance
 from still.ui import MainWindow
 from still.update_download import MAX_SETUP_BYTES, SetupDownload
 from still.update_installer import UpdateInstaller, installed_directory
@@ -81,6 +81,44 @@ class UpdateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
+
+    def test_instance_command_waits_for_the_peer_to_consume_it(self):
+        delivered = []
+
+        class Socket:
+            LocalSocketState = QLocalSocket.LocalSocketState
+            def connectToServer(self, _name):
+                pass
+            def waitForConnected(self, _timeout):
+                return True
+            def write(self, value):
+                self.value = value
+            def waitForBytesWritten(self, _timeout):
+                return True
+            def state(self):
+                return self.LocalSocketState.ConnectedState
+            def waitForDisconnected(self, _timeout):
+                delivered.append(self.value)
+                return True
+
+        with TemporaryDirectory() as folder, patch("still.app.QLocalSocket", Socket):
+            self.assertTrue(notify_instance(Path(folder), b"quit"))
+        self.assertEqual(delivered, [b"quit"])
+
+    def test_update_launcher_starts_with_an_independent_frozen_environment(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            helper, setup = root / "helper.exe", root / "setup.exe"
+            helper.write_bytes(b"MZ helper")
+            setup.write_bytes(PAYLOAD)
+            process = Mock()
+            process.poll.return_value = 0
+            installer = UpdateInstaller()
+            with (patch("still.update_installer.launcher_library", return_value=helper),
+                  patch("still.update_installer.subprocess.Popen", return_value=process) as launch):
+                installer.prepare(setup, DIGEST, root / "profile", "en")
+                self.assertEqual(launch.call_args.kwargs["env"]["PYINSTALLER_RESET_ENVIRONMENT"], "1")
+            installer.cancel()
 
     def test_installer_retains_qobject_event_dispatch_before_preparing_an_update(self):
         installer = UpdateInstaller()

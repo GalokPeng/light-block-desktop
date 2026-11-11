@@ -1,3 +1,12 @@
+# v0.8.1 · 更新重启与启动命令修复 / Update restart and startup commands
+
+- 包含 v0.8.0 的软件内更新、官网分语言下载、壁纸右键删除与任务栏稳定性改进。旧版本首次取得更新器仍需手动安装一次。
+- 更新启动器清除旧程序继承的 DLL 搜索路径，重启时使用独立的打包运行环境。
+- 接收程序启动期间已排队的进程间命令；发送端等待接收端处理后再关闭连接，改善首次打开设置与退出命令的可靠性。
+- The update launcher clears inherited DLL search paths and restarts the application with an independent frozen environment.
+- Includes v0.8.0 in-app updates, language-aware website downloads, wallpaper deletion and taskbar stability improvements. Older versions need one manual installation to obtain the updater.
+- Startup drains already-queued instance commands, and senders wait for the receiver to consume them before closing the connection. This improves the reliability of initial settings and quit commands.
+
 # v0.8.0 · 软件内更新与任务栏稳定性 / In-app updates and taskbar stability
 
 - 点击「立即更新」直接下载安装包，按钮显示进度，支持取消、失败重试和低速换源。安装包通过官方 SHA-256 校验后，软件正常退出，再启动 Setup；安装版沿用原目录并保留配置，完成后重新打开。便携版和源码运行进入正常安装向导。

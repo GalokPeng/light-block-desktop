@@ -10,6 +10,12 @@ int wmain(int argc, wchar_t** argv) {
     bool alive=parent && WaitForSingleObject(parent,0)==WAIT_TIMEOUT;
     if (parent) CloseHandle(parent);
     std::wstring message=alive ? L"parent-alive\n" : L"parent-exited\n";
+    wchar_t reset[8]{};
+    GetEnvironmentVariableW(L"PYINSTALLER_RESET_ENVIRONMENT",reset,8);
+    message+=std::wstring(reset)==L"1" ? L"independent-environment\n" : L"unsafe-environment\n";
+    wchar_t dllDirectory[32768]{};
+    GetDllDirectoryW(32768,dllDirectory);
+    message+=dllDirectory[0]==L'\0' ? L"clean-dll-search\n" : L"inherited-dll-search\n";
     for (int i=0; i<argc; ++i) message+=std::wstring(argv[i])+L"\n";
     auto size=WideCharToMultiByte(CP_UTF8,0,message.data(),int(message.size()),nullptr,0,nullptr,nullptr);
     std::string bytes(size,'\0');

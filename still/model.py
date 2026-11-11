@@ -14,7 +14,7 @@ from .i18n import tr
 from .profile import choose_directory, default_directory, legacy_directory
 from .recording_options import FRAME_RATES, RESOLUTIONS
 
-VERSION = "0.8.0"
+VERSION = "0.8.1"
 APP_NAME = "轻块桌面"
 DEFAULT_ORGANIZER_TITLE = "桌面收纳"
 DEFAULT_CAPTURE_SHORTCUT = "Ctrl+Alt+A"

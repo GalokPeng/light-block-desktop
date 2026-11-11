@@ -65,6 +65,10 @@ bool verify(HANDLE file, std::wstring const& expected) {
 }
 
 int wmain(int argc, wchar_t** argv) {
+    // Do not leak the old frozen application's DLL search path or bootloader
+    // identity into Setup or into the independent application restart.
+    SetDllDirectoryW(nullptr);
+    SetEnvironmentVariableW(L"PYINSTALLER_RESET_ENVIRONMENT",L"1");
     std::map<std::wstring,std::wstring> args;
     for (int i=1; i+1<argc; i+=2) args.emplace(argv[i],argv[i+1]);
     for (auto key : {L"--parent",L"--setup",L"--sha256",L"--directory",L"--profile",L"--language",L"--mode",L"--ready"}) {

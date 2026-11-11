@@ -102,7 +102,8 @@ class UpdateInstaller(QObject):
                        "--sha256", digest, "--directory", str(directory) if directory else "",
                        "--profile", forwarded, "--language", "chinesesimplified" if language == "zh" else "english",
                        "--mode", "installed" if directory else "interactive", "--ready", event_name]
-            self.process = subprocess.Popen(command, creationflags=subprocess.CREATE_NO_WINDOW)
+            environment = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1")
+            self.process = subprocess.Popen(command, env=environment, creationflags=subprocess.CREATE_NO_WINDOW)
             self.started = monotonic()
             self.timer.start()
         except (OSError, ValueError):
