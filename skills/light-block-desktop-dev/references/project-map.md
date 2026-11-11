@@ -9,6 +9,7 @@ Windows 10 / 11 x64，Python 3.11，PySide6。运行 `python main.py`，也可�
 | 桌面收纳和便签 | `organizer.py`、`organizer_model.py`、`desktop_icons.py`、`notes.py` 与 `desktop_windows.py`。收纳入口引用原文件，旧托管文件有恢复逻辑。面板由 Explorer 桌面层拥有，保持不抢焦点。验证关闭后原生桌面图标状态恢复，便签位置和分组正常重载 |
 | 截屏与热键 | `workbench.py`、`hotkeys.py`、`capture_overlay.py`、`capture.py`、`capture_text.py`。验证原生全局热键、150% 缩放下的选区和导出像素。右键重选和滚轮调标注与长图滚动各自独立 |
 | 长图与录屏 | `scroll_capture.py`、`scroll_match.py`、`capture_frame.py`、`recording_ui.py`、`media_tools.py`。长图保留最后成功拼接的位置，录屏边框在采集区域之外或被排除。FFmpeg 独立进程负责录制和导出 |
+| 下载与更新 | `updates.py`、`update_download.py`、`update_installer.py`、`native/update_launcher.cpp`。检查可信发布元数据、按语言选择来源、下载流式写盘并校验 SHA-256；必须在旧进程正常退出后才启动 Setup。`tools/test_update_flow.py --iscc <ISCC.exe>` 使用独立 AppId、隔离目录和 localhost 验证升级，禁止用真实安装目录做覆盖测试 |
 | 发布 | `still/model.py` 的 `VERSION` 是版本源。 `build.ps1` 调 PyInstaller，`installer/LightBlockDesktop.iss` 编译安装包，GitHub Actions 验证并发布 |
 
 ## 实例和数据边界

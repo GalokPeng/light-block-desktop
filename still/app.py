@@ -196,6 +196,9 @@ class Controller:
         if self.release_check is None:
             from .updates import ReleaseCheck
             self.release_check = ReleaseCheck(self.app)
+            self.release_check.failed.connect(self.report_error)
+            self.release_check.downloaded.connect(lambda path: self.release_check.prepare_install(path, self.store.directory))
+            self.release_check.install_ready.connect(self.request_quit)
         return self.release_check
 
     def activated(self, reason):
@@ -233,6 +236,7 @@ class Controller:
 
     def needs_background(self):
         return (self.engine.surface is not None or self.store.settings.organizer_enabled or
+                bool(self.release_check and self.release_check.busy) or
                 self.native_taskbar_style is not None or
                 bool(self.hotkeys and self.hotkeys.registered)
                 or (self.workbench is not None and self.workbench.needs_background()))
@@ -318,6 +322,8 @@ class Controller:
 
     def cleanup(self):
         self.closing = True
+        if self.release_check is not None:
+            self.release_check.close()
         self.close_native_taskbar_style()
         if self.hotkeys is not None:
             self.hotkeys.cleanup()

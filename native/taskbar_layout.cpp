@@ -8,6 +8,7 @@
 #include <winrt/Windows.UI.Xaml.Automation.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Controls.Primitives.h>
+#include <winrt/Windows.UI.Xaml.Data.h>
 #include <winrt/Windows.UI.Xaml.Hosting.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 
@@ -19,6 +20,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 using namespace winrt;
@@ -31,6 +33,36 @@ using Windows::UI::Core::CoreDispatcherPriority;
 namespace {
 constexpr CLSID layoutId{0x1024237c, 0xb66a, 0x4f25, {0xba,0x99,0xfb,0x65,0xe9,0x4e,0x76,0x03}};
 constexpr double sectionGap = 5;
+constexpr wchar_t channel[] = L"Local\\Qingkuai.TaskbarLayout.v3.";
+
+// Geometry and counters only. Never include application names, paths or icons.
+struct Status {
+    LONG version, sequence, state, repairs, rebuilds, error;
+    LONG changes, reserved;
+    double hostWidth, frameWidth, trayWidth, groupLeft, groupRight, scale;
+};
+static_assert(sizeof(Status) == 80);
+enum State { waiting, healthy, repairing, incompatible, conflict };
+
+void publish(Status* status, State state, LONG repairs=0, LONG rebuilds=0, LONG error=0,
+             double host=0, double frame=0, double tray=0, double left=0, double right=0, LONG changes=0) {
+    if (!status) return;
+    InterlockedIncrement(&status->sequence);
+    status->version = 3;
+    status->state = state;
+    status->repairs = repairs;
+    status->rebuilds = rebuilds;
+    status->error = error;
+    status->changes = changes;
+    status->hostWidth = host;
+    status->frameWidth = frame;
+    status->trayWidth = tray;
+    status->groupLeft = left;
+    status->groupRight = right;
+    auto bar = FindWindowW(L"Shell_TrayWnd",nullptr);
+    status->scale = bar ? GetDpiForWindow(bar)/96. : 1.;
+    InterlockedIncrement(&status->sequence);
+}
 
 struct Handle {
     HANDLE value{};
@@ -38,7 +70,7 @@ struct Handle {
 };
 
 Handle event_handle(wchar_t const* suffix, DWORD access) {
-    auto name = L"Local\\Qingkuai.TaskbarLayout." + std::to_wstring(GetCurrentProcessId()) + L"." + suffix;
+    auto name = std::wstring(channel) + std::to_wstring(GetCurrentProcessId()) + L"." + suffix;
     return {OpenEventW(access, FALSE, name.c_str())};
 }
 
@@ -100,6 +132,29 @@ void power_action(int action) {
 }
 
 struct Layout {
+    struct Property {
+        DependencyObject target{nullptr};
+        DependencyProperty id{nullptr};
+        Windows::Foundation::IInspectable original{nullptr}, wanted{nullptr};
+        Data::BindingBase binding{nullptr};
+        std::function<bool()> matches;
+        int64_t token{};
+        bool watching{};
+
+        void remember() {
+            original = target.ReadLocalValue(id);
+            binding = nullptr;
+            if (auto element=target.try_as<FrameworkElement>()) {
+                if (auto expression=element.GetBindingExpression(id)) binding = expression.ParentBinding();
+            }
+        }
+
+        void restore() {
+            if (binding) target.as<FrameworkElement>().SetBinding(id,binding);
+            else if (original==DependencyProperty::UnsetValue()) target.ClearValue(id);
+            else target.SetValue(id,original);
+        }
+    };
     FrameworkElement frame{nullptr};
     FrameworkElement tray{nullptr};
     FrameworkElement repeater{nullptr};
@@ -111,16 +166,69 @@ struct Layout {
     Button power{nullptr};
     event_token arranged{};
     std::vector<std::function<void()>> undo;
+    std::vector<std::shared_ptr<Property>> properties;
+    std::vector<ColumnDefinition> originalColumns, ourColumns;
+    DispatcherTimer repairTimer;
+    event_token repairTick{};
+    Status* status{};
+    LONG repairCount{}, rebuildCount{}, changes{};
+    ULONGLONG burstStart{};
+    unsigned burst{};
+    bool writing{}, scheduled{}, exhausted{};
     bool observing{};
+
+    explicit Layout(Status* status=nullptr, LONG repairs=0, LONG rebuilds=0, LONG changed=0)
+        : status(status), repairCount(repairs), rebuildCount(rebuilds), changes(changed) {
+        repairTimer.Interval(Windows::Foundation::TimeSpan{800000});
+        repairTick=repairTimer.Tick([this](auto const&, auto const&) {
+            repairTimer.Stop();
+            scheduled=false;
+            try { repair(); } catch (hresult_error const& e) { failure(e.code()); } catch (...) { failure(E_FAIL); }
+        });
+    }
+
+    void failure(HRESULT code) {
+        exhausted=true;
+        publish(status,conflict,repairCount,rebuildCount,code,0,0,0,0,0,changes);
+    }
+
+    void schedule() {
+        if (writing || scheduled || exhausted) return;
+        scheduled=true;
+        repairTimer.Start();
+    }
 
     template<typename Value>
     void set(DependencyObject const& target, DependencyProperty const& property, Value const& value) {
-        auto old = target.ReadLocalValue(property);
-        undo.emplace_back([target, property, old] {
-            if (old == DependencyProperty::UnsetValue()) target.ClearValue(property);
-            else target.SetValue(property, old);
+        auto lease=std::make_shared<Property>();
+        lease->target=target;
+        lease->id=property;
+        lease->wanted=box_value(value);
+        lease->matches=[target,property,value] {
+            auto actual=unbox_value<Value>(target.GetValue(property));
+            if constexpr (std::is_same_v<Value,double>) {
+                if (std::isnan(actual) && std::isnan(value)) return true;
+            }
+            return actual==value;
+        };
+        lease->remember();
+        properties.push_back(lease);
+        target.SetValue(property,lease->wanted);
+        LONG mask=32;
+        if (property==FrameworkElement::WidthProperty()) mask=target==frame ? 1 : target==tray ? 2 : 4;
+        else if (property==Grid::ColumnProperty() || property==Grid::ColumnSpanProperty()) mask=8;
+        else if (property==FrameworkElement::HorizontalAlignmentProperty() || property==FrameworkElement::MarginProperty()) mask=16;
+        lease->token=target.RegisterPropertyChangedCallback(property,[this, mask, weak=std::weak_ptr(lease)](auto const&,auto const&) {
+            try {
+                auto property=weak.lock();
+                if (!property || writing || property->matches()) return;
+                // Keep Explorer's latest native value for disabling the style.
+                property->remember();
+                changes|=mask;
+                schedule();
+            } catch (...) { failure(E_FAIL); }
         });
-        target.SetValue(property, box_value(value));
+        lease->watching=true;
     }
 
     void add(Panel const& parent, UIElement const& item, bool behind) {
@@ -166,28 +274,31 @@ struct Layout {
         }
         if (!start) return false;
 
+        return decorate(originalBackground);
+    }
+
+    bool decorate(FrameworkElement const& originalBackground) {
         auto columns = host.ColumnDefinitions();
-        std::vector<ColumnDefinition> previous;
-        for (auto item : columns) previous.push_back(item);
-        undo.emplace_back([columns, previous] {
-            columns.Clear();
-            for (auto item : previous) columns.Append(item);
-        });
+        for (auto item : columns) originalColumns.push_back(item);
         columns.Clear();
         for (auto unit : {GridUnitType::Star, GridUnitType::Auto, GridUnitType::Auto, GridUnitType::Star}) {
             ColumnDefinition column;
             column.Width(GridLength{1, unit});
             columns.Append(column);
+            ourColumns.push_back(column);
         }
         set(host, FrameworkElement::HorizontalAlignmentProperty(), HorizontalAlignment::Stretch);
         set(frame, Grid::ColumnProperty(), 1);
+        set(frame, Grid::ColumnSpanProperty(), 1);
         set(frame, FrameworkElement::WidthProperty(), std::numeric_limits<double>::quiet_NaN());
         set(frame, FrameworkElement::HorizontalAlignmentProperty(), HorizontalAlignment::Right);
         set(frame, FrameworkElement::MarginProperty(), Thickness{0,0,sectionGap,0});
         set(tray, Grid::ColumnProperty(), 2);
+        set(tray, Grid::ColumnSpanProperty(), 1);
         set(tray, FrameworkElement::WidthProperty(), std::numeric_limits<double>::quiet_NaN());
         set(tray, FrameworkElement::HorizontalAlignmentProperty(), HorizontalAlignment::Left);
         set(tray, FrameworkElement::MarginProperty(), Thickness{0,0,0,0});
+        set(repeater, FrameworkElement::WidthProperty(), std::numeric_limits<double>::quiet_NaN());
         set(originalBackground, UIElement::VisibilityProperty(), Visibility::Collapsed);
         for (int i=0; i<Media::VisualTreeHelper::GetChildrenCount(repeater); ++i) {
             auto child = Media::VisualTreeHelper::GetChild(repeater,i).try_as<FrameworkElement>();
@@ -247,10 +358,69 @@ struct Layout {
             } catch (...) {}
         });
         add(panel, power, false);
-        arranged = panel.LayoutUpdated([this](auto const&, auto const&) { try { align(); } catch (...) {} });
+        arranged = panel.LayoutUpdated([this](auto const&, auto const&) {
+            try {
+                if (!columns_match()) schedule();
+                align();
+            } catch (hresult_error const& e) { failure(e.code()); } catch (...) { failure(E_FAIL); }
+        });
         observing = true;
         align();
         return true;
+    }
+
+    bool columns_match() const {
+        auto columns=host.ColumnDefinitions();
+        if (columns.Size()!=ourColumns.size()) return false;
+        for (unsigned i=0; i<ourColumns.size(); ++i) {
+            if (columns.GetAt(i)!=ourColumns[i]) return false;
+            auto width=columns.GetAt(i).Width();
+            auto unit=(i==0 || i==3) ? GridUnitType::Star : GridUnitType::Auto;
+            if (width.Value!=1 || width.GridUnitType!=unit) return false;
+        }
+        return true;
+    }
+
+    void repair() {
+        if (exhausted) return;
+        auto columns=host.ColumnDefinitions();
+        bool changed=!columns_match();
+        if (changed) changes|=64;
+        for (auto const& property : properties) changed=changed || !property->matches();
+        if (!changed) return;
+        auto now=GetTickCount64();
+        if (now-burstStart>5000) { burstStart=now; burst=0; }
+        // Do not continually fight another taskbar customization component.
+        if (++burst>12) { failure(E_ABORT); return; }
+        publish(status,repairing,++repairCount,rebuildCount,0,0,0,0,0,0,changes);
+        writing=true;
+        try {
+            if (!columns_match()) {
+                bool foreign=columns.Size()!=ourColumns.size();
+                for (unsigned i=0; !foreign && i<columns.Size(); ++i) foreign=columns.GetAt(i)!=ourColumns[i];
+                if (foreign) {
+                    originalColumns.clear();
+                    for (auto column : columns) originalColumns.push_back(column);
+                }
+                columns.Clear();
+                for (unsigned i=0; i<ourColumns.size(); ++i) {
+                    ourColumns[i].Width({1,(i==0 || i==3) ? GridUnitType::Star : GridUnitType::Auto});
+                    columns.Append(ourColumns[i]);
+                }
+            }
+            for (auto const& property : properties) if (!property->matches()) {
+                // Some shell builds don't notify every layout-property change.
+                property->remember();
+                property->target.SetValue(property->id,property->wanted);
+            }
+        } catch (...) { writing=false; throw; }
+        writing=false;
+    }
+
+    bool connected() const {
+        return Media::VisualTreeHelper::GetParent(frame)==host && child_named(frame,L"RootGrid")==panel &&
+               child_named(panel,L"TaskbarFrameRepeater")==repeater && Media::VisualTreeHelper::GetParent(tray)==host &&
+               Media::VisualTreeHelper::GetParent(start)==repeater;
     }
 
     void border_geometry(Border const& border, double x, double width, double height) {
@@ -263,29 +433,59 @@ struct Layout {
     void align() {
         double width = panel.ActualWidth();
         double height = panel.ActualHeight() - 6;
-        if (width < 20 || height < 10) return;
+        if (exhausted || scheduled || width < 20 || height < 10) return;
         double left = start.TransformToVisual(panel).TransformPoint({0,0}).X;
         double powerWidth = start.ActualWidth();
         if (powerWidth < 10) return;
         double seam = left + powerWidth;
+        double contentRight=seam;
         for (int i=0; i<Media::VisualTreeHelper::GetChildrenCount(repeater); ++i) {
             auto child = Media::VisualTreeHelper::GetChild(repeater,i).try_as<FrameworkElement>();
+            if (child && child.Visibility()==Visibility::Visible && child.ActualWidth()>0) {
+                auto x=child.TransformToVisual(panel).TransformPoint({0,0}).X;
+                if (x>=left && x+child.ActualWidth()<=width+1) contentRight=std::max(contentRight,x+child.ActualWidth());
+            }
             if (child && child.Visibility() == Visibility::Visible &&
                 get_class_name(child) == L"Taskbar.TaskbarExtensionElement" && child.ActualWidth() > 5) {
                 auto x = child.TransformToVisual(panel).TransformPoint({0,0}).X;
                 if (x >= left && x + child.ActualWidth() <= width+1) seam = std::max(seam,x+child.ActualWidth());
             }
         }
-        auto appsLeft = std::min(width,seam + sectionGap / 2);
+        auto appsLeft = std::min(contentRight,seam + sectionGap / 2);
         border_geometry(controls,left,std::max(0.,seam-left-sectionGap/2),height);
-        border_geometry(apps,appsLeft,std::max(0.,width-appsLeft),height);
+        // A transient full-width frame must not paint an empty screen-wide pill.
+        border_geometry(apps,appsLeft,std::max(0.,contentRight-appsLeft),height);
         if (power.Margin().Left != left+3) power.Margin({left+3,0,0,0});
         if (power.Width() != powerWidth-6) power.Width(powerWidth-6);
+        auto origin=frame.TransformToVisual(host).TransformPoint({0,0}).X;
+        auto trayX=tray.TransformToVisual(host).TransformPoint({0,0}).X;
+        auto end=trayX+tray.ActualWidth();
+        auto valid=origin>=-1 && trayX>=origin+contentRight-1 && end<=host.ActualWidth()+1 &&
+                   std::abs((origin+left+end)-host.ActualWidth())<=8;
+        publish(status,valid ? healthy : repairing,repairCount,rebuildCount,0,host.ActualWidth(),width,
+                tray.ActualWidth(),origin+left,end,changes);
     }
 
     ~Layout() {
+        writing=true;
+        repairTimer.Stop();
+        try { repairTimer.Tick(repairTick); } catch (...) {}
         if (observing) try { panel.LayoutUpdated(arranged); } catch (...) {}
+        for (auto const& property : properties) if (property->watching) {
+            try { property->target.UnregisterPropertyChangedCallback(property->id,property->token); } catch (...) {}
+        }
         for (auto it=undo.rbegin(); it!=undo.rend(); ++it) try { (*it)(); } catch (...) {}
+        for (auto it=properties.rbegin(); it!=properties.rend(); ++it) try { (*it)->restore(); } catch (...) {}
+        if (host && !ourColumns.empty()) try {
+            auto columns=host.ColumnDefinitions();
+            // Leave an external replacement alone when it hasn't been repaired.
+            bool ours=columns.Size()==ourColumns.size();
+            for (unsigned i=0; ours && i<columns.Size(); ++i) ours=columns.GetAt(i)==ourColumns[i];
+            if (ours) {
+                columns.Clear();
+                for (auto column : originalColumns) columns.Append(column);
+            }
+        } catch (...) {}
     }
 };
 
@@ -299,6 +499,7 @@ void restore_layout() { delete std::exchange(current,nullptr); }
 struct Watcher : implements<Watcher,IVisualTreeServiceCallback2> {
     com_ptr<IXamlDiagnostics> diagnostics;
     std::atomic_bool active{};
+    std::atomic_bool queued{};
     slim_mutex dispatchLock;
     CoreDispatcher dispatcher{nullptr};
     Handle start = event_handle(L"Start",SYNCHRONIZE);
@@ -306,19 +507,67 @@ struct Watcher : implements<Watcher,IVisualTreeServiceCallback2> {
     Handle ready = event_handle(L"Ready",EVENT_MODIFY_STATE);
     Handle restored = event_handle(L"Restored",EVENT_MODIFY_STATE);
     Handle resident = event_handle(L"Resident",EVENT_MODIFY_STATE);
+    Handle mapping;
+    Status* status{};
+    LONG repairs{}, rebuilds{}, changes{};
+    unsigned missing{}, badGeometry{};
+    bool blocked{};
 
-    explicit Watcher(IUnknown* site) { check_hresult(site->QueryInterface(IID_PPV_ARGS(diagnostics.put()))); }
+    explicit Watcher(IUnknown* site) {
+        check_hresult(site->QueryInterface(IID_PPV_ARGS(diagnostics.put())));
+        auto name=std::wstring(channel)+std::to_wstring(GetCurrentProcessId())+L".Status";
+        mapping.value=OpenFileMappingW(FILE_MAP_WRITE,FALSE,name.c_str());
+        if (mapping.value) status=static_cast<Status*>(MapViewOfFile(mapping.value,FILE_MAP_WRITE,0,0,sizeof(Status)));
+    }
+
+    ~Watcher() { if (status) UnmapViewOfFile(status); }
 
     void apply_layout() {
-        if (!active) return;
+        if (!active || blocked) return;
         if (auto frame=lastFrame.get()) {
-            if (current && current->frame == frame) return;
+            if (current) {
+                repairs=current->repairCount;
+                rebuilds=current->rebuildCount;
+                changes=current->changes;
+                if (current->exhausted) {
+                    restore_layout();
+                    blocked=true;
+                    ResetEvent(ready.value);
+                    publish(status,conflict,repairs,rebuilds,E_ABORT,0,0,0,0,0,changes);
+                    return;
+                }
+                if (current->frame==frame && current->connected()) {
+                    current->repair();
+                    current->align();
+                    if (status && status->state==healthy) SetEvent(ready.value);
+                    else ResetEvent(ready.value);
+                    if (status && status->state==repairing && !current->scheduled) {
+                        if (++badGeometry>=4) {
+                            restore_layout();
+                            blocked=true;
+                            ResetEvent(ready.value);
+                            publish(status,incompatible,repairs,rebuilds,0,0,0,0,0,0,changes);
+                        }
+                    } else badGeometry=0;
+                    return;
+                }
+                ++rebuilds;
+            }
             restore_layout();
-            auto next = std::make_unique<Layout>();
+            ResetEvent(ready.value);
+            auto next = std::make_unique<Layout>(status,repairs,rebuilds,changes);
             if (next->apply(frame)) {
                 current = next.release();
-                SetEvent(ready.value);
+                missing=badGeometry=0;
+                if (status && status->state==healthy) SetEvent(ready.value);
+            } else if (++missing>=6) {
+                blocked=true;
+                publish(status,incompatible,repairs,rebuilds);
             }
+        } else {
+            restore_layout();
+            ResetEvent(ready.value);
+            publish(status,waiting,repairs,rebuilds);
         }
     }
 
@@ -358,23 +607,37 @@ struct Watcher : implements<Watcher,IVisualTreeServiceCallback2> {
             // Toggling only changes our own XAML properties on its UI thread.
             HANDLE commands[]{self->stop.value,self->start.value};
             for (;;) {
-                DWORD command = WaitForMultipleObjects(2,commands,FALSE,INFINITE);
-                if (command != WAIT_OBJECT_0 && command != WAIT_OBJECT_0+1) break;
-                self->active = command == WAIT_OBJECT_0+1;
+                DWORD command = WaitForMultipleObjects(2,commands,FALSE,self->active ? 2000 : INFINITE);
+                bool tick=command==WAIT_TIMEOUT;
+                if (!tick && command != WAIT_OBJECT_0 && command != WAIT_OBJECT_0+1) break;
+                if (!tick) self->active = command == WAIT_OBJECT_0+1;
                 CoreDispatcher queue{nullptr};
                 {
                     slim_lock_guard lock(self->dispatchLock);
                     queue = self->dispatcher;
                 }
-                if (queue) queue.RunAsync(CoreDispatcherPriority::Normal,[hold=self->get_strong(), command] {
+                if (tick && self->queued.exchange(true)) continue;
+                if (queue) queue.RunAsync(CoreDispatcherPriority::Low,[hold=self->get_strong(), command, tick] {
                     try {
                         if (command == WAIT_OBJECT_0) {
                             restore_layout();
+                            hold->blocked=false;
+                            hold->missing=hold->badGeometry=0;
+                            publish(hold->status,waiting,hold->repairs,hold->rebuilds);
                             SetEvent(hold->restored.value);
                         } else hold->apply_layout();
+                    } catch (hresult_error const& e) {
+                        restore_layout();
+                        hold->blocked=true;
+                        ResetEvent(hold->ready.value);
+                        publish(hold->status,incompatible,hold->repairs,hold->rebuilds,e.code());
                     } catch (...) {}
+                    if (tick) hold->queued=false;
                 });
-                else if (command == WAIT_OBJECT_0) SetEvent(self->restored.value);
+                else {
+                    if (tick) self->queued=false;
+                    if (command == WAIT_OBJECT_0) SetEvent(self->restored.value);
+                }
             }
         } catch (...) { SetEvent(self->restored.value); }
         self->Release();

@@ -110,6 +110,13 @@ def smoke_at(app, data):
     screenshot = data / "settings.png"
     windows = Path(os.environ["SystemRoot"])
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen", PATH=f"{windows / 'System32'};{windows}")
+    updater = app.parent / "_internal" / "runtime" / "QingkuaiUpdate.exe"
+    if not updater.is_file():
+        raise FileNotFoundError(f"Packaged update launcher is missing: {updater}")
+    # Without required arguments it must reject the request without starting Setup.
+    if subprocess.run((str(updater.resolve()),), env=env, timeout=10,
+                      creationflags=subprocess.CREATE_NO_WINDOW).returncode != 1:
+        raise RuntimeError("The packaged update launcher could not start safely.")
     ffmpeg = app.parent / "_internal" / "runtime" / "ffmpeg.exe"
     devices = subprocess.check_output((str(ffmpeg.resolve()), "-hide_banner", "-devices"),
                                       env=env, stderr=subprocess.STDOUT, text=True, timeout=15)

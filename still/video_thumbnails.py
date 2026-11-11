@@ -79,7 +79,7 @@ class VideoThumbnails(QObject):
         else:
             self.finish(image)
 
-    def finish(self, image=None):
+    def finish(self, image=None, *, cancelled=False):
         if self.active is None:
             return
         key, path, sink = self.active
@@ -92,7 +92,8 @@ class VideoThumbnails(QObject):
         cover = self.first_frame if image is None else image
         self.first_frame = QImage()
         if cover.isNull():
-            self.failed.add(key)
+            if not cancelled:
+                self.failed.add(key)
         else:
             try:
                 self.directory.mkdir(parents=True, exist_ok=True)
@@ -103,7 +104,13 @@ class VideoThumbnails(QObject):
         if self.pending:
             self.start_timer.start(0)
 
+    def cancel(self, path):
+        path = Path(path)
+        self.pending = {key: candidate for key, candidate in self.pending.items() if candidate != path}
+        if self.active is not None and self.active[1] == path:
+            self.finish(QImage(), cancelled=True)
+
     def close(self):
         self.pending.clear()
         self.start_timer.stop()
-        self.finish(QImage())
+        self.finish(QImage(), cancelled=True)

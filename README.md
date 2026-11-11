@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/icon.png" width="88" alt="轻块桌面图标"></p>
 <h1 align="center">轻块桌面</h1>
 <p align="center">Windows 壁纸、截屏录屏、桌面收纳、原生任务栏美化和便签</p>
-<p align="center"><a href="https://light-block-desktop.vercel.app/download/"><strong>下载 Windows 安装包</strong></a> · <a href="#功能展示">功能展示</a> · <a href="https://light-block-desktop.vercel.app/?lang=zh">产品官网</a> · <a href="README.en.md">English</a> · <a href="CHANGES.md">更新日志</a></p>
+<p align="center"><a href="https://light-block-desktop.vercel.app/download/?lang=zh"><strong>下载 Windows 安装包</strong></a> · <a href="#功能展示">功能展示</a> · <a href="https://light-block-desktop.vercel.app/?lang=zh">产品官网</a> · <a href="README.en.md">English</a> · <a href="CHANGES.md">更新日志</a></p>
 
 ## 下载与安装
 
@@ -11,11 +11,15 @@
 
 Setup 默认安装到当前用户目录。安装版和免安装版均包含壁纸播放、截屏、录屏和媒体导出所需的组件，首次使用即可录屏。录屏组件的许可证和对应源代码见 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
+从 v0.8.0 起，有新版时可点击软件左下角的「立即更新」，在按钮上查看下载进度，再点一次可取消。安装包通过官方 SHA-256 校验后，软件正常退出并启动安装；安装版沿用原目录、保留配置并重新打开，便携版进入安装向导。旧版首次需要手动安装一次以取得更新器。官网提供官方与两条公开加速线路，下载较慢时可以切换。
+
 ## 功能展示
 
 ### 设置壁纸
 
 导入本地图片、GIF 或视频，保留原画质副本。可选显示器和铺放方式，支持从实际视频帧生成封面。视频默认静音，可在设置或桌面右键菜单中切换。支持登录后恢复壁纸和全屏自动暂停。
+
+自己导入的壁纸可右键删除库内副本，原文件保留。删除正在使用的壁纸时先恢复 Windows 壁纸。在线图库目前仍为[方案文档](docs/online-wallpapers-plan.zh-CN.md)。
 
 ![轻块桌面的壁纸库和显示设置](site/public/media/wallpaper-zh.webp)
 

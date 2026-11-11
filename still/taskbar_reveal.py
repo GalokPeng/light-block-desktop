@@ -7,8 +7,8 @@ from ctypes import wintypes as W
 from PySide6.QtCore import QElapsedTimer, QObject, QTimer, Signal
 
 from . import dock_windows, win32
-from .taskbar_style_native import HIDDEN_SHAPE, process_id, region_matches, root_window, window_at, window_bounds
-from .taskbar_visibility import bottom_strip, get_cursor
+from .taskbar_style_native import HIDDEN_SHAPE, TOPMOST, process_id, region_matches, root_window, window_at
+from .taskbar_visibility import get_cursor
 
 
 class NativeTaskbarReveal(QObject):
@@ -56,6 +56,8 @@ class NativeTaskbarReveal(QObject):
                     self.changed.emit()
             except OSError:
                 pass
+        elif self.revealed and self.bar is not None and not win32.GetWindowLong(self.bar, -20) & TOPMOST:
+            self.changed.emit()
 
     def foreground_changed(self, desktop):
         if desktop:
@@ -70,12 +72,8 @@ class NativeTaskbarReveal(QObject):
     def check(self):
         if self.bar is None or self.desktop_timer.isActive():
             return
-        try:
-            strip = bottom_strip(self.bar, window_bounds(self.bar), self.monitor)
-        except OSError:
-            strip = None
-        if strip:
-            self.strip = strip
+        # The helper supplies the actual XAML bounds. Explorer's legacy Start
+        # HWND can lag behind a search-width or DPI transition.
         if not self.strip:
             return
         self.covered = bool(dock_windows.covering_window(self.strip))

@@ -6,13 +6,17 @@
 
 Download Setup or the portable ZIP from [GitHub Releases](https://github.com/GalokPeng/light-block-desktop/releases/latest). Extract the complete ZIP before running the portable app. Both distributions require Windows 10 or 11 x64. The installer follows the Windows display language. The application uses Simplified Chinese for Chinese display languages and English otherwise.
 
-Exit the previous version before upgrading. The app copies the legacy profile from `%LOCALAPPDATA%\StillWallpaper` into `data` beside the executable. A read-only app folder keeps using the legacy location. Open the current folder from **About**. If you move from portable to installed, toggle **Start with Windows** in the new copy to update its path. The sun or moon changes the app theme and the Windows frame. The language button beside it offers Follow system, Simplified Chinese, and English. Settings and the tray menu switch immediately. Reopen other tools to use the selected language. When a newer release is available, the sidebar button downloads its Setup.
+Exit the previous version before upgrading. The app copies the legacy profile from `%LOCALAPPDATA%\StillWallpaper` into `data` beside the executable. A read-only app folder keeps using the legacy location. Open the current folder from **About**. If you move from portable to installed, toggle **Start with Windows** in the new copy to update its path. The sun or moon changes the app theme and the Windows frame. The language button beside it offers Follow system, Simplified Chinese, and English. Settings and the tray menu switch immediately. Reopen other tools to use the selected language.
+
+When a release is available, click **Update now**. The button shows download progress; click again to cancel. After verifying the complete installer against the official SHA-256, the app exits normally and starts Setup. Installed copies update in the existing directory and restart with the same configuration. Portable and source copies open the installation wizard. Downloads start with GitHub for English and `gh-proxy.com` for Chinese, with `ghfast.top` and official-source fallback. Failed, stalled or persistently slow initial downloads switch sources. Closing Settings does not interrupt an active download.
 
 ## Wallpaper
 
 Import a local picture, GIF or video to save a full-quality copy in `data/wallpapers`. Select a fit mode and click **Apply to Desktop**. Static wallpaper is managed by Windows. GIF and video play from the copy using Qt's native video output. Video wallpaper sound is off by default. Use **Light Block Desktop Sound** in **Playback Settings** or the desktop context menu to switch it. Video covers are extracted from video frames and cached in `data/thumbnails`. Each session plays one live file on a selected display. Full-screen pause, battery pause, and restoring the wallpaper at startup are enabled by default. Locking Windows or turning off the display also pauses playback.
 
 Enable **Start with Windows** to start quietly after sign-in. With live wallpaper or other background tools enabled, closing Settings leaves the app in the tray. Choose **Quit Light Block Desktop** to stop it.
+
+Right-click an imported wallpaper and choose **Delete wallpaper**, or use the matching button in the inspector. This removes the library copy and keeps the original imported file. Deleting the active wallpaper first restores the original Windows wallpaper. Built-in samples cannot be deleted.
 
 ## Desktop organizer and notes
 

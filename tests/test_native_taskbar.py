@@ -1,16 +1,99 @@
 from tempfile import TemporaryDirectory
 from pathlib import Path
+import ctypes as C
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from still import native_taskbar
 from still.model import DEFAULT_TASKBAR_RADIUS, Store
-from still.native_taskbar_xaml import stage_runtime_library
-from still.taskbar_visibility import TaskbarVisibilityLease, bottom_strip
+from still.native_taskbar_xaml import LayoutStatus, NativeTaskbarLayout, stage_runtime_library
+from still.taskbar_visibility import TaskbarVisibilityLease, bottom_strip, measured_strip
 from still.taskbar_style_native import HIDDEN_SHAPE
 
 
 class NativeTaskbarTests(unittest.TestCase):
+    def test_new_explorer_process_reconnects_instead_of_disabling_styling(self):
+        layout = NativeTaskbarLayout(Path("not-loaded.dll"))
+        layout.pid, layout.visibility = 10, Mock()
+        layout.visibility.update.return_value = (1200, 2088, 2640, 2160)
+
+        def restore(**_):
+            layout.pid, layout.events = None, {}
+
+        def events(_):
+            layout.events = {"Resident": 1, "Stop": 2, "Ready": 3, "Restored": 4, "Start": 5}
+
+        with (patch("still.native_taskbar_xaml.win32.FindWindow", return_value=1),
+              patch("still.native_taskbar_xaml.win32.FindWindowEx", return_value=4),
+              patch("still.native_taskbar_xaml.process_id", return_value=20),
+              patch("still.native_taskbar_xaml.wait_for", return_value=0),
+              patch("still.native_taskbar_xaml.reset_event"), patch("still.native_taskbar_xaml.set_event"),
+              patch("still.native_taskbar_xaml.auto_hidden", return_value=False),
+              patch("still.native_taskbar_xaml.monitor_bounds", return_value=(0, 0, 3840, 2160)),
+              patch.object(LayoutStatus, "read", return_value=None),
+              patch.object(layout, "restore", side_effect=restore) as release,
+              patch.object(layout, "make_events", side_effect=events) as create):
+            result = layout.update()
+            release.assert_called_once_with(wait=False)
+            create.assert_called_once_with(20)
+            self.assertTrue(result["centered"])
+            self.assertEqual(layout.pid, 20)
+
+    def test_fullscreen_shell_demotion_is_repaired_without_repainting_a_stable_bar(self):
+        style = TaskbarVisibilityLease()
+        style.bar, style.pid, style.work_area = 1, 2, Mock()
+        bounds, monitor = (0, 2088, 3840, 2160), (0, 0, 3840, 2160)
+        with (patch("still.taskbar_visibility.process_id", return_value=2),
+              patch("still.taskbar_visibility.window_bounds", return_value=bounds),
+              patch("still.taskbar_visibility.bottom_strip", return_value=(1200, 2088, 2640, 2160)),
+              patch.object(style, "restore_region"),
+              patch("still.taskbar_visibility.win32.GetWindowLong", side_effect=[8, 0, 8]),
+              patch("still.taskbar_visibility.win32.SetWindowPos") as move):
+            for _ in range(3):
+                style.update(1, monitor, False, True, False)
+            self.assertEqual(move.call_count, 2)
+            self.assertTrue(style.was_topmost)
+
+    def test_measured_group_uses_xaml_pixels_on_scaled_and_negative_monitors(self):
+        geometry = {"host_width": 2560., "group_left": 808.67, "group_right": 1751.33}
+        self.assertEqual(measured_strip((0, 2088, 3840, 2160), (0, 0, 3840, 2160), geometry),
+                         (1213, 2088, 2627, 2160))
+        self.assertEqual(measured_strip((-3840, 2088, 0, 2160), (-3840, 0, 0, 2160), geometry),
+                         (-2627, 2088, -1213, 2160))
+        for invalid in (float("nan"), float("inf"), 3000., -1.):
+            self.assertIsNone(measured_strip((0, 2088, 3840, 2160), (0, 0, 3840, 2160),
+                                             dict(geometry, group_right=invalid)))
+        self.assertIsNone(measured_strip((0, 0, 3840, 72), (0, 0, 3840, 2160), geometry))
+
+    def test_layout_status_ignores_incomplete_or_unknown_protocol_writes(self):
+        status = LayoutStatus(version=3, sequence=2, state=1, repairs=3, host_width=1706.6666, scale=1.5)
+        self.assertEqual(C.sizeof(LayoutStatus), 80)
+        snapshot = LayoutStatus.read(C.addressof(status))
+        self.assertEqual(snapshot["repairs"], 3)
+        self.assertEqual(snapshot["host_width"], 1706.67)
+        self.assertNotIn("sequence", snapshot)
+        status.sequence = 3
+        self.assertIsNone(LayoutStatus.read(C.addressof(status)))
+        status.sequence, status.version = 4, 1
+        self.assertIsNone(LayoutStatus.read(C.addressof(status)))
+
+    def test_native_layout_conflict_is_reported_even_if_old_ready_event_is_set(self):
+        layout = NativeTaskbarLayout(Path("not-loaded.dll"))
+        layout.pid, layout.events = 2, {"Ready": 3}
+        status = LayoutStatus(version=3, sequence=2, state=4, repairs=12)
+        layout.view = C.addressof(status)
+        layout.visibility = Mock()
+        with (patch("still.native_taskbar_xaml.win32.FindWindow", return_value=1),
+              patch("still.native_taskbar_xaml.win32.FindWindowEx", return_value=4),
+              patch("still.native_taskbar_xaml.process_id", return_value=2),
+              patch("still.native_taskbar_xaml.wait_for", return_value=0)):
+            reply = layout.update()
+            self.assertEqual(reply["error"], "xaml_conflict")
+            self.assertEqual(reply["diagnostic"]["repairs"], 12)
+            layout.visibility.update.assert_not_called()
+            status.state = 3
+            self.assertEqual(layout.update()["error"], "xaml_layout")
+
     @patch.object(native_taskbar, "put_region")
     @patch.object(native_taskbar, "region_matches", return_value=True)
     @patch.object(native_taskbar, "window_region", return_value=(2, (0, 0, 3840, 72)))

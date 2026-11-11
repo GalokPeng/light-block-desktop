@@ -600,7 +600,8 @@ class MainWindow(QMainWindow):
         box.addWidget(label(tr("预览缩略图仅用于浏览。\n壁纸播放始终读取原文件。"), "muted", True))
         v.addWidget(quality)
         v.addStretch()
-        self.remove_button = button(tr("从壁纸库移除"), self.remove_selected, "text")
+        self.remove_button = button(tr("删除壁纸"), self.remove_selected, "text")
+        self.remove_button.setToolTip(tr("删除壁纸库中的副本，保留导入时的原文件。"))
         v.addWidget(self.remove_button)
         self.apply_button = button(tr("应用到桌面  →"), self.apply_selected, "primary")
         self.apply_button.setMinimumHeight(42)
@@ -719,16 +720,26 @@ class MainWindow(QMainWindow):
 
     def refresh_update(self):
         state = self.updater.state
-        messages = {"idle": tr("检查更新"), "checking": tr("正在检查更新…"), "update": tr("下载更新"),
-                    "latest": tr("已是最新版本"), "error": tr("重试检查更新")}
-        self.update_button.setText(messages[state])
-        self.update_button.setEnabled(state in {"idle", "error", "update"})
-        self.update_button.setToolTip(tr("下载安装包") if state == "update" else
-                                     tr("无法检查更新，请稍后重试。") if state == "error" else "")
+        messages = {"idle": tr("检查更新"), "checking": tr("正在检查更新…"), "update": tr("立即更新"),
+                    "latest": tr("已是最新版本"), "error": tr("重试检查更新"),
+                    "verifying": tr("正在校验安装包…"), "preparing": tr("正在准备安装…"),
+                    "installing": tr("正在退出并更新…"), "download_error": tr("重试更新")}
+        if state == "downloading":
+            total, received = self.updater.total, self.updater.received
+            text = tr("下载中 {0}%").format(min(100, received * 100 // total)) if total else \
+                tr("已下载 {0} MB").format(f"{received / 1048576:.1f}")
+        else:
+            text = messages[state]
+        self.update_button.setText(text)
+        self.update_button.setEnabled(state in {"idle", "error", "update", "download_error", "downloading"})
+        tooltip = tr("下载并校验安装包，随后退出并启动更新。") if state == "update" else \
+            tr("无法检查更新，请稍后重试。") if state == "error" else self.updater.error if state == "download_error" else ""
+        if state == "downloading":
+            tooltip = tr("点击取消下载") + "\n" + tr("当前线路：{0}").format(self.updater.source)
+        self.update_button.setToolTip(tooltip)
 
     def open_update(self):
-        if not self.updater.activate():
-            self.show_error(tr("无法打开安装包下载链接。"))
+        self.updater.activate()
 
     def update_theme_toggle(self):
         target = tr("深色") if self.light else tr("浅色")
@@ -793,12 +804,31 @@ class MainWindow(QMainWindow):
             card = WallpaperCard(item, path, pixmap, self.light)
             card.setChecked(item["id"] == self.selected["id"])
             card.clicked.connect(lambda checked=False, i=item: self.select(i))
+            card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            card.customContextMenuRequested.connect(
+                lambda point, i=item, c=card: self.wallpaper_menu(i, c.mapToGlobal(point)))
             self.grid.addWidget(card, index//3, index%3)
             self.cards.append(card)
         for col in range(3):
             self.grid.setColumnStretch(col, 1)
         if not items:
             self.grid.addWidget(label(tr("这里还没有壁纸。试试导入文件或调整筛选条件。"), "muted", True), 0, 0, 1, 3)
+
+    def wallpaper_menu(self, item, position):
+        if self.store.find(item["id"]) is None:
+            return
+        self.select(item)
+        menu = QMenu(self)
+        menu.addAction(tr("应用到桌面  →"), self.apply_selected).setEnabled(self.store.path(item).is_file())
+        menu.addSeparator()
+        remove = menu.addAction(tr("删除壁纸"), self.remove_selected)
+        remove.setEnabled(not item.get("builtin"))
+        remove.setToolTip(tr("内置壁纸不能删除。") if item.get("builtin") else
+                          tr("删除壁纸库中的副本，保留导入时的原文件。"))
+        try:
+            menu.exec(position)
+        finally:
+            menu.deleteLater()
 
     def select(self, item):
         self.selected = item
@@ -884,10 +914,13 @@ class MainWindow(QMainWindow):
         if self.selected.get("builtin"):
             return
         previous = self.selected
-        if self.engine.active and self.engine.active["id"] == previous["id"]:
-            self.engine.stop()
-        self.select(self.store.items[0])
         try:
+            if self.engine.active and self.engine.active["id"] == previous["id"]:
+                self.engine.restore_original()
+            # Release GIF preview and any queued/in-flight video cover before
+            # removing the managed file on Windows.
+            self.thumbnails.cancel(self.store.path(previous))
+            self.select(self.store.items[0])
             self.store.remove(previous["id"])
         except OSError as exc:
             self.select(previous)

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ctypes as C
 from ctypes import wintypes as W
+import math
 
 from . import win32
 from .taskbar_style_native import (BottomWorkArea, HIDDEN_SHAPE, TOPMOST, ZORDER_ONLY,
@@ -23,6 +24,18 @@ def bottom_strip(bar, bounds, monitor):
     return first, top, left + right - first, bottom
 
 
+def measured_strip(bounds, monitor, geometry):
+    """Convert the XAML group's actual logical bounds into screen pixels."""
+    left, top, right, bottom = bounds
+    if not monitor or (left, right, bottom) != (monitor[0], monitor[2], monitor[3]) or top >= bottom:
+        return None
+    width, first, last = (geometry[key] for key in ("host_width", "group_left", "group_right"))
+    if not all(math.isfinite(value) for value in (width, first, last)) or not 0 < first < last <= width:
+        return None
+    scale = (right - left) / width
+    return left + round(first * scale), top, left + round(last * scale), bottom
+
+
 class TaskbarVisibilityLease:
     def __init__(self):
         self.bar = self.pid = None
@@ -30,13 +43,13 @@ class TaskbarVisibilityLease:
         self.was_topmost = None
         self.work_area = BottomWorkArea()
 
-    def update(self, bar, monitor, hidden, revealed, native_auto_hide):
+    def update(self, bar, monitor, hidden, revealed, native_auto_hide, geometry=None):
         pid = process_id(bar)
         if (bar, pid) != (self.bar, self.pid):
             self.restore()
             self.bar, self.pid = bar, pid
         bounds = window_bounds(bar)
-        strip = bottom_strip(bar, bounds, monitor)
+        strip = measured_strip(bounds, monitor, geometry) if geometry else bottom_strip(bar, bounds, monitor)
         if native_auto_hide or strip is None:
             self.restore_region()
             self.restore_z_order()
@@ -51,9 +64,14 @@ class TaskbarVisibilityLease:
             self.restore_z_order()
         else:
             self.restore_region()
-            if revealed and self.was_topmost is None:
-                self.was_topmost = bool(win32.GetWindowLong(bar, -20) & TOPMOST)
-                win32.SetWindowPos(bar, -1, 0, 0, 0, 0, ZORDER_ONLY)
+            if revealed:
+                topmost = bool(win32.GetWindowLong(bar, -20) & TOPMOST)
+                first = self.was_topmost is None
+                if first:
+                    self.was_topmost = topmost
+                # Explorer may demote the bar again after a fullscreen transition.
+                if first or not topmost:
+                    win32.SetWindowPos(bar, -1, 0, 0, 0, 0, ZORDER_ONLY)
             elif not revealed:
                 self.restore_z_order()
         return strip

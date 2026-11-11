@@ -1,3 +1,16 @@
+# v0.8.0 · 软件内更新与任务栏稳定性 / In-app updates and taskbar stability
+
+- 点击「立即更新」直接下载安装包，按钮显示进度，支持取消、失败重试和低速换源。安装包通过官方 SHA-256 校验后，软件正常退出，再启动 Setup；安装版沿用原目录并保留配置，完成后重新打开。便携版和源码运行进入正常安装向导。
+- 官网英文默认 GitHub 官方，中文默认 `gh-proxy.com`，可切换 `ghfast.top` 或官方源；下载地址随最新正式版更新。
+- 原生任务栏在运行中检测宽度、对齐和控件重建并恢复三段布局，背景跟随实际图标范围。持续冲突时恢复原生任务栏并记录诊断，修复全屏唤出后偶尔落到窗口后方的问题。
+- 壁纸库支持右键删除自己导入的壁纸，只删除库内副本并保留原文件。删除正在使用的壁纸时先恢复 Windows 壁纸，释放 GIF 预览和视频封面解码器。
+- 从旧版本首次升级到此版本，需先下载安装一次。之后可在软件内完成更新。在线图库目前仍为方案，尚未接入外部素材。
+- Click Update now to download Setup with button progress, cancellation, retries and slow-source fallback. The app verifies the official SHA-256, exits normally, then starts Setup. Installed copies update in place, preserve their configuration and restart. Portable and source copies open the installation wizard.
+- The website defaults to GitHub for English and `gh-proxy.com` for Chinese, with selectable `ghfast.top` and official sources. Downloads track the latest stable release.
+- Native taskbar styling detects runtime width, alignment and control changes and restores the centered layout. Backgrounds follow the actual buttons. Repeated conflicts restore the native taskbar with diagnostics. Fixed edge reveal sometimes remaining behind fullscreen windows.
+- Right-click an imported wallpaper to delete its library copy while keeping the original. Deleting the active wallpaper first restores Windows wallpaper and releases GIF preview and video-cover decoders.
+- Older versions need one manual installation to obtain the updater. Subsequent updates can run inside the app. Online wallpaper browsing remains a design proposal.
+
 # v0.7.4 · 安装后直接录屏 / Recording ready after installation
 
 - Windows 安装包和免安装版内置 FFmpeg。安装或解压后即可录屏，并导出 MP4、GIF 和无损 MKV。

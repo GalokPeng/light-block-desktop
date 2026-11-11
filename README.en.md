@@ -1,7 +1,7 @@
 <p align="center"><img src="assets/icon.png" width="88" alt="Light Block Desktop icon"></p>
 <h1 align="center">Light Block Desktop</h1>
 <p align="center">Live wallpaper, screenshots, screen recording, desktop organization, native taskbar styling and notes for Windows</p>
-<p align="center"><a href="https://light-block-desktop.vercel.app/download/"><strong>Download Windows Setup</strong></a> · <a href="#feature-preview">Feature preview</a> · <a href="https://light-block-desktop.vercel.app/en/">Website</a> · <a href="README.md">简体中文</a> · <a href="CHANGES.md">Changelog</a></p>
+<p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases/latest/download/Qingkuai-Setup-x64.exe"><strong>Download Windows Setup</strong></a> · <a href="#feature-preview">Feature preview</a> · <a href="https://light-block-desktop.vercel.app/en/">Website</a> · <a href="README.md">简体中文</a> · <a href="CHANGES.md">Changelog</a></p>
 
 ## Download and install
 
@@ -11,11 +11,15 @@
 
 Setup installs for the current user by default. The installer and portable package include the components needed for wallpaper playback, screen capture, recording and media export. See the [third-party notices](THIRD_PARTY_NOTICES.md) for the recording component's license and source.
 
+Starting with v0.8.0, click **Update now** in the sidebar to download an update with button progress; click again to cancel. After checking the official SHA-256, the app exits normally and starts Setup. Installed copies update in place, preserve settings and restart; portable copies open the installation wizard. Older versions need one manual installation to obtain the updater. The website offers official and public mirror sources to switch when a download is slow.
+
 ## Feature preview
 
 ### Wallpaper
 
 Import full-quality copies of local images, GIFs and videos. Choose a display and fit mode, and identify videos by their frame-based covers. Video wallpapers start muted. Toggle sound in Settings or the desktop context menu. Restore the last wallpaper at sign-in and pause it on full screen.
+
+Right-click an imported wallpaper to delete its library copy while keeping the original. Deleting the active wallpaper first restores Windows wallpaper. Online browsing remains a [design proposal](docs/online-wallpapers-plan.zh-CN.md).
 
 ![Wallpaper library and display settings in Light Block Desktop](site/public/media/wallpaper-en.webp)
 

@@ -77,6 +77,32 @@ advapi = C.WinDLL("advapi32", use_last_error=True)
 parse_sd = win32.bind(advapi, "ConvertStringSecurityDescriptorToSecurityDescriptorW", W.BOOL,
                      W.LPCWSTR, W.DWORD, C.POINTER(C.c_void_p), C.POINTER(W.DWORD))
 layout_id = GUID((C.c_ubyte * 16).from_buffer_copy(uuid.UUID("1024237c-b66a-4f25-ba99-fb65e94e7603").bytes_le))
+CHANNEL = "Local\\Qingkuai.TaskbarLayout.v3."
+create_mapping = win32.bind(win32.kernel32, "CreateFileMappingW", W.HANDLE, W.HANDLE,
+                            C.POINTER(Security), W.DWORD, W.DWORD, W.DWORD, W.LPCWSTR)
+map_view = win32.bind(win32.kernel32, "MapViewOfFile", C.c_void_p, W.HANDLE, W.DWORD,
+                     W.DWORD, W.DWORD, C.c_size_t)
+unmap_view = win32.bind(win32.kernel32, "UnmapViewOfFile", W.BOOL, C.c_void_p)
+
+
+class LayoutStatus(C.Structure):
+    # Keep aligned with native/taskbar_layout.cpp. A sequence lock avoids torn reads.
+    _fields_ = [(name, C.c_int32) for name in ("version", "sequence", "state", "repairs", "rebuilds", "error", "changes", "reserved")] + [
+        (name, C.c_double) for name in ("host_width", "frame_width", "tray_width", "group_left", "group_right", "scale")]
+
+    @classmethod
+    def read(cls, address):
+        for _ in range(3):
+            before = cls.from_address(address).sequence
+            if before & 1:
+                continue
+            snapshot = cls.from_buffer_copy(C.string_at(address, C.sizeof(cls)))
+            if snapshot.sequence != before or cls.from_address(address).sequence != before:
+                continue
+            if snapshot.version == 3:
+                return {name: (round(getattr(snapshot, name), 2) if kind is C.c_double else getattr(snapshot, name))
+                        for name, kind in cls._fields_ if name not in ("version", "sequence", "reserved")}
+        return None
 
 
 class NativeTaskbarLayout:
@@ -84,6 +110,7 @@ class NativeTaskbarLayout:
         self.library = library
         self.pid = None
         self.events = {}
+        self.mapping = self.view = None
         self.visibility = TaskbarVisibilityLease()
         system_xaml = C.WinDLL("Windows.UI.Xaml.dll", winmode=0x800)
         self.attach = win32.bind(system_xaml, "InitializeXamlDiagnosticsEx", C.c_int32,
@@ -97,11 +124,18 @@ class NativeTaskbarLayout:
         try:
             security = Security(C.sizeof(Security), descriptor, False)
             for kind in ("Start", "Stop", "Ready", "Restored", "Resident"):
-                name = f"Local\\Qingkuai.TaskbarLayout.{pid}.{kind}"
+                name = f"{CHANNEL}{pid}.{kind}"
                 handle = create_event(C.byref(security), kind not in ("Start", "Stop"), False, name)
                 if not handle:
                     raise OSError("event creation")
                 self.events[kind] = handle
+            self.mapping = create_mapping(W.HANDLE(-1), C.byref(security), 4, 0, C.sizeof(LayoutStatus),
+                                          f"{CHANNEL}{pid}.Status")  # PAGE_READWRITE
+            if not self.mapping:
+                raise OSError("status mapping creation")
+            self.view = map_view(self.mapping, 6, 0, 0, C.sizeof(LayoutStatus))  # FILE_MAP_READ | WRITE
+            if not self.view:
+                raise OSError("status mapping view")
         finally:
             local_free(descriptor)
 
@@ -112,9 +146,6 @@ class NativeTaskbarLayout:
         pid = process_id(bar)
         if not pid:
             return {"waiting": True}
-        if self.pid is not None and pid != self.pid:
-            self.restore(wait=False)
-            return {"error": "xaml_restarted"}
         if pid != self.pid:
             self.restore(wait=False)
             self.pid = pid
@@ -134,22 +165,35 @@ class NativeTaskbarLayout:
             reset_event(self.events["Ready"])
             reset_event(self.events["Restored"])
             set_event(self.events["Start"])
-        if wait_for(self.events["Ready"], 700) != 0:
-            return {"waiting": True}
+        ready = wait_for(self.events["Ready"], 700) == 0
+        diagnostic = LayoutStatus.read(self.view)
+        if diagnostic and diagnostic["state"] in (3, 4):
+            return {"error": "xaml_conflict" if diagnostic["state"] == 4 else "xaml_layout",
+                    "diagnostic": diagnostic}
+        if not ready:
+            return {"waiting": True, "diagnostic": diagnostic}
         auto_hide = auto_hidden()
         monitor = monitor_bounds(bar)
-        strip = self.visibility.update(bar, monitor, hidden, revealed, auto_hide)
+        strip = self.visibility.update(bar, monitor, hidden, revealed, auto_hide, diagnostic)
         return {"auto_hide": auto_hide, "centered": True,
+                "diagnostic": diagnostic,
                 "visibility": [bar, monitor, strip] if strip is not None else None}
 
     def restore(self, *, wait=True):
         try:
             if stop := self.events.get("Stop"):
+                reset_event(self.events["Start"])
                 set_event(stop)
                 if wait and (restored := self.events.get("Restored")):
                     wait_for(restored, 2300)
             self.visibility.restore()
         finally:
+            if self.view:
+                unmap_view(self.view)
+                self.view = None
+            if self.mapping:
+                close_handle(self.mapping)
+                self.mapping = None
             for handle in self.events.values():
                 close_handle(handle)
             self.events.clear()

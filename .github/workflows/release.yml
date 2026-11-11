@@ -75,6 +75,12 @@ jobs:
       - shell: pwsh
         run: ./tools/release.ps1 -PythonPath (Get-Command python).Source -SkipInstall
       - run: python tools/test_setup.py
+      - shell: pwsh
+        run: |
+          $compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          $isccPath = if ($compiler) { $compiler.Source } else { "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe" }
+          python tools/test_update_flow.py --iscc $isccPath
+          if ($LASTEXITCODE -ne 0) { throw 'In-app update verification failed.' }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-${{ needs.plan.outputs.version }}
@@ -90,6 +96,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: windows-${{ needs.plan.outputs.version }}
@@ -123,5 +132,11 @@ jobs:
             throw "Checksum mismatch for $downloadName"
           }
           Add-Content -LiteralPath $sumFile -Value "$($expected[$setupName])  $downloadName" -Encoding ascii -ErrorAction Stop
-          gh release create $tag @assets $downloadSetup $sumFile --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "轻块桌面 $tag" --generate-notes --latest
+          $changes = Get-Content -LiteralPath CHANGES.md -Raw
+          $pattern = '(?ms)^# v' + [regex]::Escape($env:APP_VERSION) + '\b.*?(?=^# v|\z)'
+          $notes = [regex]::Match($changes, $pattern)
+          if (-not $notes.Success) { throw 'Missing release notes for this version.' }
+          $notesFile = Join-Path release 'RELEASE_NOTES.md'
+          [IO.File]::WriteAllText($notesFile, $notes.Value.Trim() + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
+          gh release create $tag @assets $downloadSetup $sumFile --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "轻块桌面 $tag" --notes-file $notesFile --latest
           if ($LASTEXITCODE -ne 0) { throw "Release publication failed. Check whether $tag has a partial draft." }

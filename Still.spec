@@ -18,6 +18,12 @@ resources = [(str(root / 'assets'), 'assets'), (str(root / 'licenses'), 'license
              (str(qt_translations / 'qtbase_zh_CN.qm'), 'PySide6/translations'),
              (str(root / 'LICENSE'), '.'), (str(root / 'THIRD_PARTY_NOTICES.md'), '.')]
 resources.append((ffmpeg, 'runtime'))
+updater = os.environ.get('STILL_UPDATE_LAUNCHER')
+if not updater or not Path(updater).is_file():
+    raise SystemExit('Build with build.ps1 so the update launcher is included.')
+bundled_updater = root / 'build' / 'update-launcher' / 'QingkuaiUpdate.exe'
+copyfile(updater, bundled_updater)
+resources.append((str(bundled_updater), 'runtime'))
 taskbar = os.environ.get('STILL_TASKBAR_DLL')
 native_binaries = []
 if taskbar:
