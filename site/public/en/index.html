@@ -9,6 +9,7 @@
   <meta property="og:description" content="Set live wallpapers, capture and record your screen, organize your desktop, style the native Windows taskbar and pin notes.">
   <link rel="icon" href="/media/icon.png">
   <link rel="stylesheet" href="/site.css">
+  <script type="module" src="/downloads.mjs"></script>
 
 </head>
 <body>
@@ -31,7 +32,9 @@
           <p class="kicker">WINDOWS 10 / 11 · X64</p>
           <h1>A calmer Windows desktop.</h1>
           <p>Set your wallpaper, capture or record the screen, organize your desktop, style the native taskbar and pin notes.</p>
-          <div class="actions"><a class="button primary" href="/download/">Download Windows Setup ↓</a><a class="button secondary" href="https://github.com/GalokPeng/light-block-desktop">View source ↗</a></div>
+          <div class="actions"><a class="button primary" data-setup-download href="https://github.com/GalokPeng/light-block-desktop/releases/latest/download/Qingkuai-Setup-x64.exe">Download Windows Setup ↓</a><a class="button secondary" href="https://github.com/GalokPeng/light-block-desktop">View source ↗</a></div>
+          <div class="download-options"><label>Download source <select data-download-source aria-label="Download source"><option value="github" selected>GitHub (official)</option><option value="gh-proxy">gh-proxy.com mirror</option><option value="ghfast">ghfast.top mirror</option></select></label><a href="/download/?format=checksum">SHA-256 checksum</a></div>
+          <p class="fine">Switch sources if a download is slow. All links track the latest stable installer.</p>
           <p class="fine">MIT licensed · Installer and portable ZIP</p>
         </div>
         <figure>
@@ -114,7 +117,7 @@
         <p class="kicker">GET STARTED</p>
         <h2>Install on Windows</h2>
         <p>Download and run the latest Setup. Setup and the app both use your Windows display language. The portable ZIP is available on the <a href="https://github.com/GalokPeng/light-block-desktop/releases/latest">release page</a>.</p>
-        <div class="actions"><a class="button primary" href="/download/">Download Windows Setup ↓</a></div>
+        <div class="actions"><a class="button primary" data-setup-download href="https://github.com/GalokPeng/light-block-desktop/releases/latest/download/Qingkuai-Setup-x64.exe">Download Windows Setup ↓</a></div>
       </div>
       <div>
         <details><summary>How do I upgrade?</summary><p>Quit the previous version and run the new installer. It keeps your existing settings. Extract the full portable ZIP before launching.</p></details>

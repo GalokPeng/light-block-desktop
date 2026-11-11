@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
+import { downloadSources, setupUrl } from '../site/public/downloads.mjs';
 
 const github = 'https://github.com';
 const releases = '/GalokPeng/light-block-desktop/releases';
 const setupName = 'Qingkuai-Setup-x64.exe';
 const officialOrigins = new Set([github, 'https://release-assets.githubusercontent.com', 'https://objects.githubusercontent.com']);
-const mirrors = ['https://gh-proxy.com', 'https://ghfast.top'];
+const mirrors = downloadSources.filter(source => source.id !== 'github').map(source => source.origin);
 const maxInstallerBytes = 128 * 1024 * 1024;
 let cachedRelease;
 
@@ -52,7 +53,7 @@ async function releaseFromChecksums() {
   }
   const sha256 = entries.get(setupName) || entries.get('Qingkuai-' + version + '-Setup-x64.exe');
   if (!sha256) throw new Error('Official Setup checksum unavailable');
-  return { version, asset, sha256 };
+  return { version, asset, sha256, size: null };
 }
 
 async function releaseFromApi() {
@@ -68,7 +69,7 @@ async function releaseFromApi() {
   const digest = /^sha256:([a-f0-9]{64})$/.exec(installer?.digest);
   if (!digest) throw new Error('Official Setup checksum unavailable');
   const asset = new URL(releases + '/download/' + version + '/' + setupName, github);
-  return { version, asset, sha256: digest[1] };
+  return { version, asset, sha256: digest[1], size: installer.size };
 }
 
 async function latestRelease() {
@@ -102,9 +103,29 @@ export default {
       return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD' } });
     }
     try {
+      const url = new URL(request.url);
+      const format = url.searchParams.get('format');
+      if (format && !['json', 'checksum'].includes(format)) return new Response('Unknown format', { status: 400 });
+      const source = url.searchParams.get('source');
+      const selected = source || (url.searchParams.get('lang') === 'zh' ? 'gh-proxy' : 'github');
+      if (!downloadSources.some(item => item.id === selected)) return new Response('Unknown download source', { status: 400 });
       const release = await latestRelease();
-      const headers = { 'X-Qingkuai-Version': release.version, 'Cache-Control': 'no-store' };
+      const headers = { 'X-Qingkuai-Version': release.version, 'X-Qingkuai-SHA256': release.sha256, 'Cache-Control': 'no-store' };
       if (request.method === 'HEAD') return new Response(null, { headers });
+      if (!format && (source || url.searchParams.has('lang'))) {
+        return new Response(null, { status: 302, headers: { ...headers, Location: setupUrl(selected, release.version) } });
+      }
+      if (format === 'json') {
+        return Response.json({ version: release.version, name: setupName, sha256: release.sha256,
+          size: release.size, url: release.asset.href,
+          sources: downloadSources.map(source => ({ id: source.id, name: source.name, url: setupUrl(source.id, release.version) })),
+        }, { headers });
+      }
+      if (format === 'checksum') {
+        return new Response(`${release.sha256}  ${setupName}\n`, {
+          headers: { ...headers, 'Content-Type': 'text/plain; charset=utf-8', 'X-Content-Type-Options': 'nosniff' },
+        });
+      }
       const { chunks, size } = await verifiedSetup(release);
       return new Response(Readable.toWeb(Readable.from(chunks)), {
         headers: {

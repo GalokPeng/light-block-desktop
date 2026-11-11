@@ -10,6 +10,7 @@
   <link rel="icon" href="/media/icon.png">
   <link rel="stylesheet" href="/site.css">
   <script src="/language.js" defer></script>
+  <script type="module" src="/downloads.mjs"></script>
 </head>
 <body>
   <a class="skip" href="#main">跳到正文</a>
@@ -31,7 +32,9 @@
           <p class="kicker">WINDOWS 10 / 11 · X64</p>
           <h1>让桌面，<span>清爽一点。</span></h1>
           <p>设置壁纸、截屏与录屏、整理桌面和美化原生任务栏，也能把待办便签贴到桌面。</p>
-          <div class="actions"><a class="button primary" href="/download/">下载 Windows 安装包 ↓</a><a class="button secondary" href="https://github.com/GalokPeng/light-block-desktop">查看源码 ↗</a></div>
+          <div class="actions"><a class="button primary" data-setup-download href="https://gh-proxy.com/https://github.com/GalokPeng/light-block-desktop/releases/latest/download/Qingkuai-Setup-x64.exe">下载 Windows 安装包 ↓</a><a class="button secondary" href="https://github.com/GalokPeng/light-block-desktop">查看源码 ↗</a></div>
+          <div class="download-options"><label>下载线路 <select data-download-source aria-label="下载线路"><option value="gh-proxy" selected>gh-proxy.com 加速</option><option value="ghfast">ghfast.top 加速</option><option value="github">GitHub 官方</option></select></label><a href="/download/?format=checksum">SHA-256 校验值</a></div>
+          <p class="fine">下载慢时可切换线路，均指向最新正式版安装包。</p>
           <p class="fine">MIT 开源 · 安装版与免安装版</p>
         </div>
         <figure>
@@ -114,7 +117,7 @@
         <p class="kicker">开始使用</p>
         <h2>安装到 Windows</h2>
         <p>下载并运行最新版 Setup。安装与程序界面读取 Windows 显示语言。免安装 ZIP 可在 <a href="https://github.com/GalokPeng/light-block-desktop/releases/latest">发布页</a> 获取。</p>
-        <div class="actions"><a class="button primary" href="/download/">下载 Windows 安装包 ↓</a></div>
+        <div class="actions"><a class="button primary" data-setup-download href="https://gh-proxy.com/https://github.com/GalokPeng/light-block-desktop/releases/latest/download/Qingkuai-Setup-x64.exe">下载 Windows 安装包 ↓</a></div>
       </div>
       <div>
         <details><summary>如何升级？</summary><p>退出旧版后运行新版 Setup。它会沿用已有配置。免安装版请先完整解压，再打开程序。</p></details>
