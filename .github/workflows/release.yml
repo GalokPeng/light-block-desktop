@@ -72,6 +72,7 @@ jobs:
             requirements-build.txt
       - run: python -m pip install -r requirements.txt -r requirements-build.txt
       - run: python tools/run_tests.py
+      - run: node --test tests/test_website_downloads.mjs tests/test_website_theme.mjs
       - shell: pwsh
         run: ./tools/release.ps1 -PythonPath (Get-Command python).Source -SkipInstall
       - run: python tools/test_setup.py

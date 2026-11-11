@@ -28,4 +28,4 @@ jobs:
           cache-dependency-path: requirements.txt
       - run: python -m pip install -r requirements.txt
       - run: python tools/run_tests.py
-      - run: node --test tests/test_website_downloads.mjs
+      - run: node --test tests/test_website_downloads.mjs tests/test_website_theme.mjs

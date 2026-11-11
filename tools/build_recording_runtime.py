@@ -34,11 +34,45 @@ SOURCES = (
     ("zlib-1.3.2.tar.gz", "https://github.com/madler/zlib/releases/download/v1.3.2/",
      "bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16"),
 )
+# Exact upstream archives are also preserved in our published corresponding
+# source bundle. Never execute its scripts; recover only a pinned source file.
+SOURCE_BUNDLE_URL = "https://github.com/GalokPeng/light-block-desktop/releases/download/v0.8.1/Qingkuai-v0.8.1-ffmpeg-source.zip"
+SOURCE_BUNDLE_SHA256 = "b16c13f3109f9be3442f307712fdc1e9375817fedf0101478a92ddd5a6b5c1a8"
 
 
 def digest(path):
     with path.open("rb") as stream:
         return file_digest(stream, "sha256").hexdigest()
+
+
+def fetch_file(url, target):
+    subprocess.run(("curl.exe", "-fsSL", "--retry", "2", "--connect-timeout", "15",
+                    "--max-time", "240", url, "-o", str(target)), check=True)
+
+
+def source_bundle():
+    path = DOWNLOADS / "published-v0.8.1-ffmpeg-source.zip"
+    if path.is_file() and digest(path) == SOURCE_BUNDLE_SHA256:
+        return path
+    with TemporaryDirectory(dir=DOWNLOADS) as folder:
+        temporary = Path(folder) / path.name
+        fetch_file(SOURCE_BUNDLE_URL, temporary)
+        if digest(temporary) != SOURCE_BUNDLE_SHA256:
+            raise ValueError("SHA-256 mismatch for the published source bundle")
+        temporary.replace(path)
+    return path
+
+
+def recover_source(asset, target):
+    name, _base, expected = asset
+    with ZipFile(source_bundle()) as archive:
+        member = archive.getinfo("build/recording-runtime/downloads/" + name)
+        if member.file_size > 64 * 1024 * 1024:
+            raise ValueError("Unexpected source archive size")
+        with archive.open(member) as source, target.open("wb") as output:
+            shutil.copyfileobj(source, output, 1024 * 1024)
+    if digest(target) != expected:
+        raise ValueError(f"SHA-256 mismatch for recovered {name}")
 
 
 def download(asset):
@@ -48,10 +82,15 @@ def download(asset):
         return path
     with TemporaryDirectory(dir=DOWNLOADS) as folder:
         temporary = Path(folder) / name
-        subprocess.run(("curl.exe", "-fsSL", "--retry", "3", "--max-time", "240", base + name,
-                        "-o", str(temporary)), check=True)
-        if digest(temporary) != expected:
-            raise ValueError(f"SHA-256 mismatch for {name}")
+        try:
+            fetch_file(base + name, temporary)
+            if digest(temporary) != expected:
+                raise ValueError(f"SHA-256 mismatch for {name}")
+        except (subprocess.CalledProcessError, ValueError):
+            if asset not in SOURCES:
+                raise
+            print(f"Upstream unavailable: recovering pinned {name} from the published source bundle", file=sys.stderr)
+            recover_source(asset, temporary)
         temporary.replace(path)
     return path
 
