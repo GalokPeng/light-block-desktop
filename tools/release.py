@@ -3,6 +3,7 @@ import argparse
 import ast
 import ctypes
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -92,6 +93,19 @@ def bundle(version, dist, output):
     (output / f"{name}-SHA256SUMS.txt").write_text("".join(checksum), encoding="ascii")
 
 
+def check_cursor_assets(cursors):
+    manifest = json.loads((cursors / "manifest.json").read_text(encoding="utf-8"))
+    themes = manifest.get("themes")
+    if (not isinstance(themes,list) or not 1 <= len(themes) <= 8
+            or any(not isinstance(name,str) or not re.fullmatch(r"[a-z]{1,20}",name) for name in themes)
+            or len(set(themes)) != len(themes)):
+        raise ValueError("Invalid packaged cursor manifest")
+    for theme in themes:
+        if not (cursors / theme / "normal.cur").is_file() or not (cursors / theme / "busy-48.ani").is_file():
+            raise FileNotFoundError(f"Packaged cursor assets are missing: {theme}")
+    return tuple(themes)
+
+
 def smoke_at(app, data):
     taskbar = app.parent / "_internal" / "runtime" / "QingkuaiTaskbarLayout.dll"
     if not taskbar.is_file():
@@ -123,9 +137,7 @@ def smoke_at(app, data):
     if probe.stdout != b"READY\n":
         raise RuntimeError("The packaged cursor host could not start safely.")
     cursors = app.parent / "_internal" / "assets" / "cursors"
-    for theme in ("frost", "graphite", "mint"):
-        if not (cursors / theme / "normal.cur").is_file() or not (cursors / theme / "busy-48.ani").is_file():
-            raise FileNotFoundError(f"Packaged cursor assets are missing: {theme}")
+    check_cursor_assets(cursors)
     ffmpeg = app.parent / "_internal" / "runtime" / "ffmpeg.exe"
     devices = subprocess.check_output((str(ffmpeg.resolve()), "-hide_banner", "-devices"),
                                       env=env, stderr=subprocess.STDOUT, text=True, timeout=15)
