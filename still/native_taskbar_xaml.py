@@ -13,7 +13,7 @@ from tempfile import NamedTemporaryFile
 import uuid
 
 from . import win32
-from .model import ROOT
+from .model import ROOT, DEFAULT_TASKBAR_RADIUS, TASKBAR_RADIUS_LIMITS
 from .native_taskbar import auto_hidden, monitor_bounds
 from .taskbar_style_native import close_handle, process_id
 from .taskbar_visibility import TaskbarVisibilityLease
@@ -78,6 +78,8 @@ advapi = C.WinDLL("advapi32", use_last_error=True)
 parse_sd = win32.bind(advapi, "ConvertStringSecurityDescriptorToSecurityDescriptorW", W.BOOL,
                      W.LPCWSTR, W.DWORD, C.POINTER(C.c_void_p), C.POINTER(W.DWORD))
 layout_id = GUID((C.c_ubyte * 16).from_buffer_copy(uuid.UUID("1024237c-b66a-4f25-ba99-fb65e94e7603").bytes_le))
+# Keep the namespace for old-resident recovery. The per-build suffix isolates
+# ABI v4 (104 bytes) from the previously resident v3 (96 bytes) structure.
 CHANNEL = "Local\\Qingkuai.TaskbarLayout.v3."
 open_event = win32.bind(win32.kernel32, "OpenEventW", W.HANDLE, W.DWORD, W.BOOL, W.LPCWSTR)
 
@@ -135,7 +137,7 @@ class LayoutStatus(C.Structure):
     # Keep aligned with native/taskbar_layout.cpp. A sequence lock avoids torn reads.
     _fields_ = [(name, C.c_int32) for name in ("version", "sequence", "state", "repairs", "rebuilds", "error", "changes", "reserved")] + [
         (name, C.c_double) for name in ("host_width", "frame_width", "tray_width", "group_left", "group_right", "scale")] + [
-        (name, C.c_int32) for name in ("appearance_revision", "appearance_color", "appearance_opacity", "appearance_flags")]
+        (name, C.c_int32) for name in ("appearance_revision", "appearance_color", "appearance_opacity", "appearance_flags", "appearance_radius", "appearance_reserved")]
 
     @classmethod
     def read(cls, address):
@@ -146,7 +148,7 @@ class LayoutStatus(C.Structure):
             snapshot = cls.from_buffer_copy(C.string_at(address, C.sizeof(cls)))
             if snapshot.sequence != before or cls.from_address(address).sequence != before:
                 continue
-            if snapshot.version == 3:
+            if snapshot.version == 4:
                 result = {name: (round(getattr(snapshot, name), 2) if kind is C.c_double else getattr(snapshot, name))
                           for name, kind in cls._fields_ if name not in ("version", "sequence", "reserved")}
                 if snapshot.reserved:
@@ -216,7 +218,7 @@ class NativeTaskbarLayout:
         finally:
             local_free(descriptor)
 
-    def update(self, hidden=False, revealed=False, color=None, opacity=None):
+    def update(self, hidden=False, revealed=False, color=None, opacity=None, radius=DEFAULT_TASKBAR_RADIUS):
         bar = win32.FindWindow("Shell_TrayWnd", None)
         if not bar or not win32.FindWindowEx(bar, None, "Windows.UI.Composition.DesktopWindowContentBridge", None):
             return {"waiting": True}
@@ -229,7 +231,7 @@ class NativeTaskbarLayout:
             try:
                 self.make_events(pid)
                 self.appearance = None
-                self.set_appearance(color, opacity)
+                self.set_appearance(color, opacity, radius)
             except OSError:
                 self.restore(wait=False)
                 raise
@@ -249,7 +251,7 @@ class NativeTaskbarLayout:
             reset_event(self.events["Restored"])
             set_event(self.events["Start"])
         else:
-            self.set_appearance(color, opacity)
+            self.set_appearance(color, opacity, radius)
         ready = wait_for(self.events["Ready"], 700) == 0
         diagnostic = LayoutStatus.read(self.view)
         if diagnostic and diagnostic["state"] in (3, 4):
@@ -264,15 +266,17 @@ class NativeTaskbarLayout:
                 "diagnostic": diagnostic,
                 "visibility": [bar, monitor, strip] if strip is not None else None}
 
-    def set_appearance(self, color, opacity):
+    def set_appearance(self, color, opacity, radius=DEFAULT_TASKBAR_RADIUS):
         if color is None or opacity is None or not self.view:
             return
         if not isinstance(color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", color) or type(opacity) is not int or not 0 <= opacity <= 100:
             raise ValueError("invalid taskbar appearance")
-        wanted = int(color[1:], 16), opacity
+        if type(radius) is not int or not TASKBAR_RADIUS_LIMITS[0] <= radius <= TASKBAR_RADIUS_LIMITS[1]:
+            raise ValueError("invalid taskbar radius")
+        wanted = int(color[1:], 16), opacity, radius
         if self.appearance != wanted:
             status = LayoutStatus.from_address(self.view)
-            status.appearance_color, status.appearance_opacity = wanted
+            status.appearance_color, status.appearance_opacity, status.appearance_radius = wanted
             status.appearance_flags = 1
             status.appearance_revision = (status.appearance_revision + 1) & 0x7fffffff
             self.appearance = wanted

@@ -93,26 +93,35 @@ def check_qt_service(app, before):
         service=PointerStyle(SimpleNamespace(app=app,store=store))
         errors=[];service.error.connect(errors.append)
         try:
-            for theme in ('frost','graphite','mint','system','frost'):
+            for theme in ('stream','outline','pixel','system','stream'):
                 service.set_theme(theme)
                 wait(lambda:service.pending is None and service.actual_theme==theme)
                 if theme=='system':wait(lambda:service.process is None)
                 assert Store(store.directory).settings.cursor_theme==theme
+            original_particle=store.settings.particle_color
+            service.set_color('#f092b3')
+            wait(lambda:service.pending is None and store.settings.cursor_color=='#f092b3')
+            assert store.settings.particle_color==original_particle
+            for percent in (75,150,200,100):
+                service.set_size(percent)
+                wait(lambda:service.pending is None and store.settings.cursor_scale==percent)
+                assert Store(store.directory).settings.cursor_scale==percent
             assert not errors,errors
             service.process.kill()  # Simulate unexpected native helper termination.
             wait(lambda:service.process is None)
             wait(lambda:signature()==before)
             assert errors and Store(store.directory).settings.cursor_theme=='system'
-            service.set_particles(True)
-            assert service.trail.hook.handle and not service.trail.timer.isActive()
-            win32.bind(win32.user32,'mouse_event',None,W.DWORD,W.DWORD,W.DWORD,W.DWORD,C.c_size_t)(1,20,0,0,0)
-            pump(.15)
-            assert service.trail.timer.isActive()
-            assert win32.GetWindowLong(int(service.trail.winId()),-20)&0x20
-            # The test must not fail when the person at the keyboard moves.
-            with patch('still.pointer_style.QCursor.pos',return_value=QCursor.pos()):
-                pump(.8)
-                assert not service.trail.timer.isActive() and not service.trail.isVisible()
+            for effect in ('dots','fall','glow'):
+                service.set_particle_options(style=effect,color='#76adff')
+                service.set_particles(True)
+                assert service.trail.hook.handle and not service.trail.timer.isActive()
+                win32.bind(win32.user32,'mouse_event',None,W.DWORD,W.DWORD,W.DWORD,W.DWORD,C.c_size_t)(1,20,0,0,0)
+                pump(.15)
+                assert service.trail.timer.isActive()
+                assert win32.GetWindowLong(int(service.trail.winId()),-20)&0x20
+                with patch('still.pointer_style.QCursor.pos',return_value=QCursor.pos()):
+                    pump(1.4)
+                    assert not service.trail.timer.isActive() and not service.trail.isVisible(),effect
             service.set_particles(False);pump(.02)
             assert service.trail is None and not service.active
         finally:
@@ -133,12 +142,23 @@ def main():
     report={'checks':[], 'native_helper_bytes':helper.stat().st_size}
     try:
         fingerprints=set()
-        for theme in ('frost','graphite','mint'):
+        for theme in ('stream','outline','pixel'):
             process.write(('APPLY\t'+str(ROOT/'assets/cursors'/theme)+'\n').encode('utf-8'))
             assert read(process)==b'OK', theme
             fingerprints.add(signature())
         assert len(fingerprints)==3
         report['checks'].append('Three distinct themes apply through native Windows cursors')
+        sizes=set()
+        for percent in (75,100,150,200):
+            process.write(('APPLY\t'+str(ROOT/'assets/cursors/stream')+'\t'+str(percent)+'\n').encode('utf-8'))
+            assert read(process)==b'OK'
+            sizes.add(signature())
+        assert len(sizes)==4,'Cursor scale did not alter the native cursor'
+        owned=signature()
+        for invalid in ('74','201','abc','100x'):
+            process.write(('APPLY\t'+str(ROOT/'assets/cursors/stream')+'\t'+invalid+'\n').encode('utf-8'))
+            assert read(process).startswith(b'ERROR') and signature()==owned
+        report['checks'].append('Four cursor sizes change native output; invalid sizes preserve the applied scheme')
         report.update(idle_measurement(int(process.processId())))
         owned=signature()
         conflict=subprocess.run([str(helper)],input=b'QUIT\n',capture_output=True,timeout=5)
@@ -149,7 +169,7 @@ def main():
         report['checks'].append('Missing assets leave the active theme unchanged')
         process.write(b'RESTORE\n')
         assert read(process)==b'OK' and signature()==before
-        process.write(('APPLY\t'+str(ROOT/'assets/cursors/frost')+'\n').encode('utf-8'))
+        process.write(('APPLY\t'+str(ROOT/'assets/cursors/stream')+'\n').encode('utf-8'))
         assert read(process)==b'OK'
         process.closeWriteChannel()  # Same EOF path as a parent process crash.
         assert process.waitForFinished(5000) and signature()==before

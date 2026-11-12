@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import uuid
 
-from PySide6.QtCore import QDateTime, QObject, QPoint, QRect, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QCursor, QFont, QPainter
+from PySide6.QtCore import QDateTime, QObject, QPoint, QRect, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QDateTimeEdit, QHBoxLayout, QLineEdit,
     QListWidget, QListWidgetItem, QMenu, QPlainTextEdit, QVBoxLayout, QWidget)
 
@@ -413,6 +413,9 @@ class NotesWindow(QWidget):
         self.done = QCheckBox(tr("已完成"))
         self.pinned = QCheckBox(tr("贴到桌面"))
         self.color = QComboBox()
+        self.color.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.color.setMinimumContentsLength(9)
+        self.color.setIconSize(QSize(16,16))
         for name, value in ((tr("薄荷"), "mint"), (tr("海蓝"), "blue"), (tr("暖砂"), "amber"), (tr("蔷薇"), "rose")):
             self.color.addItem(name, value)
         options.addWidget(self.done)
@@ -497,9 +500,20 @@ class NotesWindow(QWidget):
             index = 4
             if self.color.count() == index:
                 self.color.addItem("", value)
-            self.color.setItemText(index, tr("自定义颜色")+" "+note_color(value).name())
+            self.color.setItemText(index, tr("自定义"))
             self.color.setItemData(index, value)
+            swatch = QPixmap(20,20)
+            swatch.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(swatch)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setPen(QColor("#83969e"))
+            painter.setBrush(note_color(value))
+            painter.drawRoundedRect(QRectF(1,1,18,18),4,4)
+            painter.end()
+            self.color.setItemIcon(index,QIcon(swatch))
+            self.color.setItemData(index, note_color(value).name().upper(), Qt.ItemDataRole.ToolTipRole)
         self.color.setCurrentIndex(index)
+        self.color.setToolTip(note_color(value).name().upper())
 
     def choose_color(self):
         if self.loaded_id:

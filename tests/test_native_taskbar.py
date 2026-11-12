@@ -12,6 +12,21 @@ from still.taskbar_style_native import HIDDEN_SHAPE
 
 
 class NativeTaskbarTests(unittest.TestCase):
+    def test_appearance_radius_reaches_shared_protocol_without_idle_resubmission(self):
+        layout=NativeTaskbarLayout(Path("not-loaded.dll"))
+        status=LayoutStatus(version=4)
+        layout.view=C.addressof(status)
+        layout.events={"Start":123}
+        with patch("still.native_taskbar_xaml.set_event") as signal:
+            for radius in (6,26,12):
+                layout.set_appearance("#234567",79,radius)
+                self.assertEqual(status.appearance_radius,radius)
+            self.assertEqual(signal.call_count,3)
+            layout.set_appearance("#234567",79,12)
+            self.assertEqual(signal.call_count,3)
+            for invalid in (True,0,27):
+                with self.assertRaises(ValueError):layout.set_appearance("#234567",79,invalid)
+
     def test_native_builds_get_distinct_resident_channels(self):
         module = Mock()
         module._handle = 123
@@ -113,8 +128,8 @@ class NativeTaskbarTests(unittest.TestCase):
         self.assertIsNone(measured_strip((0, 0, 3840, 72), (0, 0, 3840, 2160), geometry))
 
     def test_layout_status_ignores_incomplete_or_unknown_protocol_writes(self):
-        status = LayoutStatus(version=3, sequence=2, state=1, repairs=3, host_width=1706.6666, scale=1.5)
-        self.assertEqual(C.sizeof(LayoutStatus), 96)
+        status = LayoutStatus(version=4, sequence=2, state=1, repairs=3, host_width=1706.6666, scale=1.5)
+        self.assertEqual(C.sizeof(LayoutStatus), 104)
         snapshot = LayoutStatus.read(C.addressof(status))
         self.assertEqual(snapshot["repairs"], 3)
         self.assertEqual(snapshot["host_width"], 1706.67)
@@ -130,7 +145,7 @@ class NativeTaskbarTests(unittest.TestCase):
     def test_native_layout_conflict_is_reported_even_if_old_ready_event_is_set(self):
         layout = NativeTaskbarLayout(Path("not-loaded.dll"))
         layout.pid, layout.events = 2, {"Ready": 3}
-        status = LayoutStatus(version=3, sequence=2, state=4, repairs=12)
+        status = LayoutStatus(version=4, sequence=2, state=4, repairs=12)
         layout.view = C.addressof(status)
         layout.visibility = Mock()
         with (patch("still.native_taskbar_xaml.win32.FindWindow", return_value=1),

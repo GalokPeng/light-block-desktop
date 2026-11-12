@@ -12,6 +12,28 @@ from still.hotkeys import MOD_CTRL, MOD_SHIFT, capture_binding
 
 
 class StoreTests(unittest.TestCase):
+    def test_bottom_default_and_cursor_options_migrate_without_overwriting_alignment(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.assertEqual(Store(root).settings.organizer_alignment, "bottom")
+            for old,new in (("frost","stream"),("graphite","outline"),("mint","pixel")):
+                (root/"settings.json").write_text(json.dumps(dict(cursor_theme=old,organizer_alignment="center")),encoding="utf-8")
+                store=Store(root)
+                self.assertEqual(store.settings.cursor_theme,new)
+                self.assertEqual(store.settings.organizer_alignment,"center")
+                store.settings.cursor_color="#f06383"
+                store.settings.particle_color="#77abed"
+                store.settings.particle_style="fall"
+                store.settings.cursor_scale=175
+                store.save()
+                restored=Store(root).settings
+                self.assertEqual((restored.cursor_color,restored.particle_color,restored.particle_style),("#f06383","#77abed","fall"))
+                self.assertEqual(restored.cursor_scale,175)
+            (root/"settings.json").write_text(json.dumps(dict(cursor_theme=[],cursor_color="oops",particle_style={},particle_color=3)),encoding="utf-8")
+            restored=Store(root).settings
+            self.assertEqual((restored.cursor_theme,restored.cursor_color,restored.particle_style,restored.particle_color),
+                             ("system","#d9f2ed","dots","#a6e4ca"))
+
     def test_curated_default_wallpapers_and_legacy_selection_survive_upgrade(self):
         images=[item for item in bundled_items() if item["kind"]=="image"]
         self.assertEqual([item["path"] for item in images],

@@ -171,7 +171,7 @@ def run_helper():
             try:
                 if layout:
                     result = layout.update(request.get("hidden") is True, request.get("revealed") is True,
-                                           request.get("color"), request.get("opacity"))
+                                           request.get("color"), request.get("opacity"), radius)
                 else:
                     result = regions.update(radius)
             except OSError:

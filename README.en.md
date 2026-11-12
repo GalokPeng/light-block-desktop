@@ -3,6 +3,9 @@
 <p align="center">Live wallpaper, screenshots, screen recording, desktop organization, native taskbar styling and notes for Windows</p>
 <p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases/latest/download/Qingkuai-Setup-x64.exe"><strong>Download Windows Setup</strong></a> · <a href="#feature-preview">Feature preview</a> · <a href="https://light-block-desktop.vercel.app/en/">Website</a> · <a href="README.md">简体中文</a> · <a href="CHANGES.md">Changelog</a></p>
 
+
+**1.0.0**: three original cursor silhouettes, 75%–200% sizing, independently colored effects and organizer surfaces. Glow follows the cursor outline; Falling uses finer luminous specks.
+
 ## Download and install
 
 1. Download `Setup-x64.exe` from [GitHub Releases](https://github.com/GalokPeng/light-block-desktop/releases/latest). For the portable edition, extract the full `Windows-x64.zip` and run `轻块桌面.exe`.
@@ -33,7 +36,7 @@ Press `Ctrl+Alt+A` by default to pick a window or region. Annotate, stitch a scr
 
 ### Desktop organizer and native taskbar styling
 
-Place the organizer at the top, center or bottom. Sort by name, modification time or group, and search for desktop items. New desktop files appear as icons first and are collected after one minute by default. Disable this option for manual collection, or right-click to choose a group. Organizer, taskbar and group options use separate collapsible sections. Turning the organizer off restores the original icon visibility.
+Place the organizer at the top, center or bottom. Sort by name, modification time or group, and search for desktop items. New desktop files appear as icons first and are collected after one minute by default. Disable this option for manual collection, or right-click to choose a group. Organizer, taskbar and group options use separate collapsible sections. Color icon plates and the organizer background independently, or reset both to defaults. Group colors stay separate; light panels automatically use dark text. Turning the organizer off restores the original icon visibility.
 
 ![Folder groups on a sample desktop](site/public/media/organizer-en.webp)
 
@@ -43,13 +46,21 @@ Optional styling centers power, settings, Task Manager and native search in the 
 
 *Diagram of the three-section native taskbar*
 
+### Cursors and appearance
+
+Choose Stream, Prism or Pixel in **Appearance → Mouse and Cursors**, with independent color and size settings. Mix any cursor with independently colored Dots, Falling or Glow effects. Glow follows the actual native cursor silhouette without painting over its body. Falling uses fine luminous specks with gentle motion and fades. Effects stop painting when idle; disabling releases the listener, and quitting restores the system scheme.
+
+![Enlarged original cursor outline glow](site/public/media/cursor-glow-en-dark.webp)
+
+[View appearance settings](site/public/media/appearance-en-light.webp)
+
 ### Desktop notes
 
 Right-click the desktop background to create and pin a note. On Windows 11, start with **Show more options**. Drag the title to move a note, double-click the title to edit, or drag an edge to resize. Scroll long content without visible scrollbars and choose a custom color. Notes & Tasks also provides search, reminders, completion and archiving.
 
 ![Notes and Tasks editor beside a weekly checklist pinned to a sample desktop](site/public/media/notes-en.webp)
 
-Screenshots use bundled media and fictional data. Settings and downloaded wallpapers stay on your device. The online gallery contacts media sources on demand. No account, ads or telemetry. Settings also offers Frost, Graphite and Mint cursor themes, an optional mouse trail that stops drawing when idle, and a native Windows Night light settings entry. The app also includes a launcher, clipboard history, a file workbench and focus timers. [User guide](docs/usage.en.md)
+Screenshots use bundled media and fictional data. Settings and downloaded wallpapers stay on your device. The online gallery contacts media sources on demand. No account, ads or telemetry. Appearance offers three original silhouettes—Stream, Prism and Pixel—with custom colors and 75%–200% sizing. Mix them with independently colored Dots, Falling or Glow effects, which stop painting when idle. Settings retains the native Windows Night light entry. The app also includes a launcher, clipboard history, a file workbench and focus timers. [User guide](docs/usage.en.md)
 
 The online gallery has 20 images, 10 GIFs and 20 videos, with media-type filters and bilingual search. The maintainer approved retaining the ten GIFs from the local review build. Every source file is at least 1920 × 1080 and no larger than 20 MB, without app-side recompression, trimming or upscaling. GIF candidates must be original 1080p, 16:9 complete looping scenes. GIFs have no likes/favorites threshold; available metrics are recorded as reported. Images and videos retain their public-vote or favorite-based selection. It supports on-demand previews, byte-preserving downloads, progress/cancellation, downloaded status and Apply. GitHub stores URL and attribution metadata only. Downloads continue when settings close; quitting cancels unfinished downloads. [Evaluation and selection](docs/wallpaper-evaluation.md)
 

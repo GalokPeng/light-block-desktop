@@ -13,7 +13,12 @@ ffmpeg = os.environ.get('STILL_FFMPEG')
 if not ffmpeg or not Path(ffmpeg).is_file() or Path(ffmpeg).name.lower() != 'ffmpeg.exe':
     raise SystemExit('Build with build.ps1 so the screen-recording runtime is included.')
 qt_translations = Path(find_spec('PySide6').origin).parent / 'translations'
-resources = [(str(root / 'assets'), 'assets'), (str(root / 'licenses'), 'licenses'),
+asset_resources = [(str(path), 'assets') for path in (root / 'assets').iterdir() if path.name != 'cursors']
+# Keep previous source artwork available, but ship only the active schemes.
+asset_resources += [(str(root / 'assets/cursors' / name), 'assets/cursors/' + name)
+                    for name in ('stream', 'outline', 'pixel')]
+asset_resources.append((str(root / 'assets/cursors/manifest.json'), 'assets/cursors'))
+resources = asset_resources + [(str(root / 'licenses'), 'licenses'),
              (str(root / 'locales'), 'locales'),
              (str(qt_translations / 'qtbase_zh_CN.qm'), 'PySide6/translations'),
              (str(root / 'LICENSE'), '.'), (str(root / 'THIRD_PARTY_NOTICES.md'), '.')]

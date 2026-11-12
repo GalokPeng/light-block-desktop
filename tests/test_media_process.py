@@ -55,6 +55,19 @@ def running(pid):
 
 
 class MediaProcessTests(unittest.TestCase):
+    def test_late_exit_during_qt_teardown_does_not_touch_deleted_timers(self):
+        from shiboken6 import delete
+        from unittest.mock import Mock
+        app=QApplication.instance() or QApplication([])
+        worker=MediaProcess()
+        process=Mock();job=Mock()
+        worker.process=process;worker.job=job;worker.pending={"mode":"desktop"}
+        delete(worker.deadline)
+        worker.ended(process,0)
+        self.assertIsNone(worker.process)
+        self.assertIsNone(worker.pending)
+        job.close.assert_called_once_with()
+
     @classmethod
     def setUpClass(cls):
         cls.app=QApplication.instance() or QApplication([])

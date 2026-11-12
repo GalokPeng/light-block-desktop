@@ -18,6 +18,7 @@ from .model import DEFAULT_ORGANIZER_TITLE
 from . import desktop_windows as native
 from .desktop_icons import DesktopIconLease
 from .organizer_model import entry_name, group_name, named_entries, organizer_view, view_options, COLORS, Collections
+from .organizer_colors import foreground, icon_background
 from .scroll_wheel import MouseHook
 from . import win32
 
@@ -29,13 +30,13 @@ PANEL_PADDING = 20
 HEADER_HEIGHT = 34
 
 
-def search_symbol():
+def search_symbol(color="#eef4fb"):
     pixmap = QPixmap(64, 64)
     pixmap.fill(Qt.GlobalColor.transparent)
     with QPainter(pixmap) as painter:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.scale(2, 2)
-        painter.setPen(QPen(QColor("#eef4fb"), 2.9, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.setPen(QPen(QColor(color), 2.9, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         painter.drawEllipse(QRectF(5.5, 5.5, 15, 15))
         painter.drawLine(QPoint(19, 19), QPoint(26, 26))
     return pixmap
@@ -124,8 +125,11 @@ class HoverIcon(QStyledItemDelegate):
         plate = QRect(QPoint(), QSize(icon_size + 8, icon_size + 8) * scale)
         plate.moveCenter(center)
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
-        painter.setBrush(QColor(162, 205, 255, 68) if selected else QColor(238, 246, 255, 20))
-        painter.setPen(QPen(QColor(238, 246, 255, 46 if scale > 1.0 else 21), 1))
+        settings = self.view.panel.manager.store.settings
+        painter.setBrush(icon_background(settings, selected, scale > 1.0))
+        outline = QColor("#82b5e8") if selected else foreground(settings)
+        outline.setAlpha(170 if selected else 65 if scale > 1.0 else 35)
+        painter.setPen(QPen(outline, 1))
         radius = plate.width() * .23
         painter.drawRoundedRect(QRectF(plate), radius, radius)
         bounds = QRect(QPoint(), self.view.iconSize() * (scale * .84))
@@ -133,7 +137,7 @@ class HoverIcon(QStyledItemDelegate):
         native.paint_icon(painter, index.data(Qt.ItemDataRole.DecorationRole), bounds)
         label = option.rect.adjusted(4, icon_size + 17, -4, -2)
         painter.setFont(option.font)
-        painter.setPen(QColor("#f5f7fc"))
+        painter.setPen(foreground(settings))
         title = painter.fontMetrics().elidedText(index.data(), Qt.TextElideMode.ElideRight, label.width())
         painter.drawText(label, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, title)
         painter.restore()
@@ -350,10 +354,12 @@ class FolderTile(QAbstractButton):
                 painter.setBrush(QColor(232, 240, 255, 23))
                 painter.drawRoundedRect(QRectF(bounds.adjusted(1, 1, -1, -1)), 7, 7)
         painter.restore()
-        painter.setPen(QColor("#f4f7fc"))
+        ink = foreground(self.shelf.manager.store.settings)
+        painter.setPen(ink)
         title = painter.fontMetrics().elidedText(group_name(self.group), Qt.TextElideMode.ElideRight, 110)
         painter.drawText(QRect(3, 81, 110, 21), Qt.AlignmentFlag.AlignHCenter, title)
-        painter.setPen(QColor("#c5d2df"))
+        ink.setAlpha(195)
+        painter.setPen(ink)
         painter.drawText(QRect(3, 101, 110, 13), Qt.AlignmentFlag.AlignHCenter, str(len(self.group["entries"])))
 
     def enterEvent(self, event):
@@ -448,8 +454,9 @@ class FolderTile(QAbstractButton):
 
 
 class ShelfTitle(QAbstractButton):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, shelf):
+        super().__init__(shelf)
+        self.shelf = shelf
         self.setFixedHeight(30)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -470,7 +477,7 @@ class ShelfTitle(QAbstractButton):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(255, 255, 255, 25))
             painter.drawRoundedRect(QRectF(self.rect()), 6, 6)
-        painter.setPen(QColor("#f4f7fc"))
+        painter.setPen(foreground(self.shelf.manager.store.settings))
         text = self.fontMetrics().elidedText(self.text(), Qt.TextElideMode.ElideRight, self.width() - 10)
         painter.drawText(self.rect().adjusted(5, 0, -5, 0), Qt.AlignmentFlag.AlignVCenter, text)
 
@@ -526,6 +533,7 @@ class DesktopShelf(QWidget):
         self.title_editor = None
         self.board_columns = 0
         self.board_dirty = True
+        self.color_signature = None
         self.setWindowTitle(tr("轻块桌面 · 桌面收纳"))
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
@@ -570,7 +578,7 @@ class DesktopShelf(QWidget):
         self.back = QPushButton(tr("返回"))
         self.back.clicked.connect(self.overview)
         header.addWidget(self.back)
-        self.title = ShelfTitle()
+        self.title = ShelfTitle(self)
         self.title.setObjectName("shelfTitle")
         self.title.clicked.connect(self.edit_title)
         header.addWidget(self.title)
@@ -893,6 +901,17 @@ class DesktopShelf(QWidget):
             self.expanded = True
             self.refresh(animate=True)
 
+    def refresh_colors(self):
+        settings = self.manager.store.settings
+        signature = settings.organizer_background_color, settings.organizer_icon_color
+        if self.color_signature == signature:
+            return
+        self.color_signature = signature
+        ink = foreground(settings).name()
+        self.title.update()
+        self.back.setStyleSheet("QPushButton { color:" + ink + "; }")
+        self.grid.items.search_icon = search_symbol(ink)
+
     def refresh(self, animate=False):
         start = None
         outgoing = None
@@ -903,6 +922,7 @@ class DesktopShelf(QWidget):
         self.stop_transition()
         self.icon_timer.stop()
         settings = self.manager.store.settings
+        self.refresh_colors()
         view = organizer_view(settings)
         if self.view_mode != view:
             self.view_mode = view
@@ -1033,7 +1053,8 @@ class DesktopShelf(QWidget):
         painter.fillRect(event.rect(), Qt.GlobalColor.transparent)
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
         accent = COLORS.get(self.group.get("color"), COLORS["mint"]) if self.group else None
-        native.paint_desktop_panel(painter, rect, self.manager.store.settings.organizer_opacity, accent)
+        settings = self.manager.store.settings
+        native.paint_desktop_panel(painter, rect, settings.organizer_opacity, accent, settings.organizer_background_color)
         if self.sprite is not None:
             # Show one fully lit page throughout the size change.
             painter.setClipRect(rect.adjusted(2, 2, -2, -2))
@@ -1292,6 +1313,17 @@ class OrganizerManager(QObject):
             shelf.stop_interactions()
             shelf.hide()
             shelf.deleteLater()
+
+    def refresh_appearance(self):
+        if self.shelf is not None:
+            if self.shelf.sprite is not None:
+                self.shelf.settle()
+            self.shelf.refresh_colors()
+            self.shelf.update()
+            self.shelf.grid.viewport().update()
+            for tile in self.shelf.board.findChildren(FolderTile):
+                tile.update()
+        self.changed.emit()
 
     def refresh(self):
         from .desktop_loose import refresh_loose_icons

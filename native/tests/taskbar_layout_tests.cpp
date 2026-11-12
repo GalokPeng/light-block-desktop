@@ -242,6 +242,7 @@ int main(int argc, char** argv) {
             appearance.appearanceFlags=1;
             appearance.appearanceColor=0x162738;
             appearance.appearanceOpacity=73;
+            appearance.appearanceRadius=9;
             appearance.appearanceRevision=1;
             styled.apply_appearance();
             auto leases=styled.properties.size();
@@ -251,14 +252,18 @@ int main(int argc, char** argv) {
                 require(brush.TintColor().R==0x16 && std::abs(brush.TintOpacity()-.73)<.0001,
                         "background appearance did not reach all three sections");
                 require(std::abs(border.Opacity()-.73)<.0001,"fallback background ignored opacity");
+                require(border.CornerRadius().TopLeft==9,"radius did not reach all three sections");
             }
             for (int i=0; i<100; ++i) {
                 appearance.appearanceColor=i%2 ? 0xffffff : 0x101010;
                 appearance.appearanceOpacity=i%2 ? 100 : 0;
+                appearance.appearanceRadius=i%2 ? 26 : 6;
                 ++appearance.appearanceRevision;
                 styled.apply_appearance();
                 require(styled.controls.Opacity()==(i%2 ? 1. : 0.),"zero opacity did not remove only the background");
                 require(mainFrame.Opacity()==1 && nativeTray.Opacity()==1,"native content was faded");
+                for (auto border : {styled.controls,styled.apps,styled.trayBack})
+                    require(border.CornerRadius().TopRight==(i%2 ? 26 : 6),"live radius change was ignored");
             }
             require(styled.properties.size()==leases,"appearance changes accumulated property leases");
             require(mainFrame.RequestedTheme()==ElementTheme::Light,"light tint lost readable native text");

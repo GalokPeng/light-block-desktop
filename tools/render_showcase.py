@@ -56,7 +56,7 @@ def capture_settings(root):
     window = controller.window
     window.resize(1280, 860)
     app.processEvents()
-    assert window.nav_buttons[0].text() == ("壁纸库" if zh else "Wallpaper Library")
+    assert window.nav_buttons[0].text() == ("壁纸" if zh else "Wallpaper")
     assert controller.capture_action.text() == ("截屏" if zh else "Screen Capture")
     video_card = next(card for card in window.cards if card.item["kind"] == "video")
     for _ in range(100):
@@ -101,6 +101,7 @@ def background():
 
 def capture_organizer(root):
     store = Store(root / "organizer")
+    store.settings.organizer_alignment = "center"
     store.settings.organizer_views = {"center": "groups"}
     collections = Collections(store)
     demo_files = root / "fixture-files"

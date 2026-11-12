@@ -66,7 +66,7 @@ def desktop_layer(hwnd):
     return owner
 
 
-def paint_desktop_panel(painter, rect, opacity, tint=None):
+def paint_desktop_panel(painter, rect, opacity, tint=None, background=None):
     alpha = min(241, max(149, int(opacity) + 27))
     def shade(red, green, blue, alpha):
         if tint is not None:
@@ -75,8 +75,16 @@ def paint_desktop_panel(painter, rect, opacity, tint=None):
                                 zip((red, green, blue), (color.red(), color.green(), color.blue())))
         return QColor(red, green, blue, alpha)
     fill = QLinearGradient(0, rect.top(), 0, rect.bottom())
-    fill.setColorAt(0, shade(39, 51, 71, alpha))
-    fill.setColorAt(1, shade(20, 28, 43, min(248, alpha + 20)))
+    if background is None:
+        fill.setColorAt(0, shade(39, 51, 71, alpha))
+        fill.setColorAt(1, shade(20, 28, 43, min(248, alpha + 20)))
+    else:
+        color = QColor(background)
+        top, bottom = color.lighter(109), color.darker(112)
+        top.setAlpha(alpha)
+        bottom.setAlpha(min(248, alpha + 20))
+        fill.setColorAt(0, top)
+        fill.setColorAt(1, bottom)
     painter.setBrush(fill)
     edge = QColor(tint) if tint is not None else QColor(230, 239, 255)
     edge.setAlpha(125 if tint is not None else 78)

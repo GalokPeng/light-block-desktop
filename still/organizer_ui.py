@@ -60,6 +60,12 @@ class OrganizerPage(QWidget):
         desktop.body.addWidget(label(tr("新增内容先留在桌面，1 分钟后放入收纳。正在拖动或操作菜单时暂缓。"), "muted", True))
         self.opacity, self.opacity_save = self.slider("organizer_opacity", 75, 235, settings.organizer_opacity)
         self.field(desktop.body, tr("面板透明度"), self.opacity)
+        self.icon_color = button("", lambda: self.choose_organizer_color("organizer_icon_color"))
+        self.field(desktop.body, tr("图标背景颜色"), self.icon_color)
+        self.background_color = button("", lambda: self.choose_organizer_color("organizer_background_color"))
+        self.field(desktop.body, tr("收纳背景颜色"), self.background_color)
+        desktop.body.addWidget(button(tr("恢复默认收纳配色"), self.reset_organizer_colors))
+        desktop.body.addWidget(label(tr("图标与面板可分别调色，分组颜色单独保留；浅色面板自动使用深色文字。"), "muted", True))
         desktop.body.addWidget(label(tr("关闭收纳会恢复 Windows 原有图标显示状态，原文件始终保留。"), "muted", True))
 
         self.taskbar_toggle = Toggle(settings.taskbar_style_enabled)
@@ -86,6 +92,11 @@ class OrganizerPage(QWidget):
         self.taskbar_status = label("", "muted", True)
         taskbar.body.addWidget(self.taskbar_status)
         taskbar.body.addWidget(label(tr("调色仅作用于背景，文字、应用图标与托盘保持清晰。"), "muted", True))
+
+        from .pointer_ui import PointerSettings
+        self.pointer_section = SettingsSection(tr("鼠标与指针"))
+        self.pointer_section.body.addWidget(PointerSettings(window))
+        cards.addWidget(self.pointer_section)
 
         groups = SettingsSection(tr("分组管理"), tr("重命名、选择分组颜色，或添加应用和文件。"))
         self.groups_section = groups
@@ -158,6 +169,32 @@ class OrganizerPage(QWidget):
             self.global_option("taskbar_color", color.name())
             self.refresh_taskbar_options()
 
+    def choose_organizer_color(self, key):
+        current = getattr(self.manager.store.settings, key)
+        color = QColorDialog.getColor(QColor(current or ("#eef6ff" if key == "organizer_icon_color" else "#273347")),
+                                      self, tr("图标背景颜色") if key == "organizer_icon_color" else tr("收纳背景颜色"))
+        if color.isValid():
+            self.global_option(key, color.name())
+
+    def reset_organizer_colors(self):
+        settings = self.manager.store.settings
+        previous = settings.organizer_icon_color, settings.organizer_background_color
+        settings.organizer_icon_color = settings.organizer_background_color = None
+        try:
+            self.manager.store.save()
+        except OSError as exc:
+            settings.organizer_icon_color, settings.organizer_background_color = previous
+            self.manager.error.emit(str(exc))
+            return
+        self.manager.refresh_appearance()
+
+    def refresh_organizer_colors(self):
+        settings = self.manager.store.settings
+        for control, key in ((self.icon_color, "organizer_icon_color"), (self.background_color, "organizer_background_color")):
+            value = getattr(settings, key)
+            control.setText(value.upper() if value else tr("默认"))
+            control.setStyleSheet("QPushButton { border:2px solid " + value + "; }" if value else "")
+
 
     def group(self):
         return self.manager.collections.find(self.selected_id)
@@ -170,6 +207,7 @@ class OrganizerPage(QWidget):
         self.view.setCurrentIndex(self.view.findData(organizer_view(settings)))
         self.icon_size.setValue((32, 44, 60).index(settings.organizer_icon_size or 44))
         self.auto_collect.setChecked(settings.organizer_auto_collect)
+        self.refresh_organizer_colors()
         if not self.opacity_save.isActive():
             self.opacity.setValue(settings.organizer_opacity)
         self.refresh_taskbar_options()
@@ -199,8 +237,8 @@ class OrganizerPage(QWidget):
         appearance = layout_library() is not None
         self.taskbar_color.setText(settings.taskbar_color.upper())
         self.taskbar_color.setStyleSheet("QPushButton { border:2px solid " + settings.taskbar_color + "; }")
-        self.taskbar_color.setEnabled(appearance and settings.taskbar_style_enabled)
-        self.taskbar_opacity.setEnabled(appearance and settings.taskbar_style_enabled)
+        self.taskbar_color.setEnabled(appearance)
+        self.taskbar_opacity.setEnabled(appearance)
         if not self.taskbar_opacity_save.isActive():
             with QSignalBlocker(self.taskbar_opacity):
                 self.taskbar_opacity.setValue(settings.taskbar_opacity)
@@ -209,9 +247,9 @@ class OrganizerPage(QWidget):
         centered = style is not None and style.centered
         self.taskbar_intro.setText(tr("电源和搜索、应用、托盘已在同一条原生任务栏内居中。") if centered else
                                    tr("为 Windows 原生任务栏添加圆角和留边，保留系统搜索、应用按钮和托盘。"))
-        self.taskbar_radius_label.setVisible(not centered)
-        self.taskbar_radius.setVisible(not centered)
-        self.taskbar_radius.setEnabled(settings.taskbar_style_enabled and not auto_hide)
+        self.taskbar_radius_label.setVisible(True)
+        self.taskbar_radius.setVisible(True)
+        self.taskbar_radius.setEnabled(True)
         if centered:
             message = (tr("三段一起显示和隐藏，跟随 Windows 的自动隐藏设置。") if auto_hide else
                        tr("窗口盖住底栏时三段一起隐藏，鼠标移到屏幕底部可唤出。"))
@@ -286,6 +324,8 @@ class OrganizerPage(QWidget):
             if style is not None:
                 style.schedule_refresh()
             self.refresh_taskbar_options()
+        elif key in ("organizer_icon_color", "organizer_background_color"):
+            self.manager.refresh_appearance()
         else:
             self.manager.refresh()
 

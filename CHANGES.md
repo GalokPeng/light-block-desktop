@@ -1,3 +1,18 @@
+# v1.0.0 · 指针轮廓光与外观自定义 / Cursor outline glow and appearance
+
+- “光芒”改为沿当前 Windows 指针的真实外轮廓流动，跟随箭头、文本、链接等角色与指针大小，仅绘制外缘，不覆盖本体。按形状缓存轮廓，避免逐帧读取位图，关闭释放资源。
+- “飘落”使用更细小的荧光微粒、柔和淡入淡出、更轻的惯性与下落速度，取消十字闪烁。保留“点点”，三种效果可独立调色、自由搭配，静止后停绘。
+- 三种不同轮廓的原创指针：流线（圆润实心）、棱镜（几何镂空）、像素（阶梯复古），覆盖 17 个角色和多 DPI 尺寸。支持自选颜色及 75%～200% 大小，退出恢复 Windows 方案；自选颜色后台生成并限量缓存。
+- 导航统一为“壁纸／美化／截屏／工具／设置／关于”，鼠标与指针移入美化。新收纳配置默认居下，已有布局保留。
+- 收纳图标底板与面板背景可独立调色及恢复默认，分组颜色保留；浅色面板自动适配标题、名称、返回与搜索。改色只重绘，不清空图标缓存或重建布局。
+- 修复原生任务栏开启美化后隐藏圆角控件、圆角参数未接入的问题，三段背景同步实时调整；关闭美化时也可预设颜色、透明度和圆角。
+- 修复便签自定义颜色标签截断，显示短标签、色块与完整色值提示。回归验证软件内更新按钮进度、校验换源、正常退出、静默安装和保留配置重启。
+- 修复媒体退出迟到回调可能访问已销毁 QTimer 的问题，补充销毁阶段保护。
+- 官网与中英文 README 新增鼠标、美化和配色介绍，更新隔离演示截图；不包含真实桌面或个人数据。
+- Glow now follows the actual native cursor silhouette, including text and link roles, without painting over the cursor body. Cached outer-edge sprites avoid per-frame bitmap reads; owned GDI bitmaps are always released.
+- Falling uses finer luminous specks, softer fades and gentler motion. Three structurally different original cursor themes support custom colors and 75%–200% sizes; effects are independently configurable and stop painting when idle.
+- Adds independent organizer icon/panel colors with automatic text contrast, fixes live native-taskbar radius controls and custom-note color labels, reorganizes navigation, and updates bilingual website/README demonstrations. In-app progress, verified downloads and automatic installed-copy upgrades were regression-tested with isolated Setup fixtures.
+
 # v0.9.3 · 壁纸切换稳定性与桌面优化 / Playback stability and desktop improvements
 
 - 修复开启音轨后切换视频可能卡住整个设置窗口的问题。GIF、视频、在线动态预览和视频封面改由受保护的媒体进程处理，退出、加载和控制均有超时；主进程意外退出时回收播放器。

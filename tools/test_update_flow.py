@@ -184,7 +184,10 @@ Source: "{fixture}"; DestDir: "{{app}}"; Flags: ignoreversion
             assert "--data-dir\n" + str(folder / "用户配置 空格") in result, result
             assert preserved.read_text(encoding="utf-8") == "preserve this user data"
             trace = json.loads((folder / "trace.json").read_text(encoding="utf-8"))
-            assert any(item["button"].startswith("Downloading ") for item in trace), trace
+            percentages = [int(item["button"].removeprefix("Downloading ").removesuffix("%"))
+                           for item in trace if item["button"].startswith("Downloading ") and item["button"].endswith("%")]
+            assert any(0 < value < 100 for value in percentages) and 100 in percentages, trace
+            assert {"verifying","preparing","installing"}.issubset({item["state"] for item in trace}), trace
             assert trace[-1]["state"] == "installing", trace
             assert requests.count("/setup") == 2, requests
             print("PASS button progress, checksum rejection and source failover, graceful process exit, real silent Setup, preserved data and restart", flush=True)

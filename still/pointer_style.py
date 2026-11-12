@@ -1,20 +1,25 @@
 """Opt-in native cursor themes and a bounded, idle-stopping pointer trail."""
-from collections import deque
 import logging
 from pathlib import Path
 import re
 import sys
 from time import monotonic
+import math
 
-from PySide6.QtCore import QObject, QPoint, QRect, Qt, QProcess, QTimer, Signal
-from PySide6.QtGui import QColor, QCursor, QPainter
-from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import QObject, QPoint, QPointF, QRect, QRectF, Qt, QProcess, QTimer, Signal
+from PySide6.QtGui import QColor, QCursor, QPainter, QPen
+from PySide6.QtWidgets import QApplication, QWidget
 
 from .i18n import tr
 from .model import ASSETS, ROOT
 from .scroll_wheel import MouseHook
 
-THEMES = ("system", "frost", "graphite", "mint")
+from .cursor_art import THEMES as ART_THEMES
+from .cursor_cache import CursorBuild
+from .pointer_particles import ParticleField, LIFETIMES, STYLES
+from .cursor_outline import CursorOutlineCache, paint_outline
+
+THEMES = ("system",) + ART_THEMES
 
 
 def pointer_host():
@@ -43,9 +48,10 @@ class PointerTrail(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.enabled = self.pending = False
-        self.points = deque(maxlen=20)
-        self.last = None
+        self.field = ParticleField()
         self.color = QColor("#a6e4ca")
+        self.outlines = CursorOutlineCache()
+        self.outline = None
         self.timer = QTimer(self, interval=33)
         self.timer.timeout.connect(self.sample)
         self.hook = MouseHook({0x0200}, self.moved)
@@ -56,9 +62,9 @@ class PointerTrail(QWidget):
         self.timer.stop()
         self.hook.close()
         self.hide()
-        self.points.clear()
-        self.last = None
+        self.field.clear()
         self.pending = False
+        self.outline = None
         if self.enabled and not self.hook.start():
             self.enabled = False
             raise OSError(tr("无法监听鼠标移动，请重试。"))
@@ -77,27 +83,38 @@ class PointerTrail(QWidget):
         if self.points:
             self.timer.start()
 
+    @property
+    def points(self):
+        return self.field.points
+
+    def configure(self, style, color):
+        if style != self.field.style:
+            self.field = ParticleField(style)
+        self.color = QColor(color)
+        self.outlines.clear()
+
     def sample(self):
         if not self.enabled:
             return
         now, point = monotonic(), QCursor.pos()
-        if self.last is None or point != self.last:
-            if self.last is not None and (point-self.last).manhattanLength() > 240:
-                self.points.clear()
-            self.points.append((QPoint(point), now))
-            self.last = QPoint(point)
-        while self.points and now-self.points[0][1] > .42:
-            self.points.popleft()
-        if not self.points:
+        if not self.field.step(now, (point.x(),point.y())):
             self.hide()
             self.timer.stop()
             self.hook.start()
             return
-        xs, ys = [p.x() for p,_ in self.points], [p.y() for p,_ in self.points]
-        bounds = QRect(min(xs)-10, min(ys)-10, max(xs)-min(xs)+21, max(ys)-min(ys)+21)
-        if bounds.width()>420 or bounds.height()>420:
-            self.points.clear()
-            return
+        if self.field.style == "glow":
+            screen = QApplication.screenAt(point)
+            scale = screen.devicePixelRatio() if screen else 1.
+            self.outline = self.outlines.current(scale, self.color)
+            if self.outline is None:
+                self.hide()
+                return
+            origin = QPointF(point)-self.outline.hotspot
+            bounds = QRectF(origin,self.outline.glow.deviceIndependentSize()).toAlignedRect()
+        else:
+            xs, ys = [p.x for p in self.points], [p.y for p in self.points]
+            bounds = QRect(math.floor(min(xs))-10, math.floor(min(ys))-10,
+                           math.ceil(max(xs)-min(xs))+21, math.ceil(max(ys)-min(ys))+21)
         self.setGeometry(bounds)
         if not self.isVisible():
             self.show()
@@ -116,14 +133,28 @@ class PointerTrail(QWidget):
         now = monotonic()
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(Qt.PenStyle.NoPen)
-        for point, born in self.points:
-            age = min(1., (now-born)/.42)
+        style = self.field.style
+        for particle in self.points:
+            age = min(1.,max(0.,(now-particle.born)/LIFETIMES[style]))
+            center = QPointF(particle.x-self.x(),particle.y-self.y())
             color = QColor(self.color)
-            color.setAlpha(round(150*(1-age)**2))
-            painter.setBrush(color)
-            radius = 1.2+1.7*(1-age)
-            painter.drawEllipse(point-self.pos(), radius, radius)
+            painter.setPen(Qt.PenStyle.NoPen)
+            if style == "glow":
+                if self.outline is not None:
+                    paint_outline(painter,self.outline,center,self.color,now,(1-age)**.8)
+            elif style == "fall":
+                fade=min(1,age/.08)*(1-age)**1.6
+                radius=.55+.3*(.5+.5*math.sin(particle.phase))
+                glow=QColor(color);glow.setAlpha(round(28*fade))
+                painter.setBrush(glow);painter.drawEllipse(center,radius*3.2,radius*3.2)
+                color.setAlpha(round((185+25*math.sin(now*5+particle.phase)**2)*fade));painter.setBrush(color)
+                painter.drawEllipse(center,radius,radius)
+                color.setAlpha(round(60*fade))
+                painter.setPen(QPen(color,.55,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap))
+                painter.drawLine(center,center-QPointF(0,min(1.6,max(0,particle.vy)/80)))
+            else:
+                color.setAlpha(round(150*(1-age)**2));painter.setBrush(color)
+                radius=1.2+1.7*(1-age);painter.drawEllipse(center,radius,radius)
 
     def close_effect(self):
         self.set_enabled(False)
@@ -140,6 +171,11 @@ class PointerStyle(QObject):
         self.controller, self.settings = controller, controller.store.settings
         self.process = self.trail = None
         self.pending = None
+        self.builder = None
+        self.builds = set()
+        self.pending_directory = None
+        self.pending_color = None
+        self.pending_scale = None
         self.actual_theme = "system"
         self.buffer = b""
         self.closing = False
@@ -149,7 +185,7 @@ class PointerStyle(QObject):
 
     @property
     def active(self):
-        return self.process is not None or bool(self.trail and self.trail.enabled)
+        return self.pending is not None or self.process is not None or bool(self.trail and self.trail.enabled)
 
     def configure(self):
         self.set_particles(self.settings.cursor_particles)
@@ -162,6 +198,7 @@ class PointerStyle(QObject):
         try:
             if self.trail is not None:
                 if enabled:
+                    self.trail.configure(self.settings.particle_style, self.settings.particle_color)
                     self.trail.set_enabled(True)
                 else:
                     self.trail.close_effect()
@@ -176,8 +213,42 @@ class PointerStyle(QObject):
             self.error.emit(str(exc))
         self.changed.emit()
 
-    def set_theme(self, theme):
-        if theme not in THEMES or self.pending is not None or self.process in self.intentional:
+    def set_particle_options(self, style=None, color=None):
+        if style is not None:
+            if style not in STYLES:
+                return
+            self.settings.particle_style = style
+        if color is not None:
+            if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+                return
+            self.settings.particle_color = color.lower()
+        if self.trail:
+            self.trail.configure(self.settings.particle_style, self.settings.particle_color)
+        self.controller.store.save()
+        self.changed.emit()
+
+    def set_color(self, color):
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", color) or self.pending is not None:
+            return
+        if self.actual_theme == "system":
+            self.settings.cursor_color = color.lower()
+            self.controller.store.save()
+            self.changed.emit()
+        else:
+            self.set_theme(self.actual_theme, color.lower())
+
+    def set_size(self, percent):
+        if type(percent) is not int or not 75 <= percent <= 200 or self.pending is not None:
+            return
+        if self.actual_theme == "system":
+            self.settings.cursor_scale = percent
+            self.controller.store.save()
+            self.changed.emit()
+        else:
+            self.set_theme(self.actual_theme, scale=percent)
+
+    def set_theme(self, theme, color=None, scale=None):
+        if self.closing or theme not in THEMES or self.pending is not None or self.process in self.intentional:
             return
         if theme == "system" and self.process is None:
             self.settings.cursor_theme = self.actual_theme = "system"
@@ -189,6 +260,46 @@ class PointerStyle(QObject):
             self.error.emit(tr("鼠标主题组件不可用，请重新安装。"))
             return
         self.pending = theme
+        self.pending_color = color or self.settings.cursor_color
+        self.pending_scale = scale if scale is not None else self.settings.cursor_scale
+        self.pending_directory = None
+        if theme != "system":
+            job = CursorBuild(self.controller.store.directory/"cursor-cache", theme, self.pending_color, self)
+            self.builder = job
+            self.builds.add(job)
+            job.ready.connect(lambda path, j=job: self.built(j, path))
+            job.failed.connect(lambda message, j=job: self.build_failed(j, message))
+            job.finished.connect(lambda j=job: self.build_finished(j))
+            job.start()
+        else:
+            self.start_native(helper)
+        self.changed.emit()
+
+    def built(self, job, path):
+        if self.closing or job is not self.builder or self.pending is None:
+            return
+        self.builder = None
+        self.pending_directory = path
+        self.start_native(pointer_host())
+
+    def build_failed(self, job, message):
+        if self.closing or job is not self.builder:
+            return
+        logging.warning("Could not prepare cursor artwork: %s", message)
+        self.builder = None
+        self.pending = self.pending_color = None
+        self.pending_scale = None
+        self.error.emit(tr("无法生成自定义指针，请重试。"))
+        self.changed.emit()
+
+    def build_finished(self, job):
+        self.builds.discard(job)
+        job.deleteLater()
+
+    def start_native(self, helper):
+        if helper is None:
+            self.failed(tr("鼠标主题组件不可用，请重新安装。"))
+            return
         self.timeout.start()
         if self.process is None:
             process = QProcess(self)
@@ -201,11 +312,12 @@ class PointerStyle(QObject):
             process.start(str(helper), [])
         else:
             self.send()
-        self.changed.emit()
 
     def send(self):
         if self.process is not None and self.pending is not None:
-            command = "RESTORE\n" if self.pending == "system" else "APPLY\t"+str(ASSETS/"cursors"/self.pending)+"\n"
+            if self.pending != "system" and self.pending_directory is None:
+                return
+            command = "RESTORE\n" if self.pending == "system" else "APPLY\t"+self.pending_directory+"\t"+str(self.pending_scale)+"\n"
             self.process.write(command.encode("utf-8"))
 
     def read(self, process):
@@ -220,9 +332,15 @@ class PointerStyle(QObject):
             if line == b"OK" and self.pending is not None:
                 self.timeout.stop()
                 self.settings.cursor_theme = self.actual_theme = self.pending
+                if self.pending_color:
+                    self.settings.cursor_color = self.pending_color
+                if self.pending_scale:
+                    self.settings.cursor_scale = self.pending_scale
                 self.pending = None
+                self.pending_color = self.pending_directory = None
+                self.pending_scale = None
                 if self.trail:
-                    self.trail.color = QColor("#9ec8e7" if self.actual_theme in ("frost","graphite") else "#a6e4ca")
+                    self.trail.outlines.clear()
                 try:
                     self.controller.store.save()
                 except OSError as exc:
@@ -247,6 +365,8 @@ class PointerStyle(QObject):
             self.process is None or self.process.state() == QProcess.ProcessState.NotRunning)
         self.timeout.stop()
         self.pending = None
+        self.builder = None
+        self.pending_scale = None
         self.actual_theme = self.settings.cursor_theme = "system"
         self.stop_native()
         if needs_restore and (helper := pointer_host()):
@@ -291,6 +411,8 @@ class PointerStyle(QObject):
                     QProcess.startDetached(str(helper), ["--restore"])
                 self.actual_theme=self.settings.cursor_theme="system"
                 self.pending=None
+                self.builder=None
+                self.pending_scale=None
                 try:
                     self.controller.store.save()
                 except OSError:
@@ -303,6 +425,12 @@ class PointerStyle(QObject):
         self.closing = True
         self.timeout.stop()
         self.pending = None
+        self.builder = None
+        self.pending_scale = None
+        for job in tuple(self.builds):
+            job.requestInterruption()
+        for job in tuple(self.builds):
+            job.wait()  # Finite local QImage generation, never a network/native call.
         if self.trail:
             self.trail.close_effect()
             self.trail=None

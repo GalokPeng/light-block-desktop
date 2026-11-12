@@ -508,7 +508,7 @@ class MainWindow(QMainWindow):
         layout.addSpacing(5)
         group = QButtonGroup(self)
         self.nav_buttons = []
-        for index, title in enumerate((tr("壁纸库"), tr("桌面收纳"), tr("截屏"), tr("效率工具"), tr("设置"), tr("关于"))):
+        for index, title in enumerate((tr("壁纸"), tr("美化"), tr("截屏"), tr("工具"), tr("设置"), tr("关于"))):
             b = button(title, lambda checked=False, n=index: self.pages.setCurrentIndex(n), "nav")
             b.setIcon(navigation_icon(index, self.light))
             b.setIconSize(QSize(18, 18))
@@ -665,7 +665,6 @@ class MainWindow(QMainWindow):
 
     def _performance(self):
         from .settings_sections import SettingsSection
-        from .pointer_ui import PointerSettings
         page = QWidget()
         outer = QVBoxLayout(page)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -694,9 +693,6 @@ class MainWindow(QMainWindow):
         playback.body.addWidget(label(tr('每次启动默认静音，开启音轨前需要确认。'), 'muted', True))
         playback.body.addWidget(label(tr("始终启用：不抢焦点 · 锁屏与熄屏暂停"), "eyebrow", True))
         layout.addWidget(playback)
-        self.pointer_section = SettingsSection(tr("鼠标与指针"))
-        self.pointer_section.body.addWidget(PointerSettings(self))
-        layout.addWidget(self.pointer_section)
         self.eye_section = SettingsSection(tr("系统护眼 · 夜间模式"), tr("打开 Windows 原生夜间模式，调整暖色强度或时间计划。"))
         self.eye_status = label("", "muted", True)
         self.eye_button = button(tr("打开系统夜间模式设置"), self.open_eye_settings)

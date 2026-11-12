@@ -1,6 +1,8 @@
 // Original system cursor host. No registry writes; pipe EOF restores the scheme.
 #include <windows.h>
 #include <array>
+#include <algorithm>
+#include <charconv>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -67,13 +69,14 @@ struct Cursors {
         applied=false;
     }
 
-    bool apply(std::wstring const& directory) {
+    bool apply(std::wstring const& directory, int percent=100) {
         std::vector<std::pair<Role,HCURSOR>> loaded;
         auto user=GetModuleHandleW(L"user32.dll");
         auto dpi=reinterpret_cast<UINT(WINAPI*)()>(GetProcAddress(user,"GetDpiForSystem"));
         auto metrics=reinterpret_cast<int(WINAPI*)(int,UINT)>(GetProcAddress(user,"GetSystemMetricsForDpi"));
         int size=metrics && dpi ? metrics(SM_CXCURSOR,dpi()) : GetSystemMetrics(SM_CXCURSOR);
         if (size<16 || size>256) size=32;
+        size=std::clamp((size*percent+50)/100,16,256);
         for (auto role:roles) {
             if (role.optional && !LoadCursorW(nullptr,MAKEINTRESOURCEW(role.id))) continue;
             auto path=directory+L"\\"+role.file;
@@ -140,8 +143,18 @@ int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR command,int) {
                     if (line=="QUIT") { quit=true;break; }
                     if (line=="RESTORE") { cursors.restore();reply("OK");continue; }
                     if (line.starts_with("APPLY\t")) {
-                        auto directory=wide(line.substr(6));
-                        if (!directory.empty() && cursors.apply(directory)) reply("OK");
+                        auto argument=line.substr(6);
+                        int percent=100;
+                        bool valid=true;
+                        auto separator=argument.rfind('\t');
+                        if (separator!=std::string::npos) {
+                            auto scale=argument.substr(separator+1);
+                            auto [end,error]=std::from_chars(scale.data(),scale.data()+scale.size(),percent);
+                            valid=error==std::errc{} && end==scale.data()+scale.size() && percent>=75 && percent<=200;
+                            argument.resize(separator);
+                        }
+                        auto directory=wide(argument);
+                        if (valid && !directory.empty() && cursors.apply(directory,percent)) reply("OK");
                         else reply("ERROR "+std::to_string(GetLastError()));
                     } else { reply("ERROR protocol");result=1;quit=true;break; }
                 }

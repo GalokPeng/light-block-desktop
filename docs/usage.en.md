@@ -46,9 +46,11 @@ Drag a pinned note's title to move it, or drag any edge or corner to resize. Pos
 
 ## Mouse and system appearance
 
-**Settings → Mouse and Cursors** offers three original themes: Frost, Graphite and Mint. They cover text, links, resizing, location/person selection and animated busy states, with a handwriting cursor where Windows supports it. Native cursor files include multiple DPI sizes. A small C++ helper waits for pipe commands while a theme is enabled; it restores the registered Windows cursor scheme on quit or parent pipe closure without registry changes. It avoids replacing a scheme taken over by another application. Source users first build `tools/build_pointer_host.ps1`; release packages include it.
+**Appearance → Mouse and Cursors** offers three original silhouettes: Stream (soft and solid), Prism (open geometry) and Pixel (retro steps). They cover text, links, resizing, location/person selection and animated busy states, with a handwriting cursor where Windows supports it. Native cursor files include multiple DPI sizes. A small C++ helper waits for pipe commands while a theme is enabled; it restores the registered Windows cursor scheme on quit or parent pipe closure without registry changes. It avoids replacing a scheme taken over by another application. Source users first build `tools/build_pointer_host.ps1`; release packages include it.
 
-The optional particle trail is off by default. Movement uses at most 30 fps and 20 points; after 0.42 seconds idle the trail fades and its drawing timer stops. Disabling releases the window and mouse listener. Enabled themes or effects keep the app running when Settings close. Quit to restore the system scheme and stop effects.
+Cursor colors and size (75%–200%) are independent of particles. Native loading follows system DPI and scales the hotspots with each role. With the system scheme, color and size are saved for the next custom theme. Custom colors are generated in a background worker and cached, with at most eight generated combinations.
+
+Particle effects are off by default. Mix any cursor with independently colored Dots (up to 20 points / 0.42 s), Falling (inertia, drag and gravity, up to 64 fine specks / 1.25 s), or Glow (the actual native cursor’s outer edge / 1.05 s, with at most 16 cached silhouettes). All modes use at most 30 fps, settle when idle and stop the drawing timer. Disabling releases the window and mouse listener. Enabled themes or effects keep the app running when Settings close. Quit to restore the system scheme and stop effects.
 
 **Settings → Eye Comfort · Windows Night Light** opens the native Windows settings page. Windows controls its switch, warmth and schedule. The app does not simulate a system toggle using private registry data or a color overlay. Unsupported Windows versions, known incompatible drivers, remote sessions and disabled system policies gray out the entry. Windows Settings makes the final driver capability check.
 
@@ -73,3 +75,7 @@ Drag the two recording timeline handles to trim. Click either handle, then use L
 | Notes & Tasks | Write and search notes, mark tasks done, archive, set reminders or pin notes to the desktop |
 | File Workbench | Preview images or text, inspect properties, calculate SHA-256 and preview batch renames with recovery and undo |
 | Focus Workspaces | Save wallpaper and existing group positions. Apply the workspace and run focus or break timers |
+
+Appearance groups organizer, taskbar, mouse and group settings. New profiles start with the organizer at the bottom; existing alignment choices are preserved. The taskbar radius stays visible and can be configured before styling is enabled. It updates all three native backgrounds, including with auto-hide enabled. Custom note colors show a short label and swatch; hover for the full hex value.
+
+In **Appearance → Organizer Settings**, choose **Icon background color** and **Organizer background color** independently. They apply to top, center and bottom layouts, including icons inside groups. Group folders retain their own colors. Light panels adjust titles, captions, Back and Search for contrast. **Reset organizer colors** clears just these two choices; groups, opacity and layout stay unchanged. Recoloring repaints without reloading icons or rebuilding the layout.

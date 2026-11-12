@@ -184,6 +184,12 @@ class MediaProcess(QObject):
 
     def ended(self,process,code):
         if process is not self.process:return
+        # QProcess can finish while Qt tears down its owner's children. Python
+        # callbacks may still exist after the sibling timers were destroyed.
+        if not isValid(self) or not all(isValid(timer) for timer in (self.deadline,self.stop_timer,self.watch)):
+            self.process=self.pending=None
+            if self.job:self.job.close();self.job=None
+            return
         unexpected=not self.stopping and (not self.loaded or self.request['mode']!='thumbnail')
         self.deadline.stop();self.stop_timer.stop();self.watch.stop()
         self.process=None

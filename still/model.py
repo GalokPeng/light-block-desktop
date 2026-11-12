@@ -14,7 +14,7 @@ from .i18n import tr
 from .profile import choose_directory, default_directory, legacy_directory
 from .recording_options import FRAME_RATES, RESOLUTIONS
 
-VERSION = "0.9.3"
+VERSION = "1.0.0"
 APP_NAME = "轻块桌面"
 DEFAULT_ORGANIZER_TITLE = "桌面收纳"
 DEFAULT_CAPTURE_SHORTCUT = "Ctrl+Alt+A"
@@ -114,14 +114,18 @@ class Settings:
     taskbar_color: str = "#263038"
     taskbar_opacity: int = 79
     cursor_theme: str = "system"
+    cursor_color: str = "#d9f2ed"
+    cursor_scale: int = 100
     cursor_particles: bool = False
+    particle_style: str = "dots"
+    particle_color: str = "#a6e4ca"
     dock_glass: bool = True
     dock_opacity: int = 70
     dock_color: str = "#263038"
     dock_pins: list[str] | None = None
     organizer_enabled: bool = False
     organizer_auto_collect: bool = True
-    organizer_alignment: str = "center"
+    organizer_alignment: str = "bottom"
     organizer_views: dict[str, str] = field(default_factory=dict)
     organizer_icon_size: int | None = None
     organizer_position: list[int] | None = None
@@ -130,6 +134,8 @@ class Settings:
     organizer_pending: list = field(default_factory=list)
     organizer_loose: list = field(default_factory=list)
     organizer_opacity: int = 165
+    organizer_icon_color: str | None = None
+    organizer_background_color: str | None = None
     organizer_glass: bool = True
     organizer_mesh: bool = True
     organizer_auto_classified: bool = False
@@ -190,7 +196,7 @@ class Store:
                 pins = self.settings.dock_pins
                 self.settings.dock_pins = normalize_dock_pins(pins) if isinstance(pins, list) else None
                 if self.settings.organizer_alignment not in ("top", "center", "bottom"):
-                    self.settings.organizer_alignment = "center"
+                    self.settings.organizer_alignment = "bottom"
                 views = self.settings.organizer_views
                 self.settings.organizer_views = {key: value for key, value in views.items()
                     if key in ("top", "center", "bottom") and value in ("groups", "name", "time")} if isinstance(views, dict) else {}
@@ -206,9 +212,22 @@ class Store:
                     self.settings.capture_shortcut = DEFAULT_CAPTURE_SHORTCUT
                 self.settings.wallpaper_sound = self.settings.wallpaper_sound is True
                 self.settings.organizer_auto_collect = self.settings.organizer_auto_collect is not False
+                for key in ("organizer_icon_color", "organizer_background_color"):
+                    value = getattr(self.settings, key)
+                    if value is not None and (not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value)):
+                        setattr(self.settings, key, None)
                 self.settings.cursor_particles = self.settings.cursor_particles is True
-                if self.settings.cursor_theme not in ("system", "frost", "graphite", "mint"):
+                self.settings.cursor_theme = {"frost": "stream", "graphite": "outline", "mint": "pixel"}.get(self.settings.cursor_theme, self.settings.cursor_theme) if isinstance(self.settings.cursor_theme, str) else "system"
+                if self.settings.cursor_theme not in ("system", "stream", "outline", "pixel"):
                     self.settings.cursor_theme = "system"
+                for key, default in (("cursor_color", "#d9f2ed"), ("particle_color", "#a6e4ca")):
+                    value = getattr(self.settings, key)
+                    if not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+                        setattr(self.settings, key, default)
+                if type(self.settings.cursor_scale) is not int or not 75 <= self.settings.cursor_scale <= 200:
+                    self.settings.cursor_scale = 100
+                if self.settings.particle_style not in ("dots", "fall", "glow"):
+                    self.settings.particle_style = "dots"
                 if not isinstance(self.settings.taskbar_color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", self.settings.taskbar_color):
                     self.settings.taskbar_color = "#263038"
                 if type(self.settings.taskbar_opacity) is not int:

@@ -284,6 +284,19 @@ class UpdateTests(unittest.TestCase):
                                      release_check=SimpleNamespace(busy=True), native_taskbar_style=None, hotkeys=None, workbench=None)
         self.assertTrue(Controller.needs_background(controller))
 
+    def test_chinese_update_button_shows_progress_and_installation_states(self):
+        updater=SimpleNamespace(state="downloading",received=42,total=100,source="GitHub",error="")
+        window=SimpleNamespace(updater=updater,update_button=Mock())
+        with patch("still.i18n.display_language",return_value="zh"):
+            MainWindow.refresh_update(window)
+            window.update_button.setText.assert_called_with("下载中 42%")
+            self.assertIn("GitHub",window.update_button.setToolTip.call_args.args[0])
+            for state,text in (("verifying","正在校验安装包…"),("preparing","正在准备安装…"),("installing","正在退出并更新…")):
+                updater.state=state
+                MainWindow.refresh_update(window)
+                window.update_button.setText.assert_called_with(text)
+                window.update_button.setEnabled.assert_called_with(False)
+
     def test_clicking_update_downloads_in_app_and_clicking_again_cancels(self):
         with TemporaryDirectory() as folder:
             check = ReleaseCheck(self.app, folder)

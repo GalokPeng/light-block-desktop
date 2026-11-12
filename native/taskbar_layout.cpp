@@ -52,15 +52,16 @@ struct Status {
     LONG changes, reserved;
     double hostWidth, frameWidth, trayWidth, groupLeft, groupRight, scale;
     LONG appearanceRevision, appearanceColor, appearanceOpacity, appearanceFlags;
+    LONG appearanceRadius, appearanceReserved;
 };
-static_assert(sizeof(Status) == 96);
+static_assert(sizeof(Status) == 104);
 enum State { waiting, healthy, repairing, incompatible, conflict };
 
 void publish(Status* status, State state, LONG repairs=0, LONG rebuilds=0, LONG error=0,
              double host=0, double frame=0, double tray=0, double left=0, double right=0, LONG changes=0, LONG gutters=0) {
     if (!status) return;
     InterlockedIncrement(&status->sequence);
-    status->version = 3;
+    status->version = 4;
     status->state = state;
     status->repairs = repairs;
     status->rebuilds = rebuilds;
@@ -352,6 +353,8 @@ struct Layout {
         for (auto const& button : {power,settingsButton,taskManagerButton}) if (button) button.Foreground(foreground);
         for (auto const& border : {controls,apps,trayBack}) {
             if (!border) continue;
+            auto radius=static_cast<double>(std::clamp(status->appearanceRadius,6L,26L));
+            border.CornerRadius({radius,radius,radius,radius});
             auto brush=border.Background().try_as<Media::AcrylicBrush>();
             if (!brush) continue;
             brush.TintColor(color);
