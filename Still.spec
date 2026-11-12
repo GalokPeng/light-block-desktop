@@ -24,6 +24,12 @@ if not updater or not Path(updater).is_file():
 bundled_updater = root / 'build' / 'update-launcher' / 'QingkuaiUpdate.exe'
 copyfile(updater, bundled_updater)
 resources.append((str(bundled_updater), 'runtime'))
+pointer = os.environ.get('STILL_POINTER_HOST')
+if not pointer or not Path(pointer).is_file():
+    raise SystemExit('Build with build.ps1 so the native cursor host is included.')
+bundled_pointer = root / 'build' / 'pointer-host' / 'QingkuaiPointer.exe'
+copyfile(pointer, bundled_pointer)
+resources.append((str(bundled_pointer), 'runtime'))
 taskbar = os.environ.get('STILL_TASKBAR_DLL')
 native_binaries = []
 if taskbar:

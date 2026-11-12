@@ -36,7 +36,8 @@ class ToolsDB:
         """)
         self.connection.commit()
         for table, additions in {
-            "notes": {"archived": "INTEGER DEFAULT 0", "pin_x": "INTEGER", "pin_y": "INTEGER"},
+            "notes": {"archived": "INTEGER DEFAULT 0", "pin_x": "INTEGER", "pin_y": "INTEGER",
+                      "pin_w": "INTEGER DEFAULT 290", "pin_h": "INTEGER DEFAULT 240"},
             "focus_sessions": {"rest": "INTEGER DEFAULT 5", "pause_wallpaper": "INTEGER DEFAULT 1"},
         }.items():
             columns = {row["name"] for row in self.connection.execute("PRAGMA table_info("+table+")")}

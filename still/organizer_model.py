@@ -301,12 +301,28 @@ class Collections:
 
     def put_away(self, entry, group=None):
         """Move a loose reference into a group; never move the desktop file."""
+        self.put_away_many([entry], group)
+
+    def put_away_many(self, entries, group=None):
+        """Commit a burst once, preserving in-memory objects on write failure."""
+        previous_groups, previous_loose = self.groups[:], self.loose[:]
+        previous_entries = [(owner, owner["entries"][:]) for owner in self.groups]
+        try:
+            for entry in entries:
+                self._place_loose(entry, group)
+            self.write_manifest()
+        except (OSError, ValueError):
+            self.groups[:] = previous_groups
+            self.loose[:] = previous_loose
+            for owner, before in previous_entries:
+                owner["entries"][:] = before
+            raise
+
+    def _place_loose(self, entry, group=None):
         if entry not in self.loose:
             return
         if not Path(entry["target"]).exists():
             raise FileNotFoundError(tr("找不到：{0}").format(entry["name"]))
-        previous_groups = self.groups[:]
-        previous_loose = self.loose[:]
         if group is None:
             path = Path(entry["target"])
             category = "folders" if path.is_dir() else SUFFIX_CATEGORY.get(path.suffix.lower(), "other")
@@ -317,17 +333,9 @@ class Collections:
                 group["auto_category"] = category
         if group not in self.groups:
             raise ValueError("Unknown collection group")
-        previous_entries = group["entries"][:]
         if not any(os.path.normcase(e["target"]) == os.path.normcase(entry["target"]) for e in group["entries"]):
             group["entries"].append(entry)
         self.loose.remove(entry)
-        try:
-            self.write_manifest()
-        except OSError:
-            self.groups[:] = previous_groups
-            self.loose[:] = previous_loose
-            group["entries"][:] = previous_entries
-            raise
 
     def add_paths(self, group, paths):
         paths = [Path(path).absolute() for path in paths]

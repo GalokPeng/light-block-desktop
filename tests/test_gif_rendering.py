@@ -42,45 +42,45 @@ class GifRenderingTests(unittest.TestCase):
         self.directory.cleanup()
 
     def test_gif_uses_native_video_output_with_changing_pixels(self):
+        import time
+        source_size = QImageReader(str(item_path(self.gif))).size()
+        snapshots = []
+        self.engine.media.message.connect(lambda result: snapshots.append(result) if result.get("phase")=="snapshot" else None)
+        def snapshot():
+            previous = len(snapshots)
+            self.engine.media.control("snapshot")
+            deadline = time.monotonic()+4
+            while len(snapshots)==previous and time.monotonic()<deadline:
+                pump(.03)
+            self.assertGreater(len(snapshots), previous)
+            return snapshots[-1]
         for _ in range(2):
             self.engine.apply(self.gif)
-            surface = self.engine.surface
-            self.assertIsInstance(surface, QVideoWidget)
-            self.assertIsNotNone(self.engine.player)
-            self.assertEqual(win32.GetParent(int(surface.winId())), self.engine.worker)
-            colors, timestamps = [], []
-            source_size = QImageReader(str(item_path(self.gif))).size()
-            def frame_arrived(frame):
-                if frame.isValid():
-                    self.assertEqual(frame.size(), source_size)
-                    image = frame.toImage()
-                    small = image.scaled(32, 18)
-                    colors.append(bytes(small.constBits()))
-                    timestamps.append(frame.startTime())
-            surface.videoSink().videoFrameChanged.connect(frame_arrived)
-            # Backend startup can take longer during concurrent build/driver
-            # initialization. Wait for observable frames, with a hard deadline.
-            import time
-            deadline = time.monotonic() + 4
-            while time.monotonic() < deadline and (len(timestamps) < 4 or len(set(colors)) < 2):
-                pump(0.1)
-            self.assertTrue(self.engine.player.hasVideo())
-            self.assertGreaterEqual(len(set(colors)), 2, colors)
-            self.assertGreaterEqual(len(set(timestamps)), 3)
-            self.assertEqual(Path(self.engine.player.source().toLocalFile()), item_path(self.gif))
-            self.assertIsNone(self.engine.player.audioOutput())
-            self.engine.pause()
-            pump(0.1)
-            frozen = self.engine.player.position()
-            pump(0.3)
-            self.assertEqual(self.engine.player.position(), frozen)
-            self.engine.pause()
-            pump(0.4)
-            self.assertNotEqual(self.engine.player.position(), frozen)
-        # Cross the GIF's original end boundary and verify native looping.
+            deadline = time.monotonic()+8
+            while self.engine.busy and time.monotonic()<deadline:
+                pump(.05)
+            self.assertIsNotNone(self.engine.surface)
+            self.assertIsNotNone(self.engine.media.process)
+            self.assertEqual(win32.GetParent(self.engine.surface),self.engine.worker)
+            frames = []
+            for _ in range(4):
+                frames.append(snapshot())
+                pump(.15)
+            self.assertTrue(all((f["width"],f["height"])==(source_size.width(),source_size.height()) for f in frames))
+            self.assertGreater(len({f["digest"] for f in frames}),1)
+            self.assertGreater(frames[-1]["frames"],frames[0]["frames"])
+            self.assertTrue(all(not f["audio_output"] and f["audio_track"]==-1 for f in frames))
+            self.assertEqual(Path(self.engine.media.request["path"]),item_path(self.gif))
+            self.assertFalse(self.engine.media.request["sound"])
+            self.engine.pause();pump(.2)
+            frozen = snapshot()["position"]
+            pump(.3)
+            self.assertEqual(snapshot()["position"],frozen)
+            self.engine.pause();pump(.4)
+            self.assertNotEqual(snapshot()["position"],frozen)
         pump(4.2)
-        self.assertTrue(self.engine.player.isPlaying())
-        self.assertEqual(self.engine.player.loops(), QMediaPlayer.Loops.Infinite)
+        self.assertEqual(self.engine.state,"playing")
+        self.assertGreater(snapshot()["frames"],frames[-1]["frames"])
 
     def test_preview_animates_only_when_visible(self):
         preview = Preview()

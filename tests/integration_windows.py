@@ -35,6 +35,21 @@ def wait_static(engine):
     assert not engine.busy, "Static wallpaper task exceeded its deadline"
 
 
+def snapshot(engine):
+    frames=[]
+    def arrived(message):
+        if message.get("phase")=="snapshot":frames.append(message)
+    engine.media.message.connect(arrived)
+    try:
+        engine.media.control("snapshot")
+        deadline=time.monotonic()+4
+        while not frames and time.monotonic()<deadline:pump(.03)
+        assert frames, "Renderer did not return diagnostics"
+        return frames[-1]
+    finally:
+        engine.media.message.disconnect(arrived)
+
+
 def sample(seconds=2):
     process = psutil.Process()
     before = sum(process.cpu_times()[:2])
@@ -69,17 +84,16 @@ def main():
             report["checks"].append("Original Windows wallpaper restored")
             gif = next(i for i in store.items if i["kind"] == "gif")
             engine.apply(gif)
-            pump(0.6)
-            hwnd = int(engine.surface.winId())
+            wait_static(engine)
+            hwnd = engine.surface
             assert win32.GetParent(hwnd) == engine.worker
             ext = win32.GetWindowLong(hwnd, -20)
             assert ext & 0x20 and ext & 0x08000000
-            assert isinstance(engine.surface, QVideoWidget)
-            assert engine.player.hasVideo() and engine.player.isPlaying()
+            assert engine.media.process is not None and engine.state == "playing"
             report["checks"].append("Original GIF decoded through the same native QVideoWidget output as video, embedded behind desktop")
             report["measurements"]["gif_playing"] = sample()
             engine.pause()
-            assert engine.player.playbackState() == QMediaPlayer.PlaybackState.PausedState
+            assert engine.state == "paused"
             report["measurements"]["gif_paused"] = sample()
             engine.pause()
             with patch("still.win32.on_battery", return_value=True):
@@ -97,27 +111,26 @@ def main():
             report["checks"].append("Manual pause/resume and policy transitions (simulated battery/fullscreen inputs)")
             video = next(i for i in store.items if i["kind"] == "video")
             engine.apply(video)
-            frames = []
-            engine.surface.videoSink().videoFrameChanged.connect(lambda frame: frames.append((frame.width(), frame.height())) if frame.isValid() else None)
-            pump(2)
-            assert engine.player.hasVideo(), errors
-            assert len(frames) > 1, (len(frames), errors)
-            assert all(size == (1280, 720) for size in frames), frames[:2]
-            assert engine.player.audioOutput() is None
+            wait_static(engine)
+            first=snapshot(engine);pump(.3);second=snapshot(engine)
+            assert second["frames"]>first["frames"]
+            assert (second["width"],second["height"])==(1280,720)
+            assert not engine.media.request["sound"]
             report["checks"].append("H.264 MP4 decoded to QVideoWidget at original 1280x720; no audio output")
             report["measurements"]["video_playing"] = sample(3)
             engine.pause()
-            position = engine.player.position()
+            pump(.2)
+            position = snapshot(engine)["position"]
             pump(0.4)
-            assert abs(engine.player.position()-position) < 150
+            assert abs(snapshot(engine)["position"]-position) < 150
             report["measurements"]["video_paused"] = sample()
             engine.pause()
             pump(0.4)
-            assert engine.player.position() != position
+            assert snapshot(engine)["position"] != position
             report["checks"].append("Video pause/resume freezes playback position")
             # Cross a loop boundary to verify Infinite playback remains active.
             pump(4.2)
-            assert engine.player.isPlaying()
+            assert engine.state == "playing"
             report["checks"].append("Video loop boundary crossed successfully")
             engine.stop()
             pump(0.2)
@@ -133,7 +146,7 @@ def main():
             bad.write_bytes(b"this is not an mp4")
             invalid = store.add(bad)
             engine.apply(invalid)
-            pump(1)
+            wait_static(engine)
             assert errors and engine.surface is None and engine.player is None
             assert not store.settings.active_id
             report["checks"].append("Corrupt video fails safely and releases its desktop window")

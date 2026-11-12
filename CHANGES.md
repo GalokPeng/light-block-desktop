@@ -1,3 +1,17 @@
+# v0.9.3 · 壁纸切换稳定性与桌面优化 / Playback stability and desktop improvements
+
+- 修复开启音轨后切换视频可能卡住整个设置窗口的问题。GIF、视频、在线动态预览和视频封面改由受保护的媒体进程处理，退出、加载和控制均有超时；主进程意外退出时回收播放器。
+- 静图、GIF、视频统一管理切换顺序：旧桌面播放器退出后才打开下一个，首帧成功后才提交“已应用”；从在线预览应用也先等待预览退出。恢复、删除当前素材等待文件句柄释放，避免迟到回调提交旧结果。原文件画质、分辨率、帧率不变。
+- 声音每次启动默认关闭，开启前提示确认；改变音轨状态会重新加载视频，避免热插拔正在使用的音频输出。补充切换与进程退出日志，修复日志文件可能为空的问题。
+- 默认开启“自动收纳新增内容”：新增桌面项目保留一分钟后自动收纳，拖动、悬停或操作菜单时暂缓。使用单次截止定时器，不增加周期性桌面扫描。
+- 桌面便签支持拖动边缘改变大小、长正文滚轮浏览且不显示滚动条、自选颜色；尺寸与位置保存。分组颜色同时作用于小卡片和展开面板。
+- 桌面收纳设置分为收纳、任务栏和分组管理三个折叠区；兼容的 Windows 11 原生任务栏可调背景颜色和 0–100% 不透明度，文字与图标保持清晰。
+- 新增原创“霜白、曜黑、薄荷”三套系统指针和可选鼠标粒子。指针由原生辅助程序管理，退出恢复系统方案；粒子停止移动后淡出停绘，关闭后释放监听。
+- “播放与性能”改名“设置”，增加 Windows 原生夜间模式设置入口；已知不支持的系统、显示驱动、远程会话或策略环境禁用入口。开关、强度与计划由 Windows 页面管理。
+- Fixes a reproduced settings-window hang while retiring an audio-enabled video. GIFs, videos, online motion previews and thumbnail decoding now run in supervised media processes with bounded startup, control and shutdown. Switching waits for the old renderer and commits only after a valid frame; current-file deletion waits for handles to close. Original media quality and frame rate are preserved.
+- Wallpaper sound starts muted each session and requires confirmation to enable. Sound changes reload the video. Adds reliable lifecycle logs, one-minute automatic collection, resizable and scrollable notes with custom colors, visible group tinting and collapsible settings sections.
+- Adds background color/opacity controls for compatible Windows 11 taskbars, three original cursor themes and an optional idle-stopping mouse trail. Playback Settings becomes Settings, with an availability-checked link to native Windows Night light controls.
+
 # v0.9.1 · 静态壁纸切换卡死修复 / Static wallpaper switching fix
 
 - 静态壁纸的原壁纸备份、全尺寸格式转换及 Windows 设置调用移至独立任务，避免系统或文件访问等待阻塞界面。任务具有准备及系统调用超时，退出时清理子进程。

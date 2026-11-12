@@ -170,7 +170,8 @@ def run_helper():
                 raise ValueError("invalid radius")
             try:
                 if layout:
-                    result = layout.update(request.get("hidden") is True, request.get("revealed") is True)
+                    result = layout.update(request.get("hidden") is True, request.get("revealed") is True,
+                                           request.get("color"), request.get("opacity"))
                 else:
                     result = regions.update(radius)
             except OSError:

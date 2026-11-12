@@ -66,13 +66,21 @@ def desktop_layer(hwnd):
     return owner
 
 
-def paint_desktop_panel(painter, rect, opacity):
+def paint_desktop_panel(painter, rect, opacity, tint=None):
     alpha = min(241, max(149, int(opacity) + 27))
+    def shade(red, green, blue, alpha):
+        if tint is not None:
+            color = QColor(tint)
+            red, green, blue = (round(base * .67 + value * .33) for base, value in
+                                zip((red, green, blue), (color.red(), color.green(), color.blue())))
+        return QColor(red, green, blue, alpha)
     fill = QLinearGradient(0, rect.top(), 0, rect.bottom())
-    fill.setColorAt(0, QColor(39, 51, 71, alpha))
-    fill.setColorAt(1, QColor(20, 28, 43, min(248, alpha + 20)))
+    fill.setColorAt(0, shade(39, 51, 71, alpha))
+    fill.setColorAt(1, shade(20, 28, 43, min(248, alpha + 20)))
     painter.setBrush(fill)
-    painter.setPen(QPen(QColor(230, 239, 255, 78), 1))
+    edge = QColor(tint) if tint is not None else QColor(230, 239, 255)
+    edge.setAlpha(125 if tint is not None else 78)
+    painter.setPen(QPen(edge, 1))
     painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 23, 23)
 
 

@@ -14,7 +14,7 @@ from .i18n import tr
 from .profile import choose_directory, default_directory, legacy_directory
 from .recording_options import FRAME_RATES, RESOLUTIONS
 
-VERSION = "0.9.1"
+VERSION = "0.9.3"
 APP_NAME = "轻块桌面"
 DEFAULT_ORGANIZER_TITLE = "桌面收纳"
 DEFAULT_CAPTURE_SHORTCUT = "Ctrl+Alt+A"
@@ -111,11 +111,16 @@ class Settings:
     settings_language: str = "system"
     taskbar_style_enabled: bool = False
     taskbar_radius: int = DEFAULT_TASKBAR_RADIUS
+    taskbar_color: str = "#263038"
+    taskbar_opacity: int = 79
+    cursor_theme: str = "system"
+    cursor_particles: bool = False
     dock_glass: bool = True
     dock_opacity: int = 70
     dock_color: str = "#263038"
     dock_pins: list[str] | None = None
     organizer_enabled: bool = False
+    organizer_auto_collect: bool = True
     organizer_alignment: str = "center"
     organizer_views: dict[str, str] = field(default_factory=dict)
     organizer_icon_size: int | None = None
@@ -200,6 +205,15 @@ class Store:
                 if not isinstance(self.settings.capture_shortcut, str) or not self.settings.capture_shortcut:
                     self.settings.capture_shortcut = DEFAULT_CAPTURE_SHORTCUT
                 self.settings.wallpaper_sound = self.settings.wallpaper_sound is True
+                self.settings.organizer_auto_collect = self.settings.organizer_auto_collect is not False
+                self.settings.cursor_particles = self.settings.cursor_particles is True
+                if self.settings.cursor_theme not in ("system", "frost", "graphite", "mint"):
+                    self.settings.cursor_theme = "system"
+                if not isinstance(self.settings.taskbar_color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", self.settings.taskbar_color):
+                    self.settings.taskbar_color = "#263038"
+                if type(self.settings.taskbar_opacity) is not int:
+                    self.settings.taskbar_opacity = 79
+                self.settings.taskbar_opacity = max(0, min(100, self.settings.taskbar_opacity))
                 self.settings.record_lossless = self.settings.record_lossless is True
                 if type(self.settings.record_fps) is not int or self.settings.record_fps not in FRAME_RATES:
                     self.settings.record_fps = None

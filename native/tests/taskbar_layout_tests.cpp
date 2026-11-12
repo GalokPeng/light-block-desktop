@@ -228,6 +228,48 @@ int main(int argc, char** argv) {
             require(!fractional.scheduled && fractional.repairCount==0,"subpixel coercion caused repeated repairs");
         }
         std::cout << "PASS subpixel width coercion does not schedule redundant layout repairs\n";
+        {
+            Status appearance{};
+            Grid colors, mainFrame, nativeTray;
+            mainFrame.RequestedTheme(ElementTheme::Light);
+            nativeTray.RequestedTheme(ElementTheme::Light);
+            {
+            Layout styled(&appearance);
+            styled.host=colors; styled.frame=mainFrame; styled.tray=nativeTray;
+            styled.controls=Border(); styled.apps=Border(); styled.trayBack=Border();
+            for (auto border : {styled.controls,styled.apps,styled.trayBack})
+                border.Background(Media::AcrylicBrush());
+            appearance.appearanceFlags=1;
+            appearance.appearanceColor=0x162738;
+            appearance.appearanceOpacity=73;
+            appearance.appearanceRevision=1;
+            styled.apply_appearance();
+            auto leases=styled.properties.size();
+            require(mainFrame.RequestedTheme()==ElementTheme::Dark,"dark tint left native text dark");
+            for (auto border : {styled.controls,styled.apps,styled.trayBack}) {
+                auto brush=border.Background().as<Media::AcrylicBrush>();
+                require(brush.TintColor().R==0x16 && std::abs(brush.TintOpacity()-.73)<.0001,
+                        "background appearance did not reach all three sections");
+                require(std::abs(border.Opacity()-.73)<.0001,"fallback background ignored opacity");
+            }
+            for (int i=0; i<100; ++i) {
+                appearance.appearanceColor=i%2 ? 0xffffff : 0x101010;
+                appearance.appearanceOpacity=i%2 ? 100 : 0;
+                ++appearance.appearanceRevision;
+                styled.apply_appearance();
+                require(styled.controls.Opacity()==(i%2 ? 1. : 0.),"zero opacity did not remove only the background");
+                require(mainFrame.Opacity()==1 && nativeTray.Opacity()==1,"native content was faded");
+            }
+            require(styled.properties.size()==leases,"appearance changes accumulated property leases");
+            require(mainFrame.RequestedTheme()==ElementTheme::Light,"light tint lost readable native text");
+            auto revision=styled.appearanceRevision;
+            styled.apply_appearance();
+            require(styled.appearanceRevision==revision && !styled.scheduled,"idle appearance scheduled repairs");
+            }
+            require(mainFrame.RequestedTheme()==ElementTheme::Light && nativeTray.RequestedTheme()==ElementTheme::Light,
+                    "original native theme was not restored");
+        }
+        std::cout << "PASS three-section appearance, contrast, bounded leases and original theme restoration\n";
         island.Close();
         DestroyWindow(window);
         manager.Close();

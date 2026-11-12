@@ -202,14 +202,12 @@ class WallpaperLibraryTests(unittest.TestCase):
             cache = VideoThumbnails(Path(directory))
             removed, kept = Path(directory) / "removed.mp4", Path(directory) / "kept.mp4"
             cache.pending = {"removed": removed, "kept": kept}
-            cache.player = Mock()
-            cache.active = "removed", removed, QObject(cache)
-            cache.first_frame = QImage()
+            cache.worker.stop = Mock()
+            cache.active = "removed", removed
             cache.cancel(removed)
             self.assertEqual(cache.pending, {"kept": kept})
             self.assertIsNone(cache.active)
             self.assertNotIn("removed", cache.failed)
-            cache.player.stop.assert_called_once()
-            cache.player.setSource.assert_called_once_with(QUrl())
+            cache.worker.stop.assert_called_once()
             cache.close()
             cache.deleteLater()

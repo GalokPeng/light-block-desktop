@@ -334,7 +334,7 @@ class FolderTile(QAbstractButton):
         plate = QRectF(21, 4, 74, 74)
         accent = QColor(COLORS.get(self.group.get("color"), COLORS["mint"]))
         tint = QColor(accent)
-        tint.setAlpha(95 if self.isDown() else 64 if self.underMouse() else 30)
+        tint.setAlpha(160 if self.isDown() else 145 if self.underMouse() else 112)
         outline = QColor("#9cc5ff") if self.drop_hover else QColor(224, 235, 255, 80 if self.underMouse() else 42)
         painter.setPen(QPen(outline, 2 if self.drop_hover else 1))
         painter.setBrush(tint)
@@ -808,7 +808,7 @@ class DesktopShelf(QWidget):
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             tint = QColor(COLORS.get(group.get("color"), COLORS["mint"]))
-            tint.setAlpha(70)
+            tint.setAlpha(145)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(tint)
             painter.drawRoundedRect(QRectF(1, 1, 94, 94), 20, 20)
@@ -1032,7 +1032,8 @@ class DesktopShelf(QWidget):
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
         painter.fillRect(event.rect(), Qt.GlobalColor.transparent)
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
-        native.paint_desktop_panel(painter, rect, self.manager.store.settings.organizer_opacity)
+        accent = COLORS.get(self.group.get("color"), COLORS["mint"]) if self.group else None
+        native.paint_desktop_panel(painter, rect, self.manager.store.settings.organizer_opacity, accent)
         if self.sprite is not None:
             # Show one fully lit page throughout the size change.
             painter.setClipRect(rect.adjusted(2, 2, -2, -2))
@@ -1158,6 +1159,8 @@ class OrganizerManager(QObject):
         self.collections = Collections(self.store)
         self.shelf = None
         self.loose_icons = {}
+        from .auto_collect import AutoCollector
+        self.auto_collector = AutoCollector(self)
         self.desktop_icons = DesktopIconLease(self.store.directory)
         self.provider = QFileIconProvider()
         self.icons = OrderedDict()
@@ -1232,9 +1235,11 @@ class OrganizerManager(QObject):
                 if wanted - current:
                     self.desktop_paths.addPaths(list(wanted - current))
             previous_count = sum(len(group["entries"]) for group in self.collections.groups)
+            previous_loose = tuple((e["id"], e["target"]) for e in self.collections.loose)
             count = self.collections.classify_desktop(roots, snapshot=self.desktop_snapshot, only_new=automatic,
                                                        defer_new=automatic)
-            if refresh and (not automatic or count or previous_count != sum(len(group["entries"]) for group in self.collections.groups)):
+            if refresh and (not automatic or count or previous_count != sum(len(group["entries"]) for group in self.collections.groups)
+                    or previous_loose != tuple((e["id"], e["target"]) for e in self.collections.loose)):
                 self.refresh()
             elif automatic and self.shelf is not None and organizer_view(self.store.settings) == "time":
                 self.shelf.refresh()
@@ -1299,6 +1304,7 @@ class OrganizerManager(QObject):
         else:
             self.close_shelf()
         refresh_loose_icons(self)
+        self.auto_collector.sync()
         used = {e["target"] for g in self.collections.groups for e in g["entries"]} if self.enabled else set()
         self.icons = OrderedDict((key, icon) for key, icon in self.icons.items() if key in used)
         self.changed.emit()
@@ -1436,8 +1442,13 @@ class OrganizerManager(QObject):
             self.refresh()
 
     def set_group(self, group, key, value):
+        previous = group.get(key)
         group[key] = value
-        self.store.save()
+        try:
+            self.collections.write_manifest()
+        except OSError as exc:
+            group[key] = previous
+            self.error.emit(str(exc))
         self.refresh()
 
     def sort(self, group):
@@ -1488,6 +1499,7 @@ class OrganizerManager(QObject):
         self.changed.emit()
 
     def cleanup(self):
+        self.auto_collector.stop()
         self.watcher.stop()
         self.stop_desktop_updates()
         self.repair_timer.stop()

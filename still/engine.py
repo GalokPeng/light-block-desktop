@@ -3,9 +3,8 @@ from __future__ import annotations
 import ctypes as C
 from ctypes import wintypes as W
 import logging
-from time import monotonic
 
-from PySide6.QtCore import QAbstractNativeEventFilter, QObject, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QAbstractNativeEventFilter, QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import QWidget
 
 from .i18n import tr
@@ -65,6 +64,14 @@ class WallpaperEngine(QObject):
         self.static_task.prepared.connect(self._static_prepared)
         self.static_task.finished.connect(self._static_complete)
         self._static_request = None
+        from .media_process import MediaProcess
+        self.media = MediaProcess(self)
+        self.media.ready.connect(self._media_ready)
+        self.media.error.connect(self._media_error)
+        self.media.finished.connect(self._media_finished)
+        self._dynamic_request = self._after_release = None
+        self._waiting_media = self._queued_item = None
+        self.closing = False
         self.tick = QTimer(self)
         self.tick.setInterval(2000)
         self.tick.setTimerType(Qt.TimerType.CoarseTimer)
@@ -86,31 +93,18 @@ class WallpaperEngine(QObject):
         app.screenRemoved.connect(lambda *_: self.evaluate())
         self.app.aboutToQuit.connect(self.cleanup)
 
-    def _release(self):
-        started = monotonic()
+    def _release(self, *, cancel_request=True):
         self.tick.stop()
-        player, surface = self.player, self.surface
+        if cancel_request:
+            self._dynamic_request = None
         self.player = self.surface = self.worker = None
         self.audio_output = None
         self.render_rect = None
-        if player:
-            logging.info("Wallpaper renderer release started")
-            player.blockSignals(True)
-            player.setVideoOutput(None)
-            player.setAudioOutput(None)
-            player.stop()
-            player.setSource(QUrl())
-            player.deleteLater()
-        if surface:
-            surface.hide()
-            surface.close()
-            surface.deleteLater()
-        if player or surface:
-            logging.info("Wallpaper renderer released in %.3fs", monotonic() - started)
+        self.media.stop()
 
     @property
     def busy(self):
-        return self.static_task.busy
+        return self.static_task.busy or self.media.busy or self._dynamic_request is not None or self._after_release is not None or self._queued_item is not None
 
     def _begin_static(self, item=None):
         if self.busy:
@@ -144,120 +138,127 @@ class WallpaperEngine(QObject):
                 self.error.emit(error)
             self.changed.emit()
             return
+        self._after_release = lambda: self._commit_static(item)
         self._release()
+        if self.media.process is None:
+            self._media_finished()
+
+    def _commit_static(self, item):
         self.active = item
-        self.store.settings.active_id = item["id"] if item else ""
-        self._reason, self.state = (("Windows 原生静态壁纸 · 无后台解码", "static") if item else
-                                   ("已恢复原来的 Windows 壁纸", "idle"))
+        self.store.settings.active_id = item['id'] if item else ''
+        self._reason, self.state = (('Windows 原生静态壁纸 · 无后台解码', 'static') if item else
+                                   ('已恢复原来的 Windows 壁纸', 'idle'))
         try:
             self.store.save()
         except OSError as exc:
             self.error.emit(str(exc))
         else:
             if item:
-                logging.info("Applied image wallpaper: %s", item["name"])
+                logging.info('Applied image wallpaper: %s', item['name'])
                 self.applied.emit(item)
             else:
                 self.restored.emit()
         self.changed.emit()
 
-    def apply(self, item: dict):
+    def _media_finished(self):
+        callback, self._after_release = self._after_release, None
+        if callback and not self.closing:
+            callback()
+        self.changed.emit()
+
+    def apply(self, item: dict, wait_for=None):
         if self.busy:
-            raise RuntimeError(tr("正在切换壁纸，请稍候再试。"))
-        path = self.store.path(item)
-        if item["kind"] == "image":
+            raise RuntimeError(tr('正在切换壁纸，请稍候再试。'))
+        if wait_for is not None and wait_for.process is not None:
+            self._waiting_media, self._queued_item = wait_for, dict(item)
+            wait_for.finished.connect(self._resume_apply)
+            wait_for.stop()
+            self.changed.emit()
+            if wait_for.process is None:self._resume_apply()
+            return
+        if item['kind'] == 'image':
             self._begin_static(dict(item))
             return
+        path = self.store.path(item)
         if not path.is_file():
-            raise FileNotFoundError(tr("原文件已移动或删除，请重新导入。"))
-        fit = self.store.settings.fit
-        if item["kind"] != "image":
-            monitor = win32.target_monitor(self.store.settings.screen)
-            worker = win32.desktop_worker()
-            # GIF and video must share the native video presentation path. A
-            # raster QWidget can receive paintEvent yet remain invisible under
-            # Explorer's desktop compositor. FFmpeg reads GIF frames directly;
-            # there is no conversion, temporary video, or re-encoding step.
-            from PySide6.QtMultimedia import QMediaPlayer
-            from PySide6.QtMultimediaWidgets import QVideoWidget
-            candidate = QVideoWidget(None)
-            candidate.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool | Qt.WindowType.WindowDoesNotAcceptFocus)
-            candidate.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-            candidate.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-            candidate.setAspectRatioMode({"fill": Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                                          "fit": Qt.AspectRatioMode.KeepAspectRatio,
-                                          "center": Qt.AspectRatioMode.KeepAspectRatio,
-                                          "stretch": Qt.AspectRatioMode.IgnoreAspectRatio}[fit])
-            player = QMediaPlayer(self)
-            player.setVideoOutput(candidate)
-            player.setLoops(QMediaPlayer.Loops.Infinite)
-            player.tracksChanged.connect(lambda p=player: self.sync_sound() if p is self.player else None)
-            player.errorOccurred.connect(lambda code, text, p=player: self._media_error(p, text))
-            player.mediaStatusChanged.connect(lambda status, p=player: self._media_status(p, status))
-            candidate.resize(monitor["rect"][2], monitor["rect"][3])
-            try:
-                # Never present an unparented fullscreen window, even for one frame.
-                win32.attach(int(candidate.winId()), worker, monitor["rect"])
-            except Exception:
-                if player:
-                    player.deleteLater()
-                candidate.deleteLater()
-                raise
-            self._release()
-            self.surface, self.player, self.worker, self.active = candidate, player, worker, item
-            self.current_screen = self.store.settings.screen
-            self.render_rect = monitor["rect"]
-            self.manual_pause = False
-            self._reason, self.state = "正在读取原文件…", "loading"
-            candidate.show()
-            win32.position(int(candidate.winId()), worker, monitor["rect"])
-            player.setSource(QUrl.fromLocalFile(str(path)))
-            self.sync_sound()
-            player.play()
-            self.tick.start()
-            self.evaluate()
-        self.store.settings.active_id = item["id"]
-        self.store.save()
-        logging.info("Applied %s wallpaper: %s", item["kind"], item["name"])
-        self.applied.emit(item)
+            raise FileNotFoundError(tr('原文件已移动或删除，请重新导入。'))
+        monitor = win32.target_monitor(self.store.settings.screen)
+        self._dynamic_request = dict(item)
+        self._requested_rect = monitor['rect']
+        self.current_screen = self.store.settings.screen
+        self.manual_pause = False
+        self._release(cancel_request=False)
+        self._reason, self.state = '正在读取原文件…', 'loading'
+        self.media.start({'mode':'desktop', 'path':str(path), 'rect':monitor['rect'],
+                          'fit':self.store.settings.fit,
+                          'sound':item['kind']=='video' and self.store.settings.wallpaper_sound})
+        self.changed.emit()
+
+    def _clear_waiting(self):
+        waiting, self._waiting_media = self._waiting_media, None
+        self._queued_item = None
+        if waiting is not None:
+            try:waiting.finished.disconnect(self._resume_apply)
+            except (RuntimeError,TypeError):pass
+
+    def _resume_apply(self):
+        item = self._queued_item
+        self._clear_waiting()
+        if item is None or self.closing:return
+        try:self.apply(item)
+        except (OSError,ValueError,RuntimeError) as exc:self.error.emit(str(exc))
+        self.changed.emit()
+
+    def _media_ready(self, result):
+        item, self._dynamic_request = self._dynamic_request, None
+        if item is None or self.closing:
+            self.media.stop()
+            return
+        self.surface, self.worker = result['handle'], result['worker']
+        self.player, self.active = self.media, item
+        self.render_rect = self._requested_rect
+        self.tick.start()
+        self.evaluate()
+        if self.closing or self.active is not item or self.media.stopping:
+            return
+        self.store.settings.active_id = item['id']
+        try:
+            self.store.save()
+        except OSError as exc:
+            self.error.emit(str(exc))
+        else:
+            logging.info('Applied %s wallpaper after first frame: %s', item['kind'], item['name'])
+            self.applied.emit(item)
         self.changed.emit()
 
     def sync_sound(self):
-        player = self.player
-        if player is None or not self.active or self.active["kind"] != "video":
-            return
-        if self.store.settings.wallpaper_sound and player.audioTracks():
-            if self.audio_output is None:
-                from PySide6.QtMultimedia import QAudioOutput
-                self.audio_output = QAudioOutput(player)
-            if player.audioOutput() is None:
-                player.setAudioOutput(self.audio_output)
-            if player.activeAudioTrack() < 0:
-                player.setActiveAudioTrack(0)
-        else:
-            if player.audioOutput() is not None:
-                player.setAudioOutput(None)
-            if player.activeAudioTrack() >= 0:
-                player.setActiveAudioTrack(-1)
+        if self._dynamic_request is not None:
+            enabled = self._dynamic_request['kind']=='video' and self.store.settings.wallpaper_sound
+            if self.media.pending is not None:
+                self.media.pending['sound'] = enabled
+            elif self.media.request is not None and self.media.request.get('sound') != enabled:
+                self.media.start(dict(self.media.request, sound=enabled))
+        elif self.player is not None and self.active and self.active['kind']=='video':
+            if self.media.request.get('sound') != self.store.settings.wallpaper_sound:
+                # Configure the audio output before opening the new source.
+                # Hot-detaching a playing WASAPI sink caused the reproduced hang.
+                self.apply(dict(self.active))
 
-    def _media_status(self, player, status):
-        if player is not self.player:
+    def _media_error(self, text):
+        if self.closing:
             return
-        from PySide6.QtMultimedia import QMediaPlayer
-        logging.info("Media status: %s; hasVideo=%s", status.name, player.hasVideo())
-        if status == QMediaPlayer.MediaStatus.LoadedMedia and not player.hasVideo():
-            self._media_error(player, tr("所选文件没有视频轨道。"))
-
-    def _media_error(self, player, text):
-        if player is not self.player:
-            return
-        kind = "GIF" if self.active and self.active["kind"] == "gif" else tr("视频")
+        item = self._dynamic_request or self.active
+        kind = 'GIF' if item and item['kind']=='gif' else tr('视频')
         self._release()
-        self.active = None
-        self.store.settings.active_id = ""
-        self.store.save()
-        self._reason, self.state = "播放失败 · 已回到 Windows 桌面", "error"
-        self.error.emit(tr("{0}播放失败：{1}\n请检查文件是否完整；解码支持取决于媒体格式和显卡驱动。").format(kind, text))
+        if not self.active or self.active['kind'] != 'image':
+            self.active = None
+            self.store.settings.active_id = ''
+        self._reason, self.state = '播放失败 · 已回到 Windows 桌面', 'error'
+        try:
+            self.store.save()
+        except OSError as exc:
+            logging.warning('Could not save media failure state: %s', exc)
+        self.error.emit(tr('{0}播放失败：{1}\n请检查文件是否完整；解码支持取决于媒体格式和显卡驱动。').format(kind, text))
         self.changed.emit()
 
     @property
@@ -271,55 +272,49 @@ class WallpaperEngine(QObject):
         self.evaluate()
 
     def evaluate(self):
-        if not self.surface:
+        if not self.surface or self.closing:
             return
         settings = self.store.settings
         monitor = win32.target_monitor(self.current_screen)
         if not win32.IsWindow(self.worker):
-            # Explorer may destroy child windows during restart: rebuild, do not
-            # call methods on the old Qt native handle or put a window on top.
-            item = self.active
             self._release()
             self.active = None
-            self._reason, self.state = "桌面层已重建，请重新应用壁纸", "error"
+            self._reason, self.state = '桌面层已重建，请重新应用壁纸', 'error'
             self.changed.emit()
-            self.error.emit(tr("Explorer 桌面层已重建。打开设置，重新应用壁纸即可。"))
+            self.error.emit(tr('Explorer 桌面层已重建。打开设置，重新应用壁纸即可。'))
             return
-        if monitor["rect"] != self.render_rect:
-            win32.position(int(self.surface.winId()), self.worker, monitor["rect"])
-            self.render_rect = monitor["rect"]
-        reason = ""
+        if monitor['rect'] != self.render_rect:
+            self.media.control('geometry', rect=monitor['rect'])
+            self.render_rect = monitor['rect']
+        reason = ''
         if self.manual_pause:
-            reason = "已手动暂停"
+            reason = '已手动暂停'
         elif self.events.locked or win32.desktop_locked():
-            reason = "锁屏时自动暂停"
+            reason = '锁屏时自动暂停'
         elif self.events.display_off:
-            reason = "显示器关闭时自动暂停"
+            reason = '显示器关闭时自动暂停'
         elif settings.battery_pause and win32.on_battery():
-            reason = "电池供电时自动暂停"
-        elif settings.fullscreen_pause and win32.fullscreen_on(monitor["rect"]):
-            reason = "全屏应用运行中 · 自动暂停"
-        if self.player:
-            from PySide6.QtMultimedia import QMediaPlayer
-            if reason and self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-                self.player.pause()
-            elif not reason and self.player.playbackState() == QMediaPlayer.PlaybackState.PausedState:
-                self.player.play()
-        state = "paused" if reason else "playing"
-        message = reason or ("GIF 壁纸播放中 · 原文件直读" if self.active["kind"] == "gif" else "视频壁纸播放中 · 原文件直读")
-        if (self.state, self._reason) != (state, message):
-            self.state, self._reason = state, message
-            logging.info("Playback policy: %s / %s", state, self.reason)
+            reason = '电池供电时自动暂停'
+        elif settings.fullscreen_pause and win32.fullscreen_on(monitor['rect']):
+            reason = '全屏应用运行中 · 自动暂停'
+        state = 'paused' if reason else 'playing'
+        if self.state != state:
+            self.media.control('pause', paused=bool(reason))
+        message = reason or ('GIF 壁纸播放中 · 原文件直读' if self.active['kind']=='gif' else '视频壁纸播放中 · 原文件直读')
+        if (self.state,self._reason)!=(state,message):
+            self.state,self._reason=state,message
+            logging.info('Playback policy: %s / %s',state,self.reason)
             self.changed.emit()
 
     def stop(self):
-        self._static_request = None
+        self._clear_waiting()
+        self._static_request = self._after_release = None
         self.static_task.abort()
         self._release()
         self.active = None
-        self.store.settings.active_id = ""
+        self.store.settings.active_id = ''
         self.store.save()
-        self._reason, self.state = "动态壁纸已停止 · Windows 桌面已显示", "idle"
+        self._reason, self.state = '动态壁纸已停止 · Windows 桌面已显示', 'idle'
         self.changed.emit()
 
     def restore_original(self):
@@ -328,16 +323,26 @@ class WallpaperEngine(QObject):
             self._begin_static()
             return
         self.stop()
-        self._reason = "已恢复原来的 Windows 壁纸" if original else "已显示 Windows 壁纸"
-        self.changed.emit()
-        self.restored.emit()
+        self._reason = '已显示 Windows 壁纸'
+        if self.media.process is None:
+            self.restored.emit()
+        else:
+            self._after_release = self.restored.emit
 
     def cleanup(self):
+        if self.closing:
+            return
+        self.closing = True
+        self._clear_waiting()
+        self._after_release = None
         self.static_task.close()
         self._release()
+        self.media.shutdown()
         self.app.removeNativeEventFilter(self.events)
         if self.power_handle:
-            win32.bind(win32.user32, "UnregisterPowerSettingNotification", W.BOOL, W.HANDLE)(self.power_handle)
+            win32.bind(win32.user32, 'UnregisterPowerSettingNotification', W.BOOL, W.HANDLE)(self.power_handle)
             self.power_handle = None
-        wts = C.WinDLL("wtsapi32")
-        win32.bind(wts, "WTSUnRegisterSessionNotification", W.BOOL, W.HWND)(int(self.notifier.winId()))
+        wts = C.WinDLL('wtsapi32')
+        win32.bind(wts,'WTSUnRegisterSessionNotification',W.BOOL,W.HWND)(int(self.notifier.winId()))
+        self.notifier.close()
+        self.notifier.deleteLater()

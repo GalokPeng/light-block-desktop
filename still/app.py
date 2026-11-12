@@ -42,6 +42,12 @@ def make_icon():
 class Controller:
     def __init__(self, app, store, background=False, check_updates=True, native_menu=False):
         self.app, self.store = app, store
+        # Audio is an explicit choice for this session; do not reopen a device
+        # during unattended startup, even when an older profile enabled it.
+        if store.settings.wallpaper_sound:
+            store.settings.wallpaper_sound = False
+            try:store.save()
+            except OSError:logging.warning('Could not persist silent wallpaper startup',exc_info=True)
         self.apply_language()
         self.check_updates = check_updates
         self.native_menu = native_menu
@@ -51,6 +57,7 @@ class Controller:
         self.window = None
         self.organizer = None
         self.native_taskbar_style = None
+        self.pointer_style = None
         self.workbench = None
         self.hotkeys = None
         self.closing = False
@@ -77,6 +84,8 @@ class Controller:
         if store.settings.taskbar_style_enabled:
             # self.open_dock()  # Legacy Dock and tray.
             self.open_native_taskbar_style()
+        if store.settings.cursor_theme != "system" or store.settings.cursor_particles:
+            self.get_pointer_style().configure()
         self.update_tray()
         if not background or not QSystemTrayIcon.isSystemTrayAvailable():
             self.show_window()
@@ -152,6 +161,13 @@ class Controller:
     def set_wallpaper_sound(self, enabled):
         settings = self.store.settings
         previous = settings.wallpaper_sound
+        if enabled and not previous:
+            answer = QMessageBox.question(self.window, tr('启用视频壁纸声音'),
+                tr('开启声音将重新加载视频。音轨会增加解码和音频设备开销，部分视频或驱动可能出现卡顿。仍要启用吗？'),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+            if answer != QMessageBox.StandardButton.Yes:
+                if self.window is not None:self.window.refresh_wallpaper_sound()
+                return
         settings.wallpaper_sound = enabled
         try:
             self.store.save()
@@ -250,6 +266,7 @@ class Controller:
                 bool(getattr(self, "online_library", None) and self.online_library.busy) or
                 bool(self.release_check and self.release_check.busy) or
                 self.native_taskbar_style is not None or
+                bool(getattr(self, "pointer_style", None) and self.pointer_style.active) or
                 bool(self.hotkeys and self.hotkeys.registered)
                 or (self.workbench is not None and self.workbench.needs_background()))
 
@@ -280,6 +297,14 @@ class Controller:
             from .workbench import Workbench
             self.workbench = Workbench(self)
         return self.workbench
+
+    def get_pointer_style(self):
+        if self.pointer_style is None:
+            from .pointer_style import PointerStyle
+            self.pointer_style = PointerStyle(self)
+            self.pointer_style.error.connect(self.report_error)
+            self.pointer_style.changed.connect(lambda: QTimer.singleShot(0, self.maybe_quit))
+        return self.pointer_style
 
     def ensure_hotkeys(self):
         if self.hotkeys is None:
@@ -334,6 +359,8 @@ class Controller:
 
     def cleanup(self):
         self.closing = True
+        if self.pointer_style is not None:
+            self.pointer_style.cleanup()
         if self.release_check is not None:
             self.release_check.close()
         if self.online_library is not None:
@@ -519,7 +546,7 @@ def run():
     store = Store(directory)
     store.migrate_wallpapers()
     handler = RotatingFileHandler(store.directory / "still.log", maxBytes=512000, backupCount=2, encoding="utf-8")
-    logging.basicConfig(level=logging.INFO, handlers=[handler], format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(level=logging.INFO, handlers=[handler], format="%(asctime)s %(levelname)s %(message)s", force=True)
     def exception_hook(exc_type, value, tb):
         logging.error("Unhandled exception", exc_info=(exc_type, value, tb))
         # Keep playback exceptions visible, without crashing out of a Qt callback.

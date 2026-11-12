@@ -117,6 +117,15 @@ def smoke_at(app, data):
     if subprocess.run((str(updater.resolve()),), env=env, timeout=10,
                       creationflags=subprocess.CREATE_NO_WINDOW).returncode != 1:
         raise RuntimeError("The packaged update launcher could not start safely.")
+    pointer = app.parent / "_internal" / "runtime" / "QingkuaiPointer.exe"
+    probe = subprocess.run((str(pointer.resolve()), "--probe"), env=env, timeout=10,
+                           capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW, check=True)
+    if probe.stdout != b"READY\n":
+        raise RuntimeError("The packaged cursor host could not start safely.")
+    cursors = app.parent / "_internal" / "assets" / "cursors"
+    for theme in ("frost", "graphite", "mint"):
+        if not (cursors / theme / "normal.cur").is_file() or not (cursors / theme / "busy-48.ani").is_file():
+            raise FileNotFoundError(f"Packaged cursor assets are missing: {theme}")
     ffmpeg = app.parent / "_internal" / "runtime" / "ffmpeg.exe"
     devices = subprocess.check_output((str(ffmpeg.resolve()), "-hide_banner", "-devices"),
                                       env=env, stderr=subprocess.STDOUT, text=True, timeout=15)

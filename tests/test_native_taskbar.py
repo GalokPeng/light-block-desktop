@@ -114,7 +114,7 @@ class NativeTaskbarTests(unittest.TestCase):
 
     def test_layout_status_ignores_incomplete_or_unknown_protocol_writes(self):
         status = LayoutStatus(version=3, sequence=2, state=1, repairs=3, host_width=1706.6666, scale=1.5)
-        self.assertEqual(C.sizeof(LayoutStatus), 80)
+        self.assertEqual(C.sizeof(LayoutStatus), 96)
         snapshot = LayoutStatus.read(C.addressof(status))
         self.assertEqual(snapshot["repairs"], 3)
         self.assertEqual(snapshot["host_width"], 1706.67)

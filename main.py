@@ -7,6 +7,9 @@ if __name__ == "__main__":
     # if sys.argv[1:] == ["--taskbar-style-helper"]:
     #     from still.taskbar_style_native import run_helper
     #     raise SystemExit(run_helper())
+    if sys.argv[1:] == ["--media-player-helper"]:
+        from still.media_worker import run_helper
+        raise SystemExit(run_helper())
     if sys.argv[1:] == ["--native-taskbar-style-helper"]:
         from still.native_taskbar import run_helper
         raise SystemExit(run_helper())

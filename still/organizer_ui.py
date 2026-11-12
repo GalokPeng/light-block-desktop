@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSignalBlocker, Qt, QTimer
-from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QInputDialog, QLineEdit, QListWidget,
+from PySide6.QtWidgets import (QColorDialog, QComboBox, QFrame, QHBoxLayout, QInputDialog, QLineEdit, QListWidget,
     QListWidgetItem, QScrollArea, QSlider, QVBoxLayout, QWidget)
 
 from .i18n import tr
 from .model import TASKBAR_RADIUS_LIMITS
 from .organizer_model import SYSTEM_ENTRIES, group_name, organizer_view, view_options
 from .ui import Toggle, button, label
+from .settings_sections import SettingsSection
+from PySide6.QtGui import QColor
 
 
 class OrganizerPage(QWidget):
@@ -17,158 +19,145 @@ class OrganizerPage(QWidget):
         self.manager = window.controller.get_organizer()
         self.updating = False
         self.selected_id = ""
+        settings = window.store.settings
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(16)
-        intro = QFrame()
-        intro.setObjectName("panel")
-        intro_layout = QVBoxLayout(intro)
-        intro_layout.setContentsMargins(23, 17, 23, 17)
-        intro_layout.setSpacing(12)
-        top = QHBoxLayout()
-        titles = QVBoxLayout()
-        titles.addWidget(label(tr("桌面文件夹"), "section"))
-        titles.addWidget(label(tr("开启后在桌面显示收纳面板，并隐藏 Windows 原生图标。"), "muted", True))
-        top.addLayout(titles, 1)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        canvas = QWidget()
+        cards = QVBoxLayout(canvas)
+        cards.setContentsMargins(0, 0, 6, 0)
+        cards.setSpacing(14)
         self.enabled = Toggle(self.manager.enabled)
         self.enabled.setAccessibleName(tr("开启桌面收纳"))
         self.enabled.toggled.connect(self.toggle)
-        top.addWidget(label(tr("开启桌面收纳")))
-        top.addWidget(self.enabled)
-        intro_layout.addLayout(top)
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        intro_layout.addWidget(line)
-        taskbar = QHBoxLayout()
-        taskbar_text = QVBoxLayout()
-        taskbar_text.addWidget(label(tr("任务栏美化"), "section"))
-        self.taskbar_intro = label("", "muted", True)
-        taskbar_text.addWidget(self.taskbar_intro)
-        taskbar.addLayout(taskbar_text, 1)
-        self.taskbar_toggle = Toggle(window.store.settings.taskbar_style_enabled)
-        self.taskbar_toggle.setAccessibleName(tr("开启任务栏美化"))
-        self.taskbar_toggle.toggled.connect(window.controller.set_taskbar_style)
-        taskbar.addWidget(label(tr("开启任务栏美化")))
-        taskbar.addWidget(self.taskbar_toggle)
-        intro_layout.addLayout(taskbar)
-        outer.addWidget(intro)
-        body = QHBoxLayout()
-        body.setSpacing(18)
-        left = QFrame()
-        left.setObjectName("panel")
-        lv = QVBoxLayout(left)
-        lv.setContentsMargins(20, 20, 20, 20)
-        lv.setSpacing(12)
-        heading = QHBoxLayout()
-        heading.addWidget(label(tr("我的分组"), "section"))
-        heading.addStretch()
-        heading.addWidget(button(tr("同步分类"), self.sync_desktop))
-        heading.addWidget(button(tr("＋ 新建"), self.create, "primary"))
-        lv.addLayout(heading)
-        self.groups = QListWidget()
-        self.groups.setSpacing(7)
-        self.groups.setMinimumWidth(240)
-        self.groups.setObjectName("collectionList")
-        self.groups.currentItemChanged.connect(self.group_selected)
-        lv.addWidget(self.groups, 1)
-        actions = QHBoxLayout()
-        actions.addWidget(button(tr("重命名"), self.rename))
-        actions.addWidget(button(tr("移除分组"), self.remove))
-        lv.addLayout(actions)
-        lv.addWidget(label(tr("点击桌面上的文件夹展开应用网格。鼠标移出面板时，面板和文字会一起淡出。"), "muted", True))
-        body.addWidget(left, 1)
-        right = QFrame()
-        right.setObjectName("panel")
-        rv = QVBoxLayout(right)
-        rv.setContentsMargins(21, 20, 21, 20)
-        rv.setSpacing(12)
-        rv.addWidget(label(tr("分组与外观"), "section"))
-        self.name = QLineEdit()
-        self.name.setPlaceholderText(tr("分组名称"))
-        self.name.setMaxLength(40)
-        self.name.setMinimumHeight(32)
-        self.name.editingFinished.connect(self.save_name)
-        rv.addWidget(self.name)
-        self.color = QComboBox()
-        for key, title in (("mint", tr("薄荷绿")), ("blue", tr("海盐蓝")), ("violet", tr("鸢尾紫")), ("amber", tr("暖砂金")), ("rose", tr("蔷薇粉"))):
-            self.color.addItem(title, key)
-        self.color.currentIndexChanged.connect(lambda: self.group_option("color", self.color.currentData()))
-        rv.addWidget(self.color)
-        rv.addSpacing(8)
-        rv.addWidget(label(tr("桌面布局"), "muted"))
+        desktop = SettingsSection(tr("桌面收纳设置"), tr("收纳布局、图标与新增内容的处理方式。"), extra=self.enabled)
+        cards.addWidget(desktop)
+        self.desktop_section = desktop
         self.alignment = QComboBox()
         for key, title in (("top", tr("居上")), ("center", tr("居中")), ("bottom", tr("居下"))):
             self.alignment.addItem(title, key)
         self.alignment.currentIndexChanged.connect(lambda: self.global_option("organizer_alignment", self.alignment.currentData()))
-        rv.addWidget(self.alignment)
+        self.field(desktop.body, tr("桌面布局"), self.alignment)
         self.view = QComboBox()
         for key, title in view_options():
             self.view.addItem(title, key)
         self.view.currentIndexChanged.connect(self.set_view)
-        rv.addWidget(self.view)
-        rv.addWidget(label(tr("桌面图标大小"), "muted"))
+        self.field(desktop.body, tr("排列方式"), self.view)
         self.icon_size = QSlider(Qt.Orientation.Horizontal)
         self.icon_size.setAccessibleName(tr("桌面图标大小"))
         self.icon_size.setRange(0, 2)
         self.icon_size.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.icon_size.setTickInterval(1)
         self.icon_size.valueChanged.connect(lambda value: self.global_option("organizer_icon_size", (32, 44, 60)[value]))
-        rv.addWidget(self.icon_size)
-        sizes = QHBoxLayout()
-        for index, name in enumerate((tr("小"), tr("中"), tr("大"))):
-            if index:
-                sizes.addStretch()
-            sizes.addWidget(label(name, "muted"))
-        rv.addLayout(sizes)
-        rv.addSpacing(8)
-        rv.addWidget(label(tr("面板透明度"), "muted"))
-        self.opacity = QSlider(Qt.Orientation.Horizontal)
-        self.opacity.setRange(75, 235)
-        self.opacity.setValue(self.manager.store.settings.organizer_opacity)
-        self.opacity_save = QTimer(self)
-        self.opacity_save.setSingleShot(True)
-        self.opacity_save.setInterval(180)
-        self.opacity_save.timeout.connect(lambda: self.global_option("organizer_opacity", self.opacity.value()))
-        self.opacity.valueChanged.connect(lambda _: self.opacity_save.start())
-        rv.addWidget(self.opacity)
-        rv.addSpacing(8)
-        rv.addWidget(label(tr("原生任务栏"), "section"))
+        self.field(desktop.body, tr("图标大小 · 小 / 中 / 大"), self.icon_size)
+        self.auto_collect = Toggle(settings.organizer_auto_collect)
+        self.auto_collect.setAccessibleName(tr("自动收纳新增内容"))
+        self.auto_collect.toggled.connect(lambda value: self.global_option("organizer_auto_collect", value))
+        self.field(desktop.body, tr("自动收纳新增内容"), self.auto_collect)
+        desktop.body.addWidget(label(tr("新增内容先留在桌面，1 分钟后放入收纳。正在拖动或操作菜单时暂缓。"), "muted", True))
+        self.opacity, self.opacity_save = self.slider("organizer_opacity", 75, 235, settings.organizer_opacity)
+        self.field(desktop.body, tr("面板透明度"), self.opacity)
+        desktop.body.addWidget(label(tr("关闭收纳会恢复 Windows 原有图标显示状态，原文件始终保留。"), "muted", True))
+
+        self.taskbar_toggle = Toggle(settings.taskbar_style_enabled)
+        self.taskbar_toggle.setAccessibleName(tr("开启任务栏美化"))
+        self.taskbar_toggle.toggled.connect(window.controller.set_taskbar_style)
+        taskbar = SettingsSection(tr("任务栏设置"), extra=self.taskbar_toggle)
+        self.taskbar_section = taskbar
+        cards.addWidget(taskbar)
+        self.taskbar_intro = label("", "muted", True)
+        taskbar.body.addWidget(self.taskbar_intro)
+        self.taskbar_color = button("", self.choose_taskbar_color)
+        self.field(taskbar.body, tr("背景颜色"), self.taskbar_color)
+        self.taskbar_opacity, self.taskbar_opacity_save = self.slider("taskbar_opacity", 0, 100, settings.taskbar_opacity)
+        self.taskbar_opacity_label = label("", "muted")
+        taskbar.body.addWidget(self.taskbar_opacity_label)
+        taskbar.body.addWidget(self.taskbar_opacity)
+        self.taskbar_opacity.valueChanged.connect(lambda value: self.taskbar_opacity_label.setText(tr("背景不透明度 · {0}%").format(value)))
+        self.taskbar_radius, self.taskbar_radius_save = self.slider("taskbar_radius", *TASKBAR_RADIUS_LIMITS, settings.taskbar_radius)
         self.taskbar_radius_label = label("", "muted")
-        rv.addWidget(self.taskbar_radius_label)
-        self.taskbar_radius = QSlider(Qt.Orientation.Horizontal)
         self.taskbar_radius.setAccessibleName(tr("任务栏圆角"))
-        self.taskbar_radius.setRange(*TASKBAR_RADIUS_LIMITS)
-        self.taskbar_radius_save = QTimer(self, singleShot=True, interval=180)
-        self.taskbar_radius_save.timeout.connect(lambda: self.global_option("taskbar_radius", self.taskbar_radius.value()))
-        self.taskbar_radius.valueChanged.connect(self.taskbar_radius_changed)
-        rv.addWidget(self.taskbar_radius)
+        self.taskbar_radius.valueChanged.connect(lambda value: self.taskbar_radius_label.setText(tr("任务栏圆角 · {0}").format(value)))
+        taskbar.body.addWidget(self.taskbar_radius_label)
+        taskbar.body.addWidget(self.taskbar_radius)
         self.taskbar_status = label("", "muted", True)
-        rv.addWidget(self.taskbar_status)
-        rv.addWidget(label(tr("收纳中的项目以入口形式打开。关闭收纳会恢复 Windows 桌面图标的原显示状态。"), "muted", True))
-        rv.addStretch()
-        # Keep form controls readable on small displays; scroll the settings
-        # card rather than squeezing text fields and explanatory copy.
-        right.setMinimumHeight(290)
-        details = QScrollArea()
-        details.setFrameShape(QFrame.Shape.NoFrame)
-        details.setWidgetResizable(True)
-        details.setWidget(right)
-        body.addWidget(details, 1)
-        outer.addLayout(body, 1)
-        tools = QFrame()
-        tools.setObjectName("panel")
-        tv = QVBoxLayout(tools)
-        tv.setContentsMargins(20, 17, 20, 17)
-        row = QHBoxLayout()
-        row.addWidget(button(tr("＋ 添加应用 / 文件"), self.files, "primary"))
-        row.addWidget(button(tr("添加文件夹"), self.folder))
-        row.addWidget(button(tr("添加系统入口"), self.system_entry))
-        row.addWidget(button(tr("还原旧版文件"), self.restore_all))
-        tv.addLayout(row)
-        tv.addWidget(label(tr("桌面项目按文件类型自动归类。旧版本移入托管目录的文件可以还原到原桌面目录。"), "muted", True))
-        outer.addWidget(tools)
+        taskbar.body.addWidget(self.taskbar_status)
+        taskbar.body.addWidget(label(tr("调色仅作用于背景，文字、应用图标与托盘保持清晰。"), "muted", True))
+
+        groups = SettingsSection(tr("分组管理"), tr("重命名、选择分组颜色，或添加应用和文件。"))
+        self.groups_section = groups
+        cards.addWidget(groups)
+        heading = QHBoxLayout()
+        heading.addWidget(button(tr("同步分类"), self.sync_desktop))
+        heading.addStretch()
+        heading.addWidget(button(tr("＋ 新建"), self.create, "primary"))
+        groups.body.addLayout(heading)
+        columns = QHBoxLayout()
+        self.groups = QListWidget()
+        self.groups.setSpacing(7)
+        self.groups.setMinimumWidth(235)
+        self.groups.setMaximumHeight(225)
+        self.groups.setObjectName("collectionList")
+        self.groups.currentItemChanged.connect(self.group_selected)
+        columns.addWidget(self.groups, 1)
+        editor = QVBoxLayout()
+        self.name = QLineEdit()
+        self.name.setPlaceholderText(tr("分组名称"))
+        self.name.setMaxLength(40)
+        self.name.setMinimumHeight(34)
+        self.name.editingFinished.connect(self.save_name)
+        editor.addWidget(self.name)
+        self.color = QComboBox()
+        for key, title in (("mint", tr("薄荷绿")), ("blue", tr("海盐蓝")), ("violet", tr("鸢尾紫")), ("amber", tr("暖砂金")), ("rose", tr("蔷薇粉"))):
+            self.color.addItem(title, key)
+        self.color.currentIndexChanged.connect(lambda: self.group_option("color", self.color.currentData()))
+        editor.addWidget(self.color)
+        editor.addWidget(button(tr("重命名"), self.rename))
+        editor.addWidget(button(tr("移除分组"), self.remove))
+        editor.addStretch()
+        columns.addLayout(editor, 1)
+        groups.body.addLayout(columns)
+        actions = QHBoxLayout()
+        actions.addWidget(button(tr("＋ 添加应用 / 文件"), self.files, "primary"))
+        actions.addWidget(button(tr("添加文件夹"), self.folder))
+        actions.addWidget(button(tr("添加系统入口"), self.system_entry))
+        groups.body.addLayout(actions)
+        groups.body.addWidget(button(tr("还原旧版文件"), self.restore_all))
+        cards.addStretch()
+        scroll.setWidget(canvas)
+        outer.addWidget(scroll)
         self.manager.changed.connect(self.refresh)
         self.refresh()
+
+    @staticmethod
+    def field(layout, title, control):
+        row = QHBoxLayout()
+        row.addWidget(label(title, "muted"), 1)
+        row.addWidget(control, 1 if isinstance(control, (QComboBox, QSlider)) else 0)
+        layout.addLayout(row)
+
+    def slider(self, key, low, high, value):
+        slider = QSlider(Qt.Orientation.Horizontal)
+        slider.setRange(low, high)
+        slider.setValue(value)
+        timer = QTimer(self, singleShot=True, interval=180)
+        timer.timeout.connect(lambda: self.global_option(key, slider.value()))
+        slider.valueChanged.connect(lambda _: timer.start() if not self.updating else None)
+        def finish():
+            timer.stop()
+            self.global_option(key, slider.value())
+        slider.sliderReleased.connect(finish)
+        return slider, timer
+
+    def choose_taskbar_color(self):
+        color = QColorDialog.getColor(QColor(self.window.store.settings.taskbar_color), self, tr("任务栏背景颜色"))
+        if color.isValid():
+            self.global_option("taskbar_color", color.name())
+            self.refresh_taskbar_options()
+
 
     def group(self):
         return self.manager.collections.find(self.selected_id)
@@ -180,6 +169,9 @@ class OrganizerPage(QWidget):
         self.alignment.setCurrentIndex(self.alignment.findData(settings.organizer_alignment))
         self.view.setCurrentIndex(self.view.findData(organizer_view(settings)))
         self.icon_size.setValue((32, 44, 60).index(settings.organizer_icon_size or 44))
+        self.auto_collect.setChecked(settings.organizer_auto_collect)
+        if not self.opacity_save.isActive():
+            self.opacity.setValue(settings.organizer_opacity)
         self.refresh_taskbar_options()
         self.groups.clear()
         for group in self.manager.collections.groups:
@@ -203,6 +195,16 @@ class OrganizerPage(QWidget):
                 self.taskbar_radius.setValue(settings.taskbar_radius)
             self.taskbar_radius_label.setText(tr("任务栏圆角 · {0}").format(settings.taskbar_radius))
         style = controller.native_taskbar_style
+        from .native_taskbar_xaml import layout_library
+        appearance = layout_library() is not None
+        self.taskbar_color.setText(settings.taskbar_color.upper())
+        self.taskbar_color.setStyleSheet("QPushButton { border:2px solid " + settings.taskbar_color + "; }")
+        self.taskbar_color.setEnabled(appearance and settings.taskbar_style_enabled)
+        self.taskbar_opacity.setEnabled(appearance and settings.taskbar_style_enabled)
+        if not self.taskbar_opacity_save.isActive():
+            with QSignalBlocker(self.taskbar_opacity):
+                self.taskbar_opacity.setValue(settings.taskbar_opacity)
+            self.taskbar_opacity_label.setText(tr("背景不透明度 · {0}%").format(settings.taskbar_opacity))
         auto_hide = style is not None and style.auto_hide
         centered = style is not None and style.centered
         self.taskbar_intro.setText(tr("电源和搜索、应用、托盘已在同一条原生任务栏内居中。") if centered else
@@ -216,7 +218,7 @@ class OrganizerPage(QWidget):
         elif auto_hide:
             message = tr("Windows 已开启自动隐藏，圆角暂时停用。")
         else:
-            message = tr("颜色、透明效果和自动隐藏跟随 Windows 设置。")
+            message = tr("当前系统保留 Windows 原生任务栏配色。") if not appearance else tr("开启任务栏美化后可调整背景颜色与不透明度。")
         self.taskbar_status.setText(message)
 
     def taskbar_radius_changed(self, value):
@@ -279,10 +281,11 @@ class OrganizerPage(QWidget):
             self.refresh()
             self.manager.error.emit(str(exc))
             return
-        if key == "taskbar_radius":
+        if key in ("taskbar_radius", "taskbar_color", "taskbar_opacity"):
             style = self.window.controller.native_taskbar_style
             if style is not None:
                 style.schedule_refresh()
+            self.refresh_taskbar_options()
         else:
             self.manager.refresh()
 

@@ -12,7 +12,7 @@ When a release is available, click **Update now**. The button shows download pro
 
 ## Wallpaper
 
-Import a local picture, GIF or video to save a full-quality copy in `data/wallpapers`. Select a fit mode and click **Apply to Desktop**. Static wallpaper is managed by Windows. GIF and video play from the copy using Qt's native video output. Video wallpaper sound is off by default. Use **Light Block Desktop Sound** in **Playback Settings** or the desktop context menu to switch it. Video covers are extracted from video frames and cached in `data/thumbnails`. Each session plays one live file on a selected display. Full-screen pause, battery pause, and restoring the wallpaper at startup are enabled by default. Locking Windows or turning off the display also pauses playback.
+Import a local picture, GIF or video to save a full-quality copy in `data/wallpapers`. Select a fit mode and click **Apply to Desktop**. Static wallpaper is managed by Windows. GIF and video play from the copy using Qt's native video output in a supervised media process. Switching retires the old process before starting another, and commits the selection only after a valid frame. Online motion previews and video thumbnails also decode outside the settings thread. Video wallpaper starts muted each session. Enabling sound requires confirmation; changing the sound setting reloads the video. Use **Light Block Desktop Sound** in **Settings → Wallpaper and Performance** or the desktop context menu to switch it. Video covers are extracted from video frames and cached in `data/thumbnails`. Each session plays one live file on a selected display. Full-screen pause, battery pause, and restoring the wallpaper at startup are enabled by default. Locking Windows or turning off the display also pauses playback.
 
 Enable **Start with Windows** to start quietly after sign-in. With live wallpaper or other background tools enabled, closing Settings leaves the app in the tray. Choose **Quit Light Block Desktop** to stop it.
 
@@ -34,9 +34,23 @@ Click the organizer or group title to edit it. Enter or click away to save, and 
 
 The panel starts centered. Right-click and choose **Move panel**, then drag it to a new position. The panel locks again when you release it. Choose **Center panel** to reset. Drag one folder tile onto another to change the order.
 
-New files created or pasted onto the desktop while the organizer is enabled appear as separate, draggable desktop icons first. Right-click and choose **Put into collection**; grouped mode also offers each destination group. The original file stays on the desktop, and pending items survive restarts and manual synchronization. The taskbar's left section contains Power, Taskbar settings, Task Manager, and native Windows Search in that order. The three command icons use equal compact dimensions and hover labels, with no large blank gutters. Application icon spacing stays native.
+New files created or pasted onto the desktop appear as separate, draggable icons first. **Automatically Collect New Items** is on by default: after one minute they enter the organizer. Collection waits while hovering, dragging or using a menu. Turn it off under **Desktop Organizer → Organizer Settings** to collect manually from the context menu, including a destination group in grouped mode. Original files stay in place. Pending items start a fresh one-minute deadline after restart or re-enabling. A filesystem notification watcher discovers changes; one deadline timer handles collection without additional desktop polling.
+
+The organizer page has collapsible **Organizer Settings**, **Taskbar Settings** and **Manage Groups** sections. Group colors tint both folder tiles and expanded panels. Compatible native Windows 11 taskbars support a background color picker and a 0–100% background opacity slider. At zero, custom backgrounds disappear while icons, text and tray remain fully visible. Windows 10 and incompatible layouts retain system colors and disable these controls. Disabling styling restores the native appearance.
+
+The taskbar's left section contains Power, Taskbar settings, Task Manager, and native Windows Search in that order. The three command icons use equal compact dimensions and hover labels, with no large blank gutters. Application icon spacing stays native.
 
 Right-click the desktop background and choose **Light Block Desktop · New Note** to add a pinned note. On Windows 11, select **Show more options** first. The organizer panel's context menu also offers **New Note** and a sound switch. You can also pin an existing note in **Notes & Tasks**. Drag a desktop note to move it and double-click to edit.
+
+Drag a pinned note's title to move it, or drag any edge or corner to resize. Position and size persist. Scroll long content with the mouse wheel; scrollbars remain hidden. Right-click **Note Color…**, or use **Palette** in the editor, to choose a custom color. Double-click the title to edit.
+
+## Mouse and system appearance
+
+**Settings → Mouse and Cursors** offers three original themes: Frost, Graphite and Mint. They cover text, links, resizing, location/person selection and animated busy states, with a handwriting cursor where Windows supports it. Native cursor files include multiple DPI sizes. A small C++ helper waits for pipe commands while a theme is enabled; it restores the registered Windows cursor scheme on quit or parent pipe closure without registry changes. It avoids replacing a scheme taken over by another application. Source users first build `tools/build_pointer_host.ps1`; release packages include it.
+
+The optional particle trail is off by default. Movement uses at most 30 fps and 20 points; after 0.42 seconds idle the trail fades and its drawing timer stops. Disabling releases the window and mouse listener. Enabled themes or effects keep the app running when Settings close. Quit to restore the system scheme and stop effects.
+
+**Settings → Eye Comfort · Windows Night Light** opens the native Windows settings page. Windows controls its switch, warmth and schedule. The app does not simulate a system toggle using private registry data or a color overlay. Unsupported Windows versions, known incompatible drivers, remote sessions and disabled system policies gray out the entry. Windows Settings makes the final driver capability check.
 
 ## Screen capture
 

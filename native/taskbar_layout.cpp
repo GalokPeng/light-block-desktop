@@ -46,13 +46,14 @@ std::wstring component_channel() {
     return L"Local\\Qingkuai.TaskbarLayout.v3." + std::to_wstring(QINGKUAI_LAYOUT_BUILD) + L".";
 }
 
-// Geometry and counters only. Never include application names, paths or icons.
+// Geometry, counters and appearance only. No application names, paths or icons.
 struct Status {
     LONG version, sequence, state, repairs, rebuilds, error;
     LONG changes, reserved;
     double hostWidth, frameWidth, trayWidth, groupLeft, groupRight, scale;
+    LONG appearanceRevision, appearanceColor, appearanceOpacity, appearanceFlags;
 };
-static_assert(sizeof(Status) == 80);
+static_assert(sizeof(Status) == 96);
 enum State { waiting, healthy, repairing, incompatible, conflict };
 
 void publish(Status* status, State state, LONG repairs=0, LONG rebuilds=0, LONG error=0,
@@ -246,6 +247,8 @@ struct Layout {
     unsigned burst{};
     bool writing{}, scheduled{}, exhausted{};
     bool observing{};
+    LONG appearanceRevision{-1};
+    ElementTheme appearanceTheme{ElementTheme::Default};
 
     explicit Layout(Status* status=nullptr, LONG repairs=0, LONG rebuilds=0, LONG changed=0)
         : status(status), repairCount(repairs), rebuildCount(rebuilds), changes(changed) {
@@ -270,7 +273,9 @@ struct Layout {
 
     template<typename Value>
     void set(DependencyObject const& target, DependencyProperty const& property, Value const& value) {
-        auto lease=std::make_shared<Property>();
+        auto found=std::find_if(properties.begin(),properties.end(),[&](auto const& item) { return item->target==target && item->id==property; });
+        bool fresh=found==properties.end();
+        auto lease=fresh ? std::make_shared<Property>() : *found;
         lease->target=target;
         lease->id=property;
         lease->wanted=box_value(value);
@@ -282,6 +287,10 @@ struct Layout {
             }
             return actual==value;
         };
+        if (!fresh) {
+            target.SetValue(property,lease->wanted);
+            return;
+        }
         lease->remember();
         properties.push_back(lease);
         target.SetValue(property,lease->wanted);
@@ -327,6 +336,33 @@ struct Layout {
         border.BorderBrush(Media::SolidColorBrush(Color{66,141,169,193}));
         border.IsHitTestVisible(false);
         return border;
+    }
+
+    void apply_appearance() {
+        if (!status || !(status->appearanceFlags & 1)) return;
+        auto rgb=static_cast<unsigned>(status->appearanceColor);
+        auto opacity=std::clamp(status->appearanceOpacity,0L,100L)/100.;
+        Color color{255,static_cast<uint8_t>((rgb>>16)&255),static_cast<uint8_t>((rgb>>8)&255),static_cast<uint8_t>(rgb&255)};
+        auto theme=opacity<.15 ? host.ActualTheme() :
+            (color.R*.299+color.G*.587+color.B*.114>155 ? ElementTheme::Light : ElementTheme::Dark);
+        if (appearanceRevision==status->appearanceRevision && appearanceTheme==theme) return;
+        set(frame,FrameworkElement::RequestedThemeProperty(),theme);
+        set(tray,FrameworkElement::RequestedThemeProperty(),theme);
+        auto foreground=Media::SolidColorBrush(theme==ElementTheme::Light ? Color{255,28,45,57} : Color{255,233,242,247});
+        for (auto const& button : {power,settingsButton,taskManagerButton}) if (button) button.Foreground(foreground);
+        for (auto const& border : {controls,apps,trayBack}) {
+            if (!border) continue;
+            auto brush=border.Background().try_as<Media::AcrylicBrush>();
+            if (!brush) continue;
+            brush.TintColor(color);
+            brush.FallbackColor(color);
+            brush.TintOpacity(opacity);
+            brush.TintLuminosityOpacity(box_value(opacity*.45).as<Windows::Foundation::IReference<double>>());
+            // Hide only our background at zero. Native content stays readable.
+            border.Opacity(opacity);
+        }
+        appearanceRevision=status->appearanceRevision;
+        appearanceTheme=theme;
     }
 
     bool apply(FrameworkElement const& taskFrame) {
@@ -442,6 +478,7 @@ struct Layout {
             } catch (hresult_error const& e) { failure(e.code()); } catch (...) { failure(E_FAIL); }
         });
         observing = true;
+        apply_appearance();
         align();
         return true;
     }
@@ -643,6 +680,7 @@ struct Watcher : implements<Watcher,IVisualTreeServiceCallback2> {
                     return;
                 }
                 if (current->frame==frame && current->connected()) {
+                    current->apply_appearance();
                     current->repair();
                     current->align();
                     if (status && status->state==healthy) SetEvent(ready.value);

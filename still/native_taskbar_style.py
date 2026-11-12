@@ -93,7 +93,8 @@ class NativeTaskbarStyle(QObject):
         self.pending = True
         self.request_at = time.monotonic()
         request = {"radius": self.settings.taskbar_radius, "hidden": self.reveal.hidden,
-                   "revealed": self.reveal.revealed}
+                   "revealed": self.reveal.revealed, "color": self.settings.taskbar_color,
+                   "opacity": self.settings.taskbar_opacity}
         self.process.write(json.dumps(request).encode("ascii") + b"\n")
 
     def read_reply(self):

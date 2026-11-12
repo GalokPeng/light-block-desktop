@@ -407,7 +407,13 @@ class OnlinePage(QWidget):
         item = self.library.local_item(self.selected) if self.selected else None
         if item:
             self.window.select(item)
-            self.window.apply_selected()
+            waiting = self.video.worker if self.video is not None else None
+            try:
+                self.window.engine.apply(item, wait_for=waiting)
+            except (OSError, ValueError, RuntimeError) as exc:
+                self.window.show_error(str(exc))
+            else:
+                self.close_preview()
 
     def toggle_preview(self):
         if self.playing_id:
@@ -434,38 +440,14 @@ class OnlinePage(QWidget):
     def media_preview_ready(self, ident, path):
         if ident != self.playing_id or not self.isVisible():
             return
+        from .media_preview import MediaPreview
         self.preview_button.setText(tr("停止预览"))
-        if self.selected["kind"] == "video":
-            from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
-            from PySide6.QtMultimediaWidgets import QVideoWidget
-            if self.player is None:
-                self.video = QVideoWidget()
-                self.preview_stack.addWidget(self.video)
-                self.player = QMediaPlayer(self)
-                self.audio = QAudioOutput(self)
-                self.audio.setMuted(True)
-                self.player.setAudioOutput(self.audio)
-                self.player.setVideoOutput(self.video)
-                self.player.setLoops(QMediaPlayer.Loops.Infinite)
-                self.player.errorOccurred.connect(lambda *_, ident=ident: self.preview_failed(ident))
-            self.preview_stack.setCurrentWidget(self.video)
-            self.player.setSource(QUrl.fromLocalFile(path))
-            self.player.play()
-            return
-        movie = QMovie(path, parent=self)
-        movie.setCacheMode(QMovie.CacheMode.CacheNone)
-        size = QImageReader(path).size()
-        if size.isValid():
-            size.scale(960, 960, Qt.AspectRatioMode.KeepAspectRatio)
-            movie.setScaledSize(size)
-        self.movie = movie
-        movie.frameChanged.connect(lambda _frame: self.poster.display(movie.currentPixmap()))
-        movie.error.connect(lambda _error: self.preview_failed(ident))
-        if not movie.isValid():
-            self.preview_failed(ident)
-            return
-        self.preview_button.setText(tr("停止预览"))
-        movie.start()
+        self.video = MediaPreview()
+        self.preview_stack.addWidget(self.video)
+        self.player = self.video.worker
+        self.video.failed.connect(lambda key=ident: self.preview_failed(key))
+        self.preview_stack.setCurrentWidget(self.video)
+        self.video.play(path)
 
     def preview_failed(self, ident):
         if ident and ident == self.playing_id:
@@ -487,19 +469,11 @@ class OnlinePage(QWidget):
             self.movie.setFileName("")
             self.movie.deleteLater()
             self.movie = None
-        if self.player is not None:
-            player, self.player = self.player, None
-            player.blockSignals(True)
-            player.stop()
-            player.setVideoOutput(None)
-            player.setAudioOutput(None)
-            player.setSource(QUrl())
-            player.deleteLater()
-            self.audio.deleteLater()
-            self.audio = None
-            self.preview_stack.removeWidget(self.video)
-            self.video.deleteLater()
-            self.video = None
+        if self.video is not None:
+            video, self.video = self.video, None
+            self.player = self.audio = None
+            self.preview_stack.removeWidget(video)
+            video.close()
         self.preview_stack.setCurrentWidget(self.poster)
         self.preview_button.setText(tr("开始预览"))
 

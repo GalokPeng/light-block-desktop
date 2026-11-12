@@ -17,7 +17,7 @@ Starting with v0.8.0, click **Update now** in the sidebar to download an update 
 
 ### Wallpaper
 
-Import full-quality copies of local images, GIFs and videos. Choose a display and fit mode, and identify videos by their frame-based covers. Video wallpapers start muted. Toggle sound in Settings or the desktop context menu. Restore the last wallpaper at sign-in and pause it on full screen.
+Import full-quality copies of local images, GIFs and videos. Choose a display and fit mode, and identify videos by their frame-based covers. Video wallpapers start muted each session; enabling audio requires confirmation and reloads the video. Motion decoding runs outside the settings thread. Switching retires the old player and confirms a valid new frame before reporting success. Restore the last wallpaper at sign-in and pause it on full screen.
 
 Right-click an imported wallpaper to delete its library copy while keeping the original. Deleting the active wallpaper first restores Windows wallpaper. The online gallery supports previews, search, original downloads and source attribution. Four bundled 1920×1080 static wallpapers—Night Drive, Milky Way, Mountain Bay and Coastline—replace the previous still images, while existing motion demos remain.
 
@@ -33,11 +33,11 @@ Press `Ctrl+Alt+A` by default to pick a window or region. Annotate, stitch a scr
 
 ### Desktop organizer and native taskbar styling
 
-Place the organizer at the top, center or bottom. Sort by name, modification time or group, and search for desktop items. New desktop files appear as icons first; right-click to put them away or choose a group. Turning the organizer off restores the original icon visibility.
+Place the organizer at the top, center or bottom. Sort by name, modification time or group, and search for desktop items. New desktop files appear as icons first and are collected after one minute by default. Disable this option for manual collection, or right-click to choose a group. Organizer, taskbar and group options use separate collapsible sections. Turning the organizer off restores the original icon visibility.
 
 ![Folder groups on a sample desktop](site/public/media/organizer-en.webp)
 
-Optional styling centers power, settings, Task Manager and native search in the first section, apps in the middle and the system tray in the third section on the native taskbar of the primary display on Windows 11 22H2 or later, x64. Windows Search and tray menus stay available. The bar can hide when covered and reappear when you move the pointer to the bottom edge.
+Optional styling centers power, settings, Task Manager and native search in the first section, apps in the middle and the system tray in the third section on the native taskbar of the primary display on Windows 11 22H2 or later, x64. Windows Search and tray menus stay available. The bar can hide when covered and reappear at the bottom edge. Background color and opacity are adjustable.
 
 ![Native taskbar diagram showing power and search, apps and the system tray](site/public/media/taskbar-layout-en-light.svg)
 
@@ -45,11 +45,11 @@ Optional styling centers power, settings, Task Manager and native search in the 
 
 ### Desktop notes
 
-Right-click the desktop background to create and pin a note. On Windows 11, start with **Show more options**. Drag to move a note, double-click to edit it, or open Notes & Tasks to search, set a reminder, mark it done or archive it.
+Right-click the desktop background to create and pin a note. On Windows 11, start with **Show more options**. Drag the title to move a note, double-click the title to edit, or drag an edge to resize. Scroll long content without visible scrollbars and choose a custom color. Notes & Tasks also provides search, reminders, completion and archiving.
 
 ![Notes and Tasks editor beside a weekly checklist pinned to a sample desktop](site/public/media/notes-en.webp)
 
-Screenshots use bundled media and fictional data. Settings and downloaded wallpapers stay on your device. The online gallery contacts media sources on demand. No account, ads or telemetry. The app also includes a launcher, clipboard history, a file workbench and focus timers. [User guide](docs/usage.en.md)
+Screenshots use bundled media and fictional data. Settings and downloaded wallpapers stay on your device. The online gallery contacts media sources on demand. No account, ads or telemetry. Settings also offers Frost, Graphite and Mint cursor themes, an optional mouse trail that stops drawing when idle, and a native Windows Night light settings entry. The app also includes a launcher, clipboard history, a file workbench and focus timers. [User guide](docs/usage.en.md)
 
 The online gallery has 20 images, 10 GIFs and 20 videos, with media-type filters and bilingual search. The maintainer approved retaining the ten GIFs from the local review build. Every source file is at least 1920 × 1080 and no larger than 20 MB, without app-side recompression, trimming or upscaling. GIF candidates must be original 1080p, 16:9 complete looping scenes. GIFs have no likes/favorites threshold; available metrics are recorded as reported. Images and videos retain their public-vote or favorite-based selection. It supports on-demand previews, byte-preserving downloads, progress/cancellation, downloaded status and Apply. GitHub stores URL and attribution metadata only. Downloads continue when settings close; quitting cancels unfinished downloads. [Evaluation and selection](docs/wallpaper-evaluation.md)
 

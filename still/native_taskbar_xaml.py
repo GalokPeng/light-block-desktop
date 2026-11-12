@@ -134,7 +134,8 @@ unmap_view = win32.bind(win32.kernel32, "UnmapViewOfFile", W.BOOL, C.c_void_p)
 class LayoutStatus(C.Structure):
     # Keep aligned with native/taskbar_layout.cpp. A sequence lock avoids torn reads.
     _fields_ = [(name, C.c_int32) for name in ("version", "sequence", "state", "repairs", "rebuilds", "error", "changes", "reserved")] + [
-        (name, C.c_double) for name in ("host_width", "frame_width", "tray_width", "group_left", "group_right", "scale")]
+        (name, C.c_double) for name in ("host_width", "frame_width", "tray_width", "group_left", "group_right", "scale")] + [
+        (name, C.c_int32) for name in ("appearance_revision", "appearance_color", "appearance_opacity", "appearance_flags")]
 
     @classmethod
     def read(cls, address):
@@ -161,6 +162,7 @@ class NativeTaskbarLayout:
         self.pid = None
         self.events = {}
         self.mapping = self.view = None
+        self.appearance = None
         self.channel = CHANNEL
         self.visibility = TaskbarVisibilityLease()
         system_xaml = C.WinDLL("Windows.UI.Xaml.dll", winmode=0x800)
@@ -214,7 +216,7 @@ class NativeTaskbarLayout:
         finally:
             local_free(descriptor)
 
-    def update(self, hidden=False, revealed=False):
+    def update(self, hidden=False, revealed=False, color=None, opacity=None):
         bar = win32.FindWindow("Shell_TrayWnd", None)
         if not bar or not win32.FindWindowEx(bar, None, "Windows.UI.Composition.DesktopWindowContentBridge", None):
             return {"waiting": True}
@@ -226,6 +228,8 @@ class NativeTaskbarLayout:
             self.pid = pid
             try:
                 self.make_events(pid)
+                self.appearance = None
+                self.set_appearance(color, opacity)
             except OSError:
                 self.restore(wait=False)
                 raise
@@ -244,6 +248,8 @@ class NativeTaskbarLayout:
             reset_event(self.events["Ready"])
             reset_event(self.events["Restored"])
             set_event(self.events["Start"])
+        else:
+            self.set_appearance(color, opacity)
         ready = wait_for(self.events["Ready"], 700) == 0
         diagnostic = LayoutStatus.read(self.view)
         if diagnostic and diagnostic["state"] in (3, 4):
@@ -257,6 +263,22 @@ class NativeTaskbarLayout:
         return {"auto_hide": auto_hide, "centered": True,
                 "diagnostic": diagnostic,
                 "visibility": [bar, monitor, strip] if strip is not None else None}
+
+    def set_appearance(self, color, opacity):
+        if color is None or opacity is None or not self.view:
+            return
+        if not isinstance(color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", color) or type(opacity) is not int or not 0 <= opacity <= 100:
+            raise ValueError("invalid taskbar appearance")
+        wanted = int(color[1:], 16), opacity
+        if self.appearance != wanted:
+            status = LayoutStatus.from_address(self.view)
+            status.appearance_color, status.appearance_opacity = wanted
+            status.appearance_flags = 1
+            status.appearance_revision = (status.appearance_revision + 1) & 0x7fffffff
+            self.appearance = wanted
+            # The existing Start event dispatches to Explorer's XAML UI thread.
+            # No new subscriptions, polling or layout rebuild are needed.
+            set_event(self.events["Start"])
 
     def restore(self, *, wait=True):
         try:

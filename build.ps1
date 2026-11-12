@@ -31,6 +31,7 @@ $previousPath = $env:PATH
 $previousFFmpeg = $env:STILL_FFMPEG
 $previousTaskbar = $env:STILL_TASKBAR_DLL
 $previousUpdater = $env:STILL_UPDATE_LAUNCHER
+$previousPointer = $env:STILL_POINTER_HOST
 $previousCache = $env:PYINSTALLER_CONFIG_DIR
 try {
     if (-not $FFmpegPath) {
@@ -40,6 +41,7 @@ try {
     $env:STILL_FFMPEG = (Resolve-Path -LiteralPath $FFmpegPath).Path
     $env:STILL_TASKBAR_DLL = & (Join-Path $PSScriptRoot 'tools/build_native_taskbar.ps1')
     $env:STILL_UPDATE_LAUNCHER = & (Join-Path $PSScriptRoot 'tools/build_update_launcher.ps1')
+    $env:STILL_POINTER_HOST = & (Join-Path $PSScriptRoot 'tools/build_pointer_host.ps1')
     # Collect dependencies from Python, Qt and Windows only.
     $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
     $env:PYINSTALLER_CONFIG_DIR = Join-Path $WorkPath 'pyinstaller-cache'
@@ -50,6 +52,7 @@ try {
     $env:STILL_FFMPEG = $previousFFmpeg
     $env:STILL_TASKBAR_DLL = $previousTaskbar
     $env:STILL_UPDATE_LAUNCHER = $previousUpdater
+    $env:STILL_POINTER_HOST = $previousPointer
     $env:PYINSTALLER_CONFIG_DIR = $previousCache
 }
 Write-Host "Built: $portable"

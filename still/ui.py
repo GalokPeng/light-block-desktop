@@ -112,6 +112,10 @@ QPushButton#text { background: transparent; border: none; color: #a4b5c8; paddin
 QPushButton#text:hover { color: #c7f0df; }
 QToolButton#themeToggle { background:#242d39; border:1px solid #354151; border-radius:8px; }
 QToolButton#themeToggle:hover, QToolButton#themeToggle:focus { border-color:#87b7a2; }
+QToolButton#cursorTheme { background:#141e29; color:#dae5ef; border:1px solid #354151; border-radius:10px; padding:10px; }
+QToolButton#cursorTheme:hover, QToolButton#cursorTheme:focus { background:#22323b; border-color:#87b7a2; }
+QToolButton#cursorTheme:checked { background:#273b37; color:#c2f1de; border:2px solid #87b7a2; padding:9px; }
+QToolButton#cursorTheme:disabled { color:#88949e; border-color:#313c48; }
 QComboBox { background: #121a24; border: 1px solid #354151; border-radius: 7px; min-height: 20px; padding: 7px 10px; }
 QComboBox:hover, QComboBox:focus { border-color: #7fae9b; }
 QComboBox::drop-down { border: none; width: 22px; }
@@ -160,6 +164,10 @@ QPushButton#nav:checked, QPushButton#pill:checked { background:#d9ece2; color:#2
 QPushButton#text { color:#496960; }
 QPushButton#text:hover { color:#1d5643; }
 QToolButton#themeToggle { background:#f6f8f7; border-color:#cbd9d2; }
+QToolButton#cursorTheme { background:#f7faf8; color:#263c34; border-color:#cbd9d2; }
+QToolButton#cursorTheme:hover, QToolButton#cursorTheme:focus { background:#eaf4ee; border-color:#6c9b84; }
+QToolButton#cursorTheme:checked { background:#d9ece2; color:#214e3f; border-color:#60987b; }
+QToolButton#cursorTheme:disabled { color:#89958f; border-color:#d5dfd9; }
 QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox, QDateTimeEdit {
     background:#ffffff; color:#26343b; border-color:#c5d5cd;
     selection-background-color:#d3e9de; selection-color:#203f35;
@@ -500,7 +508,7 @@ class MainWindow(QMainWindow):
         layout.addSpacing(5)
         group = QButtonGroup(self)
         self.nav_buttons = []
-        for index, title in enumerate((tr("壁纸库"), tr("桌面收纳"), tr("截屏"), tr("效率工具"), tr("播放与性能"), tr("关于"))):
+        for index, title in enumerate((tr("壁纸库"), tr("桌面收纳"), tr("截屏"), tr("效率工具"), tr("设置"), tr("关于"))):
             b = button(title, lambda checked=False, n=index: self.pages.setCurrentIndex(n), "nav")
             b.setIcon(navigation_icon(index, self.light))
             b.setIconSize(QSize(18, 18))
@@ -656,47 +664,68 @@ class MainWindow(QMainWindow):
         return panel
 
     def _performance(self):
+        from .settings_sections import SettingsSection
+        from .pointer_ui import PointerSettings
         page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(18)
-        card = QFrame()
-        card.setObjectName("panel")
-        v = QVBoxLayout(card)
-        v.setContentsMargins(26, 24, 26, 24)
-        v.setSpacing(20)
-        v.addWidget(label(tr("把资源留给正在做的事"), "section"))
-        v.addWidget(label(tr("暂停时保留当前画面，条件解除后自动继续。策略每 2 秒检查一次。"), "muted", True))
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        canvas = QWidget()
+        layout = QVBoxLayout(canvas)
+        layout.setContentsMargins(0, 0, 6, 0)
+        layout.setSpacing(14)
+        playback = SettingsSection(tr("壁纸与性能"), tr("暂停时保留当前画面，条件解除后自动继续。"))
         for key, title, description in (
             ("fullscreen_pause", tr("全屏时暂停"), tr("游戏、演示或全屏视频占据壁纸所在屏幕时，暂停动态壁纸。")),
             ("battery_pause", tr("电池供电时暂停"), tr("笔记本断开电源后暂停动态壁纸，接通电源后恢复。")),
             ("restore_on_start", tr("启动后恢复壁纸"), tr("恢复上次应用的壁纸；开机自启时不会弹出设置窗口。")),
         ):
-            item = QVBoxLayout()
-            item.setSpacing(6)
             check = QCheckBox(title)
             check.setChecked(bool(getattr(self.store.settings, key)))
             check.toggled.connect(lambda value, k=key: self.option_changed(k, value))
-            item.addWidget(check)
-            item.addWidget(label(description, "muted", True))
-            v.addLayout(item)
+            playback.body.addWidget(check)
+            playback.body.addWidget(label(description, "muted", True))
         self.wallpaper_sound = QCheckBox(tr("轻块桌面声音"))
         self.refresh_wallpaper_sound()
         self.wallpaper_sound.toggled.connect(self.controller.set_wallpaper_sound)
-        v.addWidget(self.wallpaper_sound)
-        v.addWidget(label(tr("开启后，含音轨的视频壁纸会播放声音。"), "muted", True))
-        v.addWidget(label(tr("始终启用：不抢焦点 · 锁屏与熄屏暂停"), "eyebrow", True))
-        layout.addWidget(card)
-        note = QFrame()
-        note.setObjectName("panel")
-        n = QVBoxLayout(note)
-        n.setContentsMargins(26, 22, 26, 22)
-        n.addWidget(label(tr("关于画质和内存"), "section"))
-        n.addSpacing(8)
-        n.addWidget(label(tr("GIF 与视频均由 Qt / FFmpeg 直接读取原文件，并使用相同的原生画面输出；硬件加速由后端根据设备选择。静态图交给 Windows，设置窗口关闭后释放预览控件。\n\n不修改你的原文件、不转码视频、不降低源分辨率。“填充屏幕”可能裁剪边缘；“完整显示”保留整张画面。内存仍受分辨率、编码、驱动和 Python / Qt 基础开销影响。此版以普通 SDR 内容为目标，HDR 与色彩管理未验证。"), "muted", True))
+        playback.body.addWidget(self.wallpaper_sound)
+        playback.body.addWidget(label(tr('每次启动默认静音，开启音轨前需要确认。'), 'muted', True))
+        playback.body.addWidget(label(tr("始终启用：不抢焦点 · 锁屏与熄屏暂停"), "eyebrow", True))
+        layout.addWidget(playback)
+        self.pointer_section = SettingsSection(tr("鼠标与指针"))
+        self.pointer_section.body.addWidget(PointerSettings(self))
+        layout.addWidget(self.pointer_section)
+        self.eye_section = SettingsSection(tr("系统护眼 · 夜间模式"), tr("打开 Windows 原生夜间模式，调整暖色强度或时间计划。"))
+        self.eye_status = label("", "muted", True)
+        self.eye_button = button(tr("打开系统夜间模式设置"), self.open_eye_settings)
+        self.eye_section.body.addWidget(self.eye_status)
+        self.eye_section.body.addWidget(self.eye_button)
+        self.eye_button.setEnabled(False)
+        self.eye_section.toggle.toggled.connect(lambda opened: self.refresh_eye_settings() if opened else None)
+        layout.addWidget(self.eye_section)
+        note = SettingsSection(tr("画质与内存说明"))
+        note.body.addWidget(label(tr("GIF 与视频直接读取原文件。静态图片由 Windows 显示，切换任务完成后释放；关闭设置会释放预览。内存占用仍取决于分辨率、编码和驱动。"), "muted", True))
         layout.addWidget(note)
         layout.addStretch()
+        scroll.setWidget(canvas)
+        outer.addWidget(scroll)
         return page
+
+    def refresh_eye_settings(self):
+        from .system_appearance import night_light_available
+        supported, message = night_light_available()
+        self.eye_button.setEnabled(supported)
+        self.eye_status.setText(message)
+
+    def open_eye_settings(self):
+        from .system_appearance import open_night_light
+        try:
+            open_night_light()
+        except OSError as exc:
+            self.show_error(str(exc))
+
 
     def _about(self):
         page = QWidget()

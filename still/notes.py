@@ -5,12 +5,19 @@ import uuid
 
 from PySide6.QtCore import QDateTime, QObject, QPoint, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QFont, QPainter
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDateTimeEdit, QHBoxLayout, QLineEdit,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QDateTimeEdit, QHBoxLayout, QLineEdit,
     QListWidget, QListWidgetItem, QMenu, QPlainTextEdit, QVBoxLayout, QWidget)
 
 from .i18n import tr
 from .desktop_windows import current_screen, desktop_layer, desktop_owner, DesktopWatcher, live_screen, paint_desktop_panel
 from .productivity_model import utc_now
+
+NOTE_COLORS = {"mint": "#a6e4ca", "blue": "#9ac8ff", "amber": "#f5d18e", "rose": "#efb5c5"}
+
+
+def note_color(value):
+    color = QColor(NOTE_COLORS.get(value, value or ""))
+    return color if color.isValid() else QColor(NOTE_COLORS["mint"])
 
 
 class NotePin(QWidget):
@@ -19,14 +26,31 @@ class NotePin(QWidget):
         self.engine, self.ident = engine, row["id"]
         self.row = row
         self.drag = None
+        self.resizing = None
         self.setWindowTitle(tr("轻块桌面 · 桌面便签"))
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.resize(290, 240)
+        self.setMinimumSize(220, 150)
+        self.setMouseTracking(True)
+        self.body_view = QPlainTextEdit(self)
+        self.body_view.setReadOnly(True)
+        self.body_view.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+        self.body_view.setFrameShape(QPlainTextEdit.Shape.NoFrame)
+        self.body_view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.body_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.body_view.setStyleSheet("QPlainTextEdit { background:transparent; border:0; color:#edf3fa; font:10pt 'Microsoft YaHei UI'; selection-background-color:#476c7b; }")
+        self.body_view.document().setDocumentMargin(0)
+        self.body_view.viewport().setAutoFillBackground(False)
+        self.body_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.body_view.customContextMenuRequested.connect(lambda point: self.show_menu(self.body_view.mapToGlobal(point)))
+        width = row["pin_w"] if "pin_w" in row.keys() and type(row["pin_w"]) is int else 290
+        height = row["pin_h"] if "pin_h" in row.keys() and type(row["pin_h"]) is int else 240
+        self.resize(max(220, min(1400, width)), max(150, min(1400, height)))
+        self.set_note(row)
         self.layer_timer = QTimer(self)
         self.layer_timer.setSingleShot(True)
         self.layer_timer.timeout.connect(self.position_layer)
-        self.setToolTip(tr("拖动位置 · 双击编辑 · 右键管理"))
+        self.setToolTip(tr("拖动标题移动 · 拖动边缘调整大小 · 滚轮浏览内容 · 右键管理"))
 
     def position_layer(self):
         desktop_layer(int(self.winId()))
@@ -42,18 +66,28 @@ class NotePin(QWidget):
 
     def leaveEvent(self, event):
         self.setWindowOpacity(.72)
+        if self.resizing is None and self.drag is None:
+            self.unsetCursor()
         super().leaveEvent(event)
 
     def set_note(self, row):
         self.row = row
+        if self.body_view.toPlainText() != row["body"]:
+            scroll = self.body_view.verticalScrollBar().value()
+            self.body_view.setPlainText(row["body"])
+            self.body_view.verticalScrollBar().setValue(scroll)
         self.update()
+
+    def resizeEvent(self, event):
+        self.body_view.setGeometry(18, 64, max(1, self.width()-36), max(1, self.height()-83))
+        super().resizeEvent(event)
 
     def paintEvent(self, event):
         row = self.row
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        paint_desktop_panel(painter, QRectF(self.rect()), 190)
-        accent = {"mint": "#a6e4ca", "blue": "#9ac8ff", "amber": "#f5d18e", "rose": "#efb5c5"}.get(row["color"], "#a6e4ca")
+        accent = note_color(row["color"])
+        paint_desktop_panel(painter, QRectF(self.rect()), 190, accent)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(accent))
         painter.drawEllipse(QPoint(23, 29), 4, 4)
@@ -64,9 +98,9 @@ class NotePin(QWidget):
         painter.drawText(34, 12, self.width()-53, 34, Qt.AlignmentFlag.AlignVCenter, title)
         painter.setPen(QColor(210, 226, 244, 48))
         painter.drawLine(18, 52, self.width()-18, 52)
-        painter.setPen(QColor("#d8e4ef"))
-        painter.setFont(QFont("Microsoft YaHei UI", 10))
-        painter.drawText(19, 65, self.width()-38, self.height()-84, Qt.TextFlag.TextWordWrap, row["body"][:1800])
+        painter.setPen(QColor(232, 241, 250, 100))
+        for offset in (0, 5):
+            painter.drawLine(self.width()-20+offset, self.height()-8, self.width()-8, self.height()-20+offset)
 
     def place(self, position):
         desired = QRect(position, self.size())
@@ -76,36 +110,81 @@ class NotePin(QWidget):
                 if live_screen(screen) and screen.availableGeometry().intersects(desired)), None))
         if screen is not None:
             area = screen.availableGeometry()
+            self.resize(min(self.width(), max(self.minimumWidth(), area.width())),
+                        min(self.height(), max(self.minimumHeight(), area.height())))
             position = QPoint(max(area.left(), min(position.x(), area.right()-self.width()+1)),
                               max(area.top(), min(position.y(), area.bottom()-self.height()+1)))
         self.move(position)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self.drag = (event.globalPosition().toPoint()-self.pos(), self.pos())
+            edge = self.edge_at(event.position().toPoint())
+            if edge:
+                self.resizing = (edge, event.globalPosition().toPoint(), self.geometry())
+            else:
+                self.drag = (event.globalPosition().toPoint()-self.pos(), self.pos())
+
+    def edge_at(self, point):
+        return ((1 if point.x() < 8 else 2 if point.x() >= self.width()-8 else 0) |
+                (4 if point.y() < 8 else 8 if point.y() >= self.height()-8 else 0))
 
     def mouseMoveEvent(self, event):
-        if self.drag is not None:
+        if self.resizing is not None:
+            edge, start, bounds = self.resizing
+            delta = event.globalPosition().toPoint()-start
+            rect = QRect(bounds)
+            if edge & 1: rect.setLeft(min(bounds.left()+delta.x(), bounds.right()-self.minimumWidth()+1))
+            if edge & 2: rect.setRight(max(bounds.right()+delta.x(), bounds.left()+self.minimumWidth()-1))
+            if edge & 4: rect.setTop(min(bounds.top()+delta.y(), bounds.bottom()-self.minimumHeight()+1))
+            if edge & 8: rect.setBottom(max(bounds.bottom()+delta.y(), bounds.top()+self.minimumHeight()-1))
+            self.setGeometry(rect)
+        elif self.drag is not None:
             self.move(event.globalPosition().toPoint()-self.drag[0])
+        else:
+            edge = self.edge_at(event.position().toPoint())
+            shape = (Qt.CursorShape.SizeFDiagCursor if edge in (5, 10) else
+                     Qt.CursorShape.SizeBDiagCursor if edge in (6, 9) else
+                     Qt.CursorShape.SizeHorCursor if edge & 3 else
+                     Qt.CursorShape.SizeVerCursor if edge else Qt.CursorShape.ArrowCursor)
+            self.setCursor(shape)
 
     def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.resizing is not None:
+            self.resizing = None
+            self.place(self.pos())
+            self.save_geometry()
         if event.button() == Qt.MouseButton.LeftButton and self.drag is not None:
             _, start = self.drag
             self.drag = None
             if self.pos() != start:
                 self.place(self.pos())
-                self.engine.db.execute("UPDATE notes SET pin_x=?,pin_y=? WHERE id=?", (self.x(), self.y(), self.ident))
+                self.save_geometry()
+
+    def save_geometry(self):
+        if self.engine is not None:
+            self.engine.db.execute("UPDATE notes SET pin_x=?,pin_y=?,pin_w=?,pin_h=? WHERE id=?",
+                                   (self.x(), self.y(), self.width(), self.height(), self.ident))
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.engine.edit(self.ident)
 
     def contextMenuEvent(self, event):
+        self.show_menu(event.globalPos())
+
+    def show_menu(self, position):
         menu = QMenu(self)
         menu.addAction(tr("编辑便签"), lambda: self.engine.edit(self.ident))
+        menu.addAction(tr("复制内容"), lambda: QApplication.clipboard().setText(self.row["body"]))
+        menu.addAction(tr("便签颜色…"), self.choose_color)
         menu.addAction(tr("标记完成 / 待办"), lambda: self.engine.toggle_done(self.ident))
         menu.addAction(tr("取消贴到桌面"), lambda: self.engine.pin(self.ident, False))
-        menu.exec(event.globalPos())
+        menu.exec(position)
+
+    def choose_color(self):
+        color = QColorDialog.getColor(note_color(self.row["color"]), self, tr("便签颜色"))
+        if color.isValid():
+            self.engine.set_color(self.ident, color.name())
 
 
 class NotesEngine(QObject):
@@ -162,6 +241,12 @@ class NotesEngine(QObject):
         self.before_change.emit()
         self.db.execute("UPDATE notes SET done=1-done,updated=? WHERE id=?", (utc_now(), ident))
         self.schedule()
+        self.refresh_pins()
+        self.changed.emit()
+
+    def set_color(self, ident, value):
+        self.before_change.emit()
+        self.db.execute("UPDATE notes SET color=?,updated=? WHERE id=?", (note_color(value).name(), utc_now(), ident))
         self.refresh_pins()
         self.changed.emit()
 
@@ -334,6 +419,7 @@ class NotesWindow(QWidget):
         options.addWidget(self.pinned)
         options.addStretch()
         options.addWidget(self.color)
+        options.addWidget(button(tr("调色板"), self.choose_color))
         editor.addLayout(options)
         reminder = QHBoxLayout()
         self.has_due = QCheckBox(tr("到期提醒"))
@@ -402,8 +488,25 @@ class NotesWindow(QWidget):
             self.has_due.setChecked(bool(row["due"]))
             if row["due"]:
                 self.due.setDateTime(QDateTime.fromString(row["due"], Qt.DateFormat.ISODateWithMs).toLocalTime())
-            self.color.setCurrentIndex(max(0, self.color.findData(row["color"])))
+            self.select_color(row["color"])
         self.updating = False
+
+    def select_color(self, value):
+        index = self.color.findData(value)
+        if index < 0:
+            index = 4
+            if self.color.count() == index:
+                self.color.addItem("", value)
+            self.color.setItemText(index, tr("自定义颜色")+" "+note_color(value).name())
+            self.color.setItemData(index, value)
+        self.color.setCurrentIndex(index)
+
+    def choose_color(self):
+        if self.loaded_id:
+            color = QColorDialog.getColor(note_color(self.color.currentData()), self, tr("便签颜色"))
+            if color.isValid():
+                self.select_color(color.name())
+                self.schedule_save()
 
     def schedule_save(self):
         if not self.updating:
