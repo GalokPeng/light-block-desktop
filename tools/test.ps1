@@ -1,4 +1,4 @@
-﻿param([switch]$SkipBuild)
+﻿param([switch]$SkipBuild, [ValidateSet('native-mf','qt-ffmpeg')][string]$VideoProbeBackend='native-mf')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 if (-not $SkipBuild) { & (Join-Path $root 'build.ps1') }
@@ -21,11 +21,15 @@ if ($unitResult.failed -ne 0) { throw 'Native unit checks failed.' }
 $probes = @()
 foreach ($name in @('night-drive.jpg','startrail.gif','motion.mp4')) {
     $report = Join-Path $qa ($name+'.json')
-    Invoke-NativeTest @('--worker','--path',(Join-Path $root ('assets/'+$name)),'--data-dir',(Join-Path $qa 'probe-profile'),'--report',$report)
+    $probeArgs = @('--worker','--path',(Join-Path $root ('assets/'+$name)),'--data-dir',(Join-Path $qa 'probe-profile'),'--report',$report)
+    if ($name -like '*.mp4' -and $VideoProbeBackend -eq 'qt-ffmpeg') { $probeArgs += '--qt-media' }
+    Invoke-NativeTest $probeArgs
     $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+    Write-Output ($name + ': ' + ($result | ConvertTo-Json -Compress))
     if (-not $result.ready -or $result.error -ne 0) { throw ('Media did not become ready: '+$name) }
     if ($name -like '*.gif' -and $result.image_changes -lt 3) { throw 'GIF did not animate.' }
     if ($name -like '*.mp4' -and $result.video_frames -lt 10) { throw 'Video did not render frames.' }
+    if ($name -like '*.mp4' -and $VideoProbeBackend -eq 'qt-ffmpeg' -and $result.backend -ne 'qt-ffmpeg') { throw 'Requested fallback decoder was not exercised.' }
     $probes += [pscustomobject]@{file=$name;result=$result}
 }
 $stress = Join-Path $qa 'switching.json'
@@ -57,6 +61,7 @@ $summary = [ordered]@{
     executable_bytes = (Get-Item -LiteralPath $exe).Length
     native_unit = $unitResult
     actual_playback = $probes
+    video_probe_backend = $VideoProbeBackend
     switching = $stressResult
     parent_exit_child_cleanup = $childGone
     cpp_ui = $uiResult

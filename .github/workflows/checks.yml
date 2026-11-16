@@ -21,15 +21,25 @@ jobs:
         with:
           python-version: '3.11.9'
           architecture: x64
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: recorder-cache
+        with:
+          path: build/recording-runtime
+          key: windows-2022-recorder-v1-${{ hashFiles('tools/build_recording_runtime.py', 'tools/build_ffmpeg.sh', 'tools/validate_recording_runtime.py') }}
       - name: Build complete C++ runtime
         shell: pwsh
         run: |
           python tools/test_release_protocol.py
           if ($LASTEXITCODE -ne 0) { throw 'Preview release isolation contract failed.' }
           ./build.ps1
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: steps.recorder-cache.outputs.cache-hit != 'true'
+        with:
+          path: build/recording-runtime
+          key: ${{ steps.recorder-cache.outputs.cache-primary-key }}
       - name: Native and Qt regressions
         shell: pwsh
-        run: ./tools/test.ps1 -SkipBuild
+        run: ./tools/test.ps1 -SkipBuild -VideoProbeBackend qt-ffmpeg
       - run: node --test tests/test_website_downloads.mjs tests/test_website_theme.mjs tests/test_preview_download.mjs
       - name: Verify curated wallpaper metadata
         run: python tools/check_wallpaper_catalog.py
@@ -38,6 +48,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: cpp-test-evidence
+          include-hidden-files: true
           path: .local/test-*/
           if-no-files-found: warn
           retention-days: 14

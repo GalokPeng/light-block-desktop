@@ -59,3 +59,11 @@ FFmpeg空输出追加诊断在320次查询中得到45次退出码0、输出为�
 时间轴补验使用工具栏自身的窗口焦点：24 FPS合成片段起点拖至1.625秒，Right变为1.667秒，Shift+Left变为1.250秒；Tab移到终点后Left将6.292秒变为6.250秒。经实际格式菜单选择GIF并保存，输出700×520、120帧、总时长5000ms，与1.250–6.250秒选段一致。产物仅在隔离目录`.local/pin-menu-targeted-20261116/LightBlock-Recording.gif`，没有录取个人内容或音频。这是功能与精度证据，不是复杂动态画面编码速度的基准。
 
 可见夹具只链接真实应用模块；为允许验收工具直接选择工具窗口，在夹具内调整了窗口枚举标记，并关闭自身窗口的录屏排除属性。正式程序不包含这些测试标记，也不据此认定排除采集、Alt+Tab或所有系统焦点场景已经覆盖。发布仍为独立不稳定测试版，前文硬件与IME等限制继续保留。
+
+## 云端呈现与解码检查的边界
+
+首次云端运行`43810017302`编译成功、原生单元检查通过，但隐藏的Media Foundation视频探测未达到10个呈现帧，门禁正确停止。首次上传证据未开启隐藏路径，导致`.local/test-*`没有上传；工作流现已仅对指定的合成测试报告路径开启`include-hidden-files`，每个媒体探测也直接打印完整统计。保留此次失败，不将它记为发布成功。
+
+帧数原来来自MF的屏幕呈现统计，不是独立的软件解码计数。[ShowWindow文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow)说明首次显示受启动器的STARTUPINFO控制；[MF统计文档](https://learn.microsoft.com/en-us/windows/win32/api/mfmediaengine/ne-mfmediaengine-mf_media_engine_statistic)将FRAMES_RENDERED定义为已呈现的视频帧。云端隐藏运行不能代替实际桌面呈现验收，也不能只凭PLAYING/ready认定画面已显示。
+
+现在本地默认仍以`native-mf`完成同样的至少10帧检查；托管Windows工作流显式使用随包的`qt-ffmpeg`兼容播放后端，检查真实有效视频帧、后端标识和退出回收，帧数阈值没有降低。两种范围分别记录在报告的`video_probe_backend`中。新路径本地已得到94帧、error=0；完整联合结果和新的云端运行仍须核对。这是测试环境与验证范围修正，不宣称已修复某个未复现的硬件驱动问题。
