@@ -1,4 +1,4 @@
-﻿param([switch]$SkipBuild, [ValidateSet('native-mf','qt-ffmpeg')][string]$VideoProbeBackend='native-mf')
+﻿param([switch]$SkipBuild, [ValidateSet('native-mf','qt-ffmpeg')][string]$VideoProbeBackend='native-mf', [string]$PythonPath='python')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 if (-not $SkipBuild) { & (Join-Path $root 'build.ps1') }
@@ -55,6 +55,9 @@ foreach ($wallpaper in $origins.wallpapers) {
     if ($actual -ne $wallpaper.sha256) { throw ('Wallpaper bytes changed: '+$wallpaper.filename) }
     $assetHashes += [pscustomobject]@{file=$wallpaper.filename;sha256=$actual}
 }
+& $PythonPath (Join-Path $root 'tools/test_lifecycle.py') --exe $exe --output (Join-Path $qa 'lifecycle')
+if ($LASTEXITCODE -ne 0) { throw 'Application exit / session / startup regression.' }
+$lifecycleResult = Get-Content -LiteralPath (Join-Path $qa 'lifecycle/lifecycle.json') -Raw | ConvertFrom-Json
 $summary = [ordered]@{
     created_at = [DateTime]::UtcNow.ToString('o')
     executable_sha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -64,6 +67,7 @@ $summary = [ordered]@{
     video_probe_backend = $VideoProbeBackend
     switching = $stressResult
     parent_exit_child_cleanup = $childGone
+    lifecycle = $lifecycleResult
     cpp_ui = $uiResult
     desktop_note_ui = $noteResult
     ui_dll = (Get-Content -LiteralPath (Join-Path (Split-Path $exe) 'ui-current.txt') -Raw).Trim()

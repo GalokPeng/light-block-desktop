@@ -35,7 +35,7 @@ bool initialize(bool visible) {
     std::unique_ptr<wchar_t,decltype(&free)> name(read_utf8_file((std::filesystem::path(g_app.directory)/L"ui-current.txt").c_str(),256),free);std::wstring filename=name?name.get():L"LightBlockUi.dll";while(!filename.empty()&&iswspace(filename.back())) filename.pop_back();if(!safe_filename(filename.c_str())||!filename.starts_with(L"LightBlockUi")||!filename.ends_with(L".dll")) return false;
     auto path=std::filesystem::path(g_app.directory)/filename;module=LoadLibraryExW(path.c_str(),nullptr,LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);if(!module) { log_line(L"C++ Qt frontend unavailable: %lu",GetLastError());return false; }
     auto entry=reinterpret_cast<GetUiExports>(GetProcAddress(module,"LightBlockUiExports"));if(!entry) return false;auto value=entry();if(!value||value->version!=LB_UI_ABI||value->size!=sizeof(UiExports)) return false;
-    api={LB_UI_ABI,sizeof(UiApi),read_state,read_item,settings_describe,settings_change,app_command,preview,library_import,app_delete_item,tool,tool_size,notes_tick,online_start,play_file,organizer::settings_group,organizer::settings_group_action,extension,select_item,thumbnail};
+    api={LB_UI_ABI,sizeof(UiApi),read_state,read_item,settings_describe,settings_change,app_command,preview,library_import,app_delete_item,tool,tool_size,notes_tick,online_start,play_file,organizer::settings_group,organizer::settings_group_action,extension,select_item,thumbnail,app_session_end};
     if(!value->initialize(&api,visible)) return false;exports=value;return true;
 }
 bool active() { return exports!=nullptr; }int run() { return exports?exports->run():-1; }
@@ -53,5 +53,7 @@ bool launcher_show() {if(!exports||!exports->launcher_show)return false;exports-
 bool show_tool(int action) {if(!exports||!exports->show_tool)return false;exports->show_tool(action);return true;}
 bool update_tests(wchar_t const* directory) {return exports&&exports->update_tests(directory)!=0;}
 void update_exit_failed() {if(exports)exports->update_exit_failed();}
+bool prepare_exit(bool closing) { return !exports||exports->prepare_exit(closing)!=0; }
+bool capture_hidden() {return !exports||exports->capture_hidden()!=0;}
 
 }

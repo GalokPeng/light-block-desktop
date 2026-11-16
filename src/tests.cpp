@@ -10,6 +10,7 @@
 #include "organizer_geometry.hpp"
 bool settings_display_tests();
 bool settings_runtime_tests();
+bool settings_startup_tests();
 bool system_appearance_tests();
 bool media_embed_layout_tests();
 bool capture_pin_tests();
@@ -30,6 +31,7 @@ bool player_result_tests();
 #include "focus.hpp"
 #include "particles.hpp"
 #include "frame_timing.hpp"
+#include "capture_gate.hpp"
 #include <psapi.h>
 static UINT passes,failures;
 static wchar_t checks[12000];
@@ -70,6 +72,9 @@ int run_self_tests(const wchar_t *report) {
     check(lb::organizer::settings_group_tests((std::filesystem::path(g_app.data)/L"group-settings-fixture").wstring()),L"group-settings-empty-name-color-roundtrip-remove-preserves-files");
     check(lb::organizer::entry_tests((std::filesystem::path(g_app.data)/L"organizer-entry-fixture").wstring()),L"organizer-entry-alias-move-restore-reference-drop-rollback");
     check(lb::organizer::interaction_tests((std::filesystem::path(g_app.data)/L"organizer-interaction-fixture").wstring()),L"organizer-menu-drag-auto-collect-stale-target-lifetime");
+    check(lb::capture::start_gate_tests(),L"capture-start-waits-two-distinct-frames-coalesces-and-cancels");
+    check(settings_startup_tests(),L"startup-isolated-registry-command-roundtrip-validation");
+    check(lb::taskbar::shutdown_tests(),L"taskbar-exit-poll-reaps-without-starving-timer");
     check(lb::taskbar::transition_tests(),L"taskbar-reenable-waits-for-restoration");
     check(lb::taskbar::visibility_tests(),L"taskbar-shell-region-workarea-drift-and-edge-reveal");
     check(lb::pointer::transition_tests(),L"pointer-retiring-result-keeps-new-intent");

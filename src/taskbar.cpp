@@ -264,7 +264,37 @@ bool transition_tests() {
     epoch.observe(nullptr,0,130000);if(epoch.expired(200000,15000)) return false;
     epoch.observe(HWND(uintptr_t(3)),20,200001);return retired&&!epoch.expired(200100,15000);
 }
-bool shutdown() { if(client.control) InterlockedExchange(&client.control->enabled,0);if(!client.stopping) client.stop_started=GetTickCount64();client.stopping=true;if(client.process) {if(g_app.window) SetTimer(g_app.window,16,250,nullptr);return false;}if(!client.recovery_failed&&recovery_pending()) {if(start_recovery()) return false;client.recovery_failed=true;log_line(L"Taskbar recovery launch failed; receipt retained for next startup");}return true; }
+bool shutdown_tests() {
+    if(client.process||client.control||client.mapping||recovery_pending()) return false;
+    auto old_window=g_app.window;auto old_closing=g_app.close_requested;auto old_enabled=g_app.settings.taskbar_enabled;
+    auto old_stopping=client.stopping;auto old_started=client.stop_started;
+    HWND fixture=CreateWindowExW(WS_EX_TOOLWINDOW,L"STATIC",L"Shutdown fixture",WS_POPUP,0,0,1,1,nullptr,nullptr,g_app.instance,nullptr);
+    if(!fixture)return false;
+    scope_exit restore([&]{client.process.reset();client.control=nullptr;client.stopping=old_stopping;client.stop_started=old_started;KillTimer(fixture,16);DestroyWindow(fixture);g_app.window=old_window;g_app.close_requested=old_closing;g_app.settings.taskbar_enabled=old_enabled;});
+    Control control{};control.enabled=1;client.control=&control;
+    client.process.reset(CreateEventW(nullptr,TRUE,FALSE,nullptr));if(!client.process) return false;
+    g_app.window=fixture;g_app.close_requested=TRUE;g_app.settings.taskbar_enabled=1;client.stopping=false;
+    SetTimer(fixture,16,250,nullptr);
+    if(shutdown()||control.enabled||!client.stopping)return false;
+    auto began=client.stop_started;Sleep(20);if(shutdown()||began!=client.stop_started)return false;
+    SetEvent(client.process.get());
+    // No timer dispatch: the old implementation still returned false forever.
+    return shutdown()&&!client.process&&g_app.settings.taskbar_enabled==1&&shutdown();
+}
+bool shutdown() {
+    if(client.control) InterlockedExchange(&client.control->enabled,0);
+    if(!client.stopping) client.stop_started=GetTickCount64();
+    client.stopping=true;
+    // Exit polls every 100 ms. Re-arming the 250 ms helper timer here would
+    // postpone it forever. Reap directly; the existing timer also serves the
+    // settings toggle when the application itself is not exiting.
+    if(client.process) { tick();if(client.process) return false; }
+    if(!client.recovery_failed&&recovery_pending()) {
+        if(start_recovery()) return false;
+        client.recovery_failed=true;log_line(L"Taskbar recovery launch failed; receipt retained for next startup");
+    }
+    return true;
+}
 void tick() {
     if(client.process&&client.stopping&&client.stop_started&&WaitForSingleObject(client.process.get(),0)==WAIT_TIMEOUT&&GetTickCount64()-client.stop_started>8000) {log_line(L"Taskbar helper shutdown timed out; using durable recovery receipt");TerminateProcess(client.process.get(),ERROR_TIMEOUT);}
     if(!client.process || WaitForSingleObject(client.process.get(),0)==WAIT_OBJECT_0) {

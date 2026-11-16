@@ -16,6 +16,7 @@
 #include "media_studio.hpp"
 #include "../src/system_appearance_ui_api.h"
 #include <map>
+#include <QAbstractNativeEventFilter>
 #include <psapi.h>
 #include "../src/capture_ui_api.h"
 #include "../src/recording_ui_api.h"
@@ -169,6 +170,8 @@ class Main:public QMainWindow {
     }
     void style() { QPalette palette;palette.setColor(QPalette::Window,QColor(state.dark?"#11151c":"#f3f6f4"));palette.setColor(QPalette::WindowText,QColor(state.dark?"#e9edf0":"#26343b"));palette.setColor(QPalette::Text,palette.color(QPalette::WindowText));palette.setColor(QPalette::ButtonText,palette.color(QPalette::WindowText));palette.setColor(QPalette::Base,QColor(state.dark?"#121a24":"#ffffff"));palette.setColor(QPalette::Button,QColor(state.dark?"#242d39":"#f6f8f7"));palette.setColor(QPalette::Highlight,QColor("#426855"));palette.setColor(QPalette::HighlightedText,QColor("#f4faf7"));qApp->setPalette(palette);QFile sheet(s(state.directory)+(state.dark?"/ui/dark.qss":"/ui/light.qss"));if(sheet.open(QIODevice::ReadOnly)) setStyleSheet(QString::fromUtf8(sheet.readAll())+QString("QSlider::groove:horizontal {height:4px;background:#354151;border-radius:2px;} QSlider::handle:horizontal {width:14px;margin:-5px 0;background:#a6e4ca;border-radius:7px;} QPlainTextEdit {background:%1;color:%2;border:1px solid %3;border-radius:8px;padding:10px;} QKeySequenceEdit {background:%1;color:%2;border:1px solid %3;border-radius:7px;padding:7px;} ").arg(state.dark?"#172330":"#ffffff",state.dark?"#e9edf0":"#26343b",state.dark?"#344253":"#c5d5cd"));BOOL dark=state.dark;HWND hwnd=reinterpret_cast<HWND>(winId());DwmSetWindowAttribute(hwnd,20,&dark,sizeof dark);COLORREF background=state.dark?RGB(17,21,28):RGB(243,246,244);DwmSetWindowAttribute(hwnd,35,&background,sizeof background); }
 public:
+    bool prepare_exit(bool closing) { if(!flush_pending()) return false;if(closing) {setEnabled(false);refresh_.stop();}return true; }
+    void cancel_exit() {setEnabled(true);if(isVisible()) refresh_.start();}
 #include "snapshot.inc"
     Main() { setWindowTitle(s(state.english?LB_PRODUCT_ENGLISH:LB_PRODUCT_NAME));setWindowIcon(QIcon(s(state.directory)+"/assets/app.ico"));setMinimumSize(960,620);auto available=QGuiApplication::primaryScreen()?QGuiApplication::primaryScreen()->availableGeometry().size():QSize(1250,850);resize(QSize(1250,850).boundedTo(available-QSize(40,60)));setAcceptDrops(true);build();style();refresh_.setInterval(200);connect(&refresh_,&QTimer::timeout,this,[this]{refresh_state();});refresh_.start(); }
     void navigate(int page) { if(!flush_pending()) return;if(page!=0) suspend_preview();page_=page;char const* headingsZh[]={"壁纸","美化","截屏与录屏","工具","设置","关于"};char const* headingsEn[]={"Wallpapers","Appearance","Capture and recording","Tools","Settings","About"};heading_->setText(t(headingsZh[page],headingsEn[page]));setWindowTitle(s(state.english?LB_PRODUCT_ENGLISH:LB_PRODUCT_NAME));pages_->setCurrentIndex(page);nav_[page]->setChecked(true);if(page==0) resume_gif();if(page==3) tools_->setCurrentIndex(0);import_->setVisible(page==0||page==3);import_->setText(page==3?t("＋  新建便签","＋  New note"):t("＋  导入壁纸","＋  Import"));disconnect(import_,nullptr,this,nullptr);connect(import_,&QPushButton::clicked,this,[this]{if(page_==3) api.action(700);else import_files();}); }
@@ -190,16 +193,40 @@ public:
     void dropEvent(QDropEvent* e) override { for(auto const& url:e->mimeData()->urls()) if(url.isLocalFile()) api.import_file(w(url.toLocalFile())); }
 };
 std::unique_ptr<QApplication> application;std::unique_ptr<Main> main_window;
-int initialize(UiApi const* supplied,int visible) { if(!supplied||supplied->version!=LB_UI_ABI||supplied->size!=sizeof(UiApi)) return 0;api=*supplied;api.state(&state);qputenv("QT_QPA_PLATFORM_PLUGIN_PATH",QFile::encodeName(s(state.directory)+"/qt-plugins/platforms"));if(qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))qputenv("QT_QPA_PLATFORM","windows:fontengine=gdi");qInstallMessageHandler([](QtMsgType,QMessageLogContext const&,QString const& message){QFile log(s(state.data)+"/qt-ui.log");if(log.open(QIODevice::WriteOnly|QIODevice::Append)) { log.write(message.toUtf8());log.write("\n"); }});static int argc=1;static char name[]="LightBlockDesktop";static char* argv[]={name,nullptr};application=std::make_unique<QApplication>(argc,argv);application->setFont(QFont("Microsoft YaHei UI",9));application->setQuitOnLastWindowClosed(false);application->setStyle("Fusion");application->addLibraryPath(s(state.directory)+"/qt-plugins");if(visible) { main_window=std::make_unique<Main>();main_window->show();ShowWindow(reinterpret_cast<HWND>(main_window->winId()),SW_RESTORE);QTimer::singleShot(1000,qApp,[]{updates().check();}); }return 1; }
+// Qt top-level windows can receive the session notification before the native
+// controller. Route both through the same idempotent cleanup path, instead of
+// letting Qt quit its event loop before desktop restoration has started.
+class SessionEvents final:public QAbstractNativeEventFilter {
+public:
+    bool nativeEventFilter(QByteArray const&,void* raw,qintptr* result) override {
+        auto message=static_cast<MSG*>(raw);
+        if(message->message==WM_QUERYENDSESSION) {*result=api.session_end(-1);return true;}
+        if(message->message==WM_ENDSESSION) {*result=api.session_end(message->wParam?1:0);return true;}
+        return false;
+    }
+};
+SessionEvents session_events;
+int initialize(UiApi const* supplied,int visible) { if(!supplied||supplied->version!=LB_UI_ABI||supplied->size!=sizeof(UiApi)) return 0;api=*supplied;api.state(&state);qputenv("QT_QPA_PLATFORM_PLUGIN_PATH",QFile::encodeName(s(state.directory)+"/qt-plugins/platforms"));if(qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))qputenv("QT_QPA_PLATFORM","windows:fontengine=gdi");qInstallMessageHandler([](QtMsgType,QMessageLogContext const&,QString const& message){QFile log(s(state.data)+"/qt-ui.log");if(log.open(QIODevice::WriteOnly|QIODevice::Append)) { log.write(message.toUtf8());log.write("\n"); }});static int argc=1;static char name[]="LightBlockDesktop";static char* argv[]={name,nullptr};application=std::make_unique<QApplication>(argc,argv);application->setFont(QFont("Microsoft YaHei UI",9));application->setQuitOnLastWindowClosed(false);application->installNativeEventFilter(&session_events);application->setStyle("Fusion");application->addLibraryPath(s(state.directory)+"/qt-plugins");if(visible) { main_window=std::make_unique<Main>();main_window->show();ShowWindow(reinterpret_cast<HWND>(main_window->winId()),SW_RESTORE);QTimer::singleShot(1000,qApp,[]{updates().check();}); }return 1; }
 int snapshots(wchar_t const* directory) { if(!main_window) main_window=std::make_unique<Main>();bool ok=main_window->snapshots(s(directory));QTimer::singleShot(0,qApp,[]{api.action(900);});return ok; }
 int update_tests(wchar_t const* directory) { bool ok=UpdateService::tests(s(directory));QTimer::singleShot(0,qApp,[]{api.action(900);});return ok?1:0; }
-void update_exit_failed(){if(update_service)update_service->quit_failed();}
+int prepare_exit(int closing){if(!notes_flush_all())return 0;return !main_window||main_window->prepare_exit(closing!=0);}
+void update_exit_failed(){if(main_window)main_window->cancel_exit();if(update_service)update_service->quit_failed();}
 int run() { int code=application->exec();notes_shutdown(1);main_window.reset();update_service.reset();application.reset();return code; }
-void show(int page) { if(!main_window) { api.state(&state);main_window=std::make_unique<Main>(); }main_window->show_page(page); }void hide() { if(main_window) main_window->hide(); }
+void show(int page) { if(!main_window) { api.state(&state);main_window=std::make_unique<Main>(); }main_window->show_page(page); }
+void hide() {
+    if(auto popup=QApplication::activePopupWidget()) popup->hide();
+    if(!main_window) return;
+    auto hwnd=HWND(main_window->winId());BOOL previous=FALSE,disabled=TRUE;
+    DwmGetWindowAttribute(hwnd,DWMWA_TRANSITIONS_FORCEDISABLED,&previous,sizeof previous);
+    DwmSetWindowAttribute(hwnd,DWMWA_TRANSITIONS_FORCEDISABLED,&disabled,sizeof disabled);
+    main_window->hide();
+    QTimer::singleShot(350,main_window.get(),[hwnd,previous]{if(IsWindow(hwnd))DwmSetWindowAttribute(hwnd,DWMWA_TRANSITIONS_FORCEDISABLED,&previous,sizeof previous);});
+}
+int capture_hidden(){return (!main_window||!main_window->isVisible())&&!QApplication::activePopupWidget();}
 uintptr_t preview_host() { return main_window?main_window->preview_host():0; }
 void show_tool(int action) {if(!main_window){api.state(&state);main_window=std::make_unique<Main>();}main_window->show_tool_page(action);}
 void notes_manager() { if(!main_window) { api.state(&state);main_window=std::make_unique<Main>(); }main_window->show_notes();main_window->show_page(-1); }
 }
 extern "C" __declspec(dllexport) UiExports const* LightBlockUiExports() {
-    static UiExports exports{LB_UI_ABI,sizeof(UiExports),ui::initialize,ui::run,ui::show,ui::hide,ui::preview_host,ui::note_open,ui::note_close,ui::notes_shutdown,ui::notes_manager,ui::snapshots,ui::show_launcher,ui::show_tool,ui::update_tests,ui::update_exit_failed};return &exports;
+    static UiExports exports{LB_UI_ABI,sizeof(UiExports),ui::initialize,ui::run,ui::show,ui::hide,ui::preview_host,ui::note_open,ui::note_close,ui::notes_shutdown,ui::notes_manager,ui::snapshots,ui::show_launcher,ui::show_tool,ui::update_tests,ui::update_exit_failed,ui::prepare_exit,ui::capture_hidden};return &exports;
 }

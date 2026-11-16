@@ -764,16 +764,16 @@ LRESULT CALLBACK capture_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
 }
 }
 void capture_start(HWND owner,bool record) {
-    (void)owner;if(session) return;
+    (void)owner;if(g_app.close_requested||session) return;
     int x=GetSystemMetrics(SM_XVIRTUALSCREEN),y=GetSystemMetrics(SM_YVIRTUALSCREEN),w=GetSystemMetrics(SM_CXVIRTUALSCREEN),h=GetSystemMetrics(SM_CYVIRTUALSCREEN);
-    if(w<=0||h<=0||uint64_t(w)*h>64*1024*1024) return;
+    if(w<=0||h<=0||uint64_t(w)*h>64*1024*1024) {log_line(L"capture rejected virtual bounds %d x %d",w,h);return;}
     auto surface=std::make_unique<Capture>();surface->source_layout=screen_layout();surface->record_after_selection=record;surface->width=w;surface->height=h;HDC screen=GetDC(nullptr),memory=CreateCompatibleDC(screen);
     surface->snapshot.reset(CreateCompatibleBitmap(screen,w,h));surface->buffer.reset(CreateCompatibleBitmap(screen,w,h));auto old=SelectObject(memory,surface->snapshot.get());
-    BOOL ok=BitBlt(memory,0,0,w,h,screen,x,y,SRCCOPY|CAPTUREBLT);SelectObject(memory,old);DeleteDC(memory);ReleaseDC(nullptr,screen);if(!ok||!surface->buffer) return;
+    BOOL ok=BitBlt(memory,0,0,w,h,screen,x,y,SRCCOPY|CAPTUREBLT);SelectObject(memory,old);DeleteDC(memory);ReleaseDC(nullptr,screen);if(!ok||!surface->buffer) {log_line(L"capture bitmap failed error=%lu",GetLastError());return;}
     WNDCLASSW cls{};cls.hInstance=g_app.instance;cls.lpfnWndProc=capture_proc;cls.style=CS_DBLCLKS;cls.hCursor=LoadCursorW(nullptr,IDC_CROSS);
     cls.lpszClassName=L"LightBlockDesktopNative.Capture";RegisterClassW(&cls);session=std::move(surface);
     session->window=CreateWindowExW(WS_EX_TOPMOST|WS_EX_TOOLWINDOW,cls.lpszClassName,tr(L"轻块截屏",L"Light Block Capture"),WS_POPUP,x,y,w,h,nullptr,nullptr,g_app.instance,nullptr);
-    if(session->window) { ShowWindow(session->window,SW_SHOW);SetForegroundWindow(session->window);SetFocus(session->window);show_toolbar(*session); }else session.reset();
+    if(session->window) { ShowWindow(session->window,SW_SHOW);SetForegroundWindow(session->window);SetFocus(session->window);show_toolbar(*session);log_line(L"capture selection shown bounds=%d x %d",w,h); }else {log_line(L"capture window creation failed error=%lu",GetLastError());session.reset();}
 }
 void capture_shutdown(void) { if(session) DestroyWindow(session->window);for(auto &pin:pins) if(pin) DestroyWindow(pin->window); }
 void capture_pin_bitmap(HBITMAP bitmap,RECT location,bool fit,bool edit,bool wheel_sizes) { create_pin(std::make_unique<lb::capture::Document>(bitmap),location,fit,{},edit,wheel_sizes); }

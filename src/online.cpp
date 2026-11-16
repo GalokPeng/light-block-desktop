@@ -174,7 +174,7 @@ static LRESULT CALLBACK online_proc(HWND window,UINT message,WPARAM wp,LPARAM lp
     case WM_ONLINE_DONE:
         if(online.thread) { CloseHandle(online.thread);online.thread=NULL; }EnableWindow(online.download,TRUE);EnableWindow(online.preview,TRUE);
         ++online.serial;online.percent=SUCCEEDED(online.result)?100:0;report_download_result();
-        if(SUCCEEDED(online.result)) { if(online.preview_job) player_request(online.job_path,FALSE);else SetWindowTextW(online.details,tr(L"原文件下载和 SHA-1 校验完成，可以导入壁纸库。",L"Original downloaded and SHA-1 verified. You can add it to your library.")); }
+        if(SUCCEEDED(online.result)) { if(online.preview_job&&!g_app.close_requested) player_request(online.job_path,FALSE);else SetWindowTextW(online.details,tr(L"原文件下载和 SHA-1 校验完成，可以导入壁纸库。",L"Original downloaded and SHA-1 verified. You can add it to your library.")); }
         else if(!g_app.close_requested && online.result!=HRESULT_FROM_WIN32(ERROR_CANCELLED)) error_box(window,tr(L"下载失败或内容校验不一致",L"Download failed or checksum did not match"),online.result);refresh();return 0;
     case WM_CTLCOLORSTATIC:SetBkMode((HDC)wp,TRANSPARENT);SetTextColor((HDC)wp,g_app.dark?RGB(235,240,249):RGB(29,38,49));return (LRESULT)online.brush;
     case WM_ERASEBKGND: { RECT r;GetClientRect(window,&r);FillRect((HDC)wp,&r,online.brush);return 1; }
@@ -186,7 +186,15 @@ void online_show(void) {
     if(online.window) { ShowWindow(online.window,SW_RESTORE);SetForegroundWindow(online.window);return; }
     WNDCLASSW cls={};cls.lpfnWndProc=online_proc;cls.hInstance=g_app.instance;cls.lpszClassName=L"LightBlockDesktopNative.Online";cls.hCursor=LoadCursorW(NULL,IDC_ARROW);RegisterClassW(&cls);HWND window=CreateWindowExW(0,cls.lpszClassName,tr(L"在线壁纸",L"Online wallpapers"),WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU,140,90,916,650,g_app.window,NULL,g_app.instance,NULL);if(window) { theme_window(window);ShowWindow(window,SW_SHOW); }
 }
-BOOL online_shutdown(void) { if(online.thread) { InterlockedExchange(&online.cancel,1);return FALSE; }if(online.window) DestroyWindow(online.window);return TRUE; }
+BOOL online_shutdown(void) {
+    if(online.thread) {
+        InterlockedExchange(&online.cancel,1);
+        if(WaitForSingleObject(online.thread,0)!=WAIT_OBJECT_0) return FALSE;
+        // A hidden/destroyed page can lose its completion notification.
+        CloseHandle(online.thread);online.thread=nullptr;
+    }
+    if(online.window) DestroyWindow(online.window);return TRUE;
+}
 void online_snapshot(UiState* out) { out->download_busy=online.thread!=nullptr;out->download_percent=online.percent;out->download_index=int(online.job);out->download_preview=online.preview_job;out->download_error=!online.thread&&FAILED(online.result);out->download_serial=online.serial;StringCchCopyW(out->download_path,LB_UI_PATH,online.job_path);out->download_received=online.received.load();out->download_total=online.total.load();out->download_stage=online.thread&&InterlockedCompareExchange(&online.cancel,0,0)?4:online.stage.load();out->download_elapsed=online.thread?int((GetTickCount64()-online.started)/1000):0;out->download_idle=online.thread?int((GetTickCount64()-online.activity.load())/1000):0; }
 bool online_message(UINT message,WPARAM wp,LPARAM) {
     if(online.window) return false;if(message==WM_ONLINE_PROGRESS) { online.percent=int(wp);return true; }if(message!=WM_ONLINE_DONE) return false;
@@ -194,6 +202,7 @@ bool online_message(UINT message,WPARAM wp,LPARAM) {
     report_download_result();return true;
 }
 void online_start(int index,int preview) {
+    if(g_app.close_requested) return;
     if(index==-1) { InterlockedExchange(&online.cancel,1);return; }if(online.thread) return;if(!online.items&&!load_catalog()) return;if(index<0||index>=int(online.count)) return;auto const& item=online.items[index];if(preview==2||preview==3) { if(downloaded(item)){if(preview==3)library_import_apply_checked(item.local,item.sha1);else library_import_checked(item.local,item.sha1);}else set_status(L"请先完整下载壁纸",L"Download the wallpaper first.");return; }online.job=UINT(index);online.preview_job=preview!=0;online.percent=0;online.result=S_OK;
     if(downloaded(item)) { StringCchCopyW(online.job_path,LB_PATH,item.local);online.percent=100;++online.serial;report_download_result();return; }
     if(preview) { auto directory=std::filesystem::path(g_app.data)/L"previews";ensure_directory(directory.c_str());StringCchCopyW(online.job_path,LB_PATH,(directory/item.filename).c_str()); }else {ensure_directory((std::filesystem::path(g_app.data)/L"online").c_str());StringCchCopyW(online.job_path,LB_PATH,item.local);}

@@ -22,6 +22,7 @@ int notes_shutdown(int preserve);
 QWidget* notes_page(QWidget* parent=nullptr);
 void notes_refresh_page();
 bool notes_flush();
+bool notes_flush_all();
 bool notes_ui_tests(QString const& directory);
 void desktop_layer(HWND window);
 }

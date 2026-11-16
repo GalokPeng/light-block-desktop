@@ -18,6 +18,7 @@
 #include "profile.hpp"
 #include "static_wallpaper.hpp"
 #include "performance.hpp"
+#include "capture_gate.hpp"
 #include <commdlg.h>
 #include <map>
 
@@ -25,6 +26,8 @@ struct Hit { RECT rect;int id; };
 static Hit hits[180];static UINT hit_count;static UINT taskbar_created;static LONG cancel_import;static UINT grid_offset,hidden_builtins;
 static wchar_t removing[LB_PATH];static ULONGLONG remove_started;
 static bool desktop_menu_active{},fixture_mode{};
+static lb::capture::StartGate capture_gate;
+static BOOL capture_previous_transitions=FALSE;
 struct Import { wchar_t source[LB_PATH],dest[LB_PATH],sha1[41];HBITMAP thumb;BOOL ok;DWORD error;int progress;bool apply; };
 static int px(int n) { return MulDiv(n,(int)g_app.dpi,96); }
 static COLORREF bg(void) { return g_app.dark?RGB(18,23,32):RGB(246,247,250); }
@@ -206,6 +209,7 @@ static DWORD WINAPI import_thread(void *data) {
     return 0;
 }
 static void import_file(const wchar_t *path,const wchar_t *expected=nullptr,bool apply=false) {
+    if(g_app.close_requested) return;
     if(g_app.import_thread) { set_status(L"已有文件正在导入，请稍候",L"An import is already running.");return; }
     if(media_kind(path)==MEDIA_UNKNOWN) { set_status(L"请选择图片、GIF 或 Windows 支持的视频",L"Choose an image, GIF or Windows-supported video.");return; }
     if(g_app.count>=LB_MAX_ITEMS) { set_status(L"图库已达到 10000 项上限，请先整理现有内容",L"The library has reached 10000 items. Remove unused entries first.");return; }
@@ -225,19 +229,107 @@ static void browse_file(void) {
 void library_import(const wchar_t *path) { import_file(path); }
 void library_import_checked(const wchar_t *path,const wchar_t *sha1) { import_file(path,sha1); }
 void library_import_apply_checked(const wchar_t *path,const wchar_t *sha1) { import_file(path,sha1,true); }
-static void show_main(void) { if(lb::frontend::active()) { lb::frontend::show();return; }ShowWindow(g_app.window,SW_RESTORE);SetWindowPos(g_app.window,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_SHOWWINDOW);SetForegroundWindow(g_app.window); }
+static void show_main(void) { if(g_app.close_requested) return; if(lb::frontend::active()) { lb::frontend::show();return; }ShowWindow(g_app.window,SW_RESTORE);SetWindowPos(g_app.window,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_SHOWWINDOW);SetForegroundWindow(g_app.window); }
 void app_open_settings(int page) { if(lb::frontend::active()) { lb::frontend::show(page>=1&&page<=3?1:page==4?2:4);return; }g_app.page=page>=1&&page<=3?3:page==4?5:4;settings_mount(page);lb::clipboard::layout();lb::files::layout();lb::focus::layout();show_main();InvalidateRect(g_app.window,nullptr,FALSE); }
 static void tray_add(void) {
     ZeroMemory(&g_app.tray,sizeof g_app.tray);g_app.tray.cbSize=sizeof g_app.tray;g_app.tray.hWnd=g_app.window;g_app.tray.uID=1;g_app.tray.uFlags=NIF_MESSAGE|NIF_ICON|NIF_TIP;g_app.tray.uCallbackMessage=WM_LB_TRAY;
     g_app.tray.hIcon=LoadIconW(g_app.instance,MAKEINTRESOURCEW(1));if(!g_app.tray.hIcon) g_app.tray.hIcon=LoadIconW(NULL,IDI_APPLICATION);
     StringCchCopyW(g_app.tray.szTip,ARRAYSIZE(g_app.tray.szTip),LB_PRODUCT_NAME L" / Light Block Desktop Preview");Shell_NotifyIconW(NIM_ADD,&g_app.tray);g_app.tray.uVersion=NOTIFYICON_VERSION_4;Shell_NotifyIconW(NIM_SETVERSION,&g_app.tray);
 }
+static void cancel_capture_start() {
+    capture_gate.cancel();KillTimer(g_app.window,9);
+    DwmSetWindowAttribute(g_app.window,DWMWA_TRANSITIONS_FORCEDISABLED,&capture_previous_transitions,sizeof capture_previous_transitions);
+}
+static void schedule_capture(bool record) {
+    if(g_app.close_requested||!capture_gate.arm(GetTickCount64(),record)) return;
+    log_line(L"capture preparation started recording=%d",record);
+    DwmGetWindowAttribute(g_app.window,DWMWA_TRANSITIONS_FORCEDISABLED,&capture_previous_transitions,sizeof capture_previous_transitions);
+    BOOL disabled=TRUE;DwmSetWindowAttribute(g_app.window,DWMWA_TRANSITIONS_FORCEDISABLED,&disabled,sizeof disabled);
+    lb::frontend::hide();ShowWindow(g_app.window,SW_HIDE);
+    SetTimer(g_app.window,9,32,nullptr);
+}
+static void capture_start_tick() {
+    if(g_app.close_requested||!capture_gate.pending) {cancel_capture_start();return;}
+    if(!capture_gate.due(GetTickCount64())) return;
+    if(IsWindowVisible(g_app.window)||!lb::frontend::capture_hidden()) {log_line(L"capture preparation cancelled: settings/popup became visible");cancel_capture_start();return;}
+    // Flush submitted composition work, yield a frame, then flush again.
+    // No Sleep loop: settings/exit/cancellation keep processing messages.
+    DwmFlush();
+    if(!capture_gate.presented(GetTickCount64())) return;
+    log_line(L"capture preparation complete elapsed=%llu ms",GetTickCount64()-capture_gate.requested);
+    bool record=capture_gate.record;cancel_capture_start();
+    if(!g_app.close_requested) capture_start(g_app.window,record);
+}
+static ULONGLONG shutdown_started{},shutdown_logged{};
+static bool shutdown_finalizing{},shutdown_polling{};
+static std::wstring shutdown_pending;
 static bool prepare_shutdown(void) {
-    bool ready=true;auto collect=[&](bool done){ready=done&&ready;};
-    collect(online_shutdown());collect(lb::taskbar::shutdown());collect(lb::organizer::shutdown());
-    collect(lb::recording::shutdown());collect(lb::thumbnails::shutdown());collect(lb::scroll::shutdown());collect(lb::pointer::shutdown());collect(lb::clipboard::shutdown());collect(lb::files::shutdown());return ready;
+    std::wstring pending;
+    auto collect=[&](wchar_t const* name,bool done){if(!done){if(!pending.empty()) pending+=L", ";pending+=name;}};
+    collect(L"download",online_shutdown());collect(L"taskbar",lb::taskbar::shutdown());collect(L"organizer",lb::organizer::shutdown());
+    collect(L"recording",lb::recording::shutdown());collect(L"thumbnails",lb::thumbnails::shutdown());collect(L"scroll-capture",lb::scroll::shutdown());
+    collect(L"pointer",lb::pointer::shutdown());collect(L"clipboard",lb::clipboard::shutdown());collect(L"files",lb::files::shutdown());
+    if(g_app.import_thread&&WaitForSingleObject(g_app.import_thread,0)!=WAIT_OBJECT_0) collect(L"file-import",false);
+    auto now=GetTickCount64();
+    if(pending!=shutdown_pending||(!pending.empty()&&now-shutdown_logged>=3000)) {
+        log_line(L"shutdown pending=[%s] elapsed=%llu ms",pending.c_str(),now-shutdown_started);
+        shutdown_logged=now;shutdown_pending=pending;
+    }
+    return pending.empty();
+}
+static bool exit_checkpoint(bool closing) {
+    // Flush debounced settings and every note before shutting down any owner.
+    if(lb::frontend::prepare_exit(closing)&&notes_flush()&&save_config()) return true;
+    lb::frontend::update_exit_failed();
+    set_status(L"设置或便签未能保存，已取消退出。请检查数据目录后重试。",L"Settings or notes could not be saved. Exit was cancelled; check the data folder and retry.");
+    log_line(L"shutdown checkpoint failed; application kept running");return false;
+}
+static void request_exit(bool session_ending=false) {
+    if(shutdown_polling||shutdown_finalizing) return;
+    shutdown_polling=true;lb::scope_exit leave([]{shutdown_polling=false;});
+    if(!g_app.close_requested) {
+        if(!exit_checkpoint(true)&&!session_ending) return;
+        if(!notes_shutdown()&&!session_ending) {lb::frontend::update_exit_failed();return;}
+        g_app.close_requested=TRUE;shutdown_started=GetTickCount64();shutdown_logged=0;shutdown_pending.clear();
+        log_line(L"shutdown requested session=%d",session_ending);
+        InterlockedExchange(&cancel_import,1);
+        cancel_capture_start();KillTimer(g_app.window,22);
+        lb::particles::shutdown();lb::focus::shutdown();capture_shutdown();launcher_shutdown();settings_close();
+        player_stop(TRUE);
+        SetTimer(g_app.window,12,100,nullptr);
+        set_status(L"正在结束后台任务并恢复桌面…",L"Finishing background tasks and restoring the desktop…");
+    }
+    if(!prepare_shutdown()) return;
+    KillTimer(g_app.window,12);shutdown_finalizing=true;
+    g_app.player.quitting=TRUE;player_stop(TRUE);
+    // player_tick also drains recording preview players, not just wallpaper.
+    SetTimer(g_app.window,1,80,nullptr);
+}
+int app_session_end(int phase) {
+    if(phase<0) {
+        bool ready=g_app.close_requested||exit_checkpoint(false);
+        if(!ready) ShutdownBlockReasonCreate(g_app.window,tr(L"正在保存便签和设置",L"Saving notes and settings"));
+        return ready;
+    }
+    ShutdownBlockReasonDestroy(g_app.window);
+    if(!phase) {log_line(L"Windows session end cancelled; application remains running");return 0;}
+    // Windows may terminate us as soon as WM_ENDSESSION returns. Give helpers
+    // a bounded chance to restore; durable receipts cover forced termination.
+    static bool ending=false;if(ending) return 0;ending=true;
+    ULONGLONG deadline=GetTickCount64()+3000;request_exit(true);
+    while(IsWindow(g_app.window)&&GetTickCount64()<deadline) {
+        request_exit(true);MSG message{};
+        while(PeekMessageW(&message,nullptr,0,0,PM_REMOVE)) {
+            if(message.message==WM_QUIT) {PostQuitMessage(int(message.wParam));ending=false;return 0;}
+            TranslateMessage(&message);DispatchMessageW(&message);
+        }
+        if(IsWindow(g_app.window)) MsgWaitForMultipleObjectsEx(0,nullptr,20,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
+    }
+    if(IsWindow(g_app.window)) log_line(L"session cleanup deadline reached; recovery receipts retained, pending=[%s]",shutdown_pending.c_str());
+    ending=false;return 0;
 }
 static void command(int id) {
+    if(g_app.close_requested&&id!=900) return;
     if(lb::frontend::active()&&id>=100&&id<=105) { int pages[]={0,3,5,1,2,4};lb::frontend::show(pages[id-100]);return; }
     if(id>=100 && id<=102) { g_app.page=(UINT)id-100;if(id==101) { lb::clipboard::home();lb::files::home();lb::focus::home(); } }
     else if(id>=300 && id<=302) { g_app.filter=(UINT)id-300;grid_offset=0;for(UINT n=0;n<g_app.count;++n) if((UINT)g_app.items[n].kind==g_app.filter) { g_app.selected=n;break; } }
@@ -262,7 +354,7 @@ static void command(int id) {
     case 601:g_app.dark=!g_app.dark;theme_window(g_app.window);settings_refresh();save_config();break;
     case 602:g_app.english=!g_app.english;if(desktop_menu_active)lb::profile::desktop_menu(g_app.exe,true,true,g_app.english!=FALSE,g_app.data,!g_app.settings.wallpaper_sound);g_app.language=g_app.english?2:1;settings_refresh();save_config();set_status(L"选择壁纸，预览或应用到桌面",L"Choose a wallpaper to preview or apply to your desktop.");break;
     case 700:note_create(g_app.window);break;
-    case 701:lb::frontend::hide();ShowWindow(g_app.window,SW_HIDE);SetTimer(g_app.window,9,120,NULL);break;
+    case 701:schedule_capture(false);break;
     case 702:launcher_show(g_app.window);break;
     case 703: { wchar_t path[LB_PATH];path_join(path,LB_PATH,g_app.data,L"notes");ensure_directory(path);ShellExecuteW(g_app.window,L"open",path,NULL,NULL,SW_SHOWNORMAL);break; }
     case 704:ShellExecuteW(g_app.window,L"open",g_app.data,NULL,NULL,SW_SHOWNORMAL);break;
@@ -274,10 +366,8 @@ static void command(int id) {
     case 710:if(!lb::frontend::show_tool(710))lb::recording::open_file(g_app.window);break;
     case 711:lb::capture::edit_clipboard(g_app.window);break;
     case 712:lb::recording::toggle(g_app.window);break;
-    case 713:lb::frontend::hide();ShowWindow(g_app.window,SW_HIDE);SetTimer(g_app.window,22,120,nullptr);break;
-    case 900:
-        if(g_app.import_thread && WaitForSingleObject(g_app.import_thread,0)!=WAIT_OBJECT_0) { InterlockedExchange(&cancel_import,1);g_app.close_requested=TRUE;SetTimer(g_app.window,12,100,NULL);set_status(L"正在取消文件导入…",L"Cancelling file import…");break; }
-        if(!notes_shutdown()) { g_app.close_requested=FALSE;lb::frontend::update_exit_failed();break; }if(!prepare_shutdown()) { g_app.close_requested=TRUE;SetTimer(g_app.window,12,100,NULL);set_status(L"正在结束后台任务并恢复桌面…",L"Finishing background tasks and restoring the desktop…");break; }lb::particles::shutdown();lb::focus::shutdown();capture_shutdown();launcher_shutdown();settings_close();g_app.player.quitting=TRUE;player_stop(TRUE);if(g_app.player.process || g_app.wallpaper.process || lb::static_wallpaper::busy()) SetTimer(g_app.window,1,80,NULL);else DestroyWindow(g_app.window);return;
+    case 713:schedule_capture(true);break;
+    case 900:request_exit();return;
     case 901:show_main();return;
     } }
     settings_layout();lb::clipboard::layout();lb::files::layout();lb::focus::layout();InvalidateRect(g_app.window,NULL,FALSE);
@@ -294,7 +384,7 @@ static LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wp,LPARAM lp
     if(lb::files::message(message,wp,lp)) return 0;
     if(message!=WM_LB_READY&&lb::focus::message(message,wp,lp)) return 0;
     if(lb::organizer::message(message,wp,lp)) return 0;
-    if(taskbar_created && message==taskbar_created) { tray_add();lb::organizer::shell_restarted();return 0; }
+    if(taskbar_created && message==taskbar_created) { if(g_app.close_requested) return 0;tray_add();lb::organizer::shell_restarted();return 0; }
     switch(message) {
     case WM_CREATE:g_app.window=window;SetPropW(window,L"LB.Profile",(HANDLE)(uintptr_t)(DWORD)(uintptr_t)((CREATESTRUCTW*)lp)->lpCreateParams);if(!fixture_mode)tray_add();DragAcceptFiles(window,TRUE);if(!fixture_mode&&!configure_hotkey((UINT)g_app.settings.capture_modifiers,(UINT)g_app.settings.capture_key)) log_line(L"capture hotkey unavailable: %lu",GetLastError());if(!fixture_mode&&!configure_tool_hotkeys(g_app.settings.hotkeys_enabled!=0,false))log_line(L"Tool shortcuts unavailable: %lu",GetLastError());return 0;
     case WM_ERASEBKGND:return 1;
@@ -312,20 +402,22 @@ static LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wp,LPARAM lp
     case WM_COMMAND:command(LOWORD(wp));return 0;
     case WM_HOTKEY:if(wp==1||wp==2)command(701);else if(wp==11&&tool_hotkey_registered(11))command(712);else if(wp==12&&tool_hotkey_registered(12))command(702);else if(wp==13&&tool_hotkey_registered(13))command(707);return 0;
     case WM_KEYDOWN:if(g_app.page==0) { if(wp==VK_SPACE) command(503);else if(wp==VK_RETURN) command(500); }return 0;
-    case WM_TIMER:if(wp==1) player_tick();else if(wp==9) { KillTimer(window,9);capture_start(window); }else if(wp==22) { KillTimer(window,22);capture_start(window,true); }else if(wp==12 && g_app.close_requested&&(!g_app.import_thread||WaitForSingleObject(g_app.import_thread,0)==WAIT_OBJECT_0)&&prepare_shutdown()) { KillTimer(window,12);PostMessageW(window,WM_COMMAND,900,0); }else if(wp==13) stress_tick();else if(wp==14) notes_tick();else if(wp==16) lb::taskbar::tick();else if(wp==17) lb::organizer::tick(UINT(wp));else if(wp==18) lb::recording::tick();else if(wp==19) remove_tick();else if(wp==20) lb::pointer::tick();else if(wp==23) lb::performance::tick();return 0;
+    case WM_TIMER:if(wp==1) player_tick();else if(wp==9) capture_start_tick();else if(wp==12&&g_app.close_requested) request_exit();else if(wp==13) stress_tick();else if(wp==14) notes_tick();else if(wp==16) lb::taskbar::tick();else if(wp==17) lb::organizer::tick(UINT(wp));else if(wp==18) lb::recording::tick();else if(wp==19) remove_tick();else if(wp==20) lb::pointer::tick();else if(wp==23) lb::performance::tick();return 0;
     case WM_APP+98:lb::thumbnails::receive();return 0;
     case WM_LB_HELLO:case WM_LB_READY:case WM_LB_ERROR:case WM_LB_POSITION:case WM_LB_DURATION:case WM_LB_STATE:
         player_message(message,wp,lp);if(message==WM_LB_STATE&&desktop_menu_active)lb::profile::desktop_menu(g_app.exe,true,true,g_app.english!=FALSE,g_app.data,!g_app.settings.wallpaper_sound);if(message==WM_LB_READY) lb::focus::message(message,wp,lp);SetPropW(window,L"LB.PlayerPID",(HANDLE)(uintptr_t)g_app.player.pid);SetPropW(window,L"LB.Ready",(HANDLE)(uintptr_t)g_app.player.ready);return 0;
     case WM_LB_IMPORT:
-        if(wp==1001) { Import *i=(Import*)lp;if(g_app.import_thread) { CloseHandle(g_app.import_thread);g_app.import_thread=NULL; }if(i->ok) { add_item(i->dest,PathFindFileNameW(i->source),i->thumb);g_app.selected=g_app.count-1;g_app.filter=g_app.items[g_app.selected].kind;set_status(L"原始文件已复制到图库",L"Original file copied into your library.");if(i->apply&&!g_app.close_requested)player_request(i->dest,TRUE); }else { if(i->thumb) DeleteObject(i->thumb);error_box(window,tr(L"文件导入失败",L"File import failed"),HRESULT_FROM_WIN32(i->error)); }free(i); }
+        if(wp==1001) { Import *i=(Import*)lp;if(g_app.import_thread) { CloseHandle(g_app.import_thread);g_app.import_thread=NULL; }if(i->ok) { add_item(i->dest,PathFindFileNameW(i->source),i->thumb);g_app.selected=g_app.count-1;g_app.filter=g_app.items[g_app.selected].kind;set_status(L"原始文件已复制到图库",L"Original file copied into your library.");if(i->apply&&!g_app.close_requested)player_request(i->dest,TRUE); }else { if(i->thumb) DeleteObject(i->thumb);if(!g_app.close_requested) error_box(window,tr(L"文件导入失败",L"File import failed"),HRESULT_FROM_WIN32(i->error)); }free(i); }
         else { StringCchPrintfW(g_app.status,240,tr(L"正在复制原始文件… %u%%",L"Copying original file… %u%%"),(UINT)wp);InvalidateRect(window,NULL,FALSE); }return 0;
     case WM_DROPFILES: { wchar_t path[LB_PATH];if(DragQueryFileW((HDROP)wp,0,path,LB_PATH)) import_file(path);DragFinish((HDROP)wp);return 0; }
     case WM_LB_TRAY: {
         UINT event=LOWORD(lp);if(event==NIN_SELECT || event==NIN_KEYSELECT || event==WM_LBUTTONUP) show_main();
         else if(event==WM_CONTEXTMENU || event==WM_RBUTTONUP) { HMENU menu=CreatePopupMenu();AppendMenuW(menu,MF_STRING,901,tr(L"打开设置",L"Open settings"));AppendMenuW(menu,MF_STRING,700,tr(L"新建便签",L"New note"));AppendMenuW(menu,MF_STRING,712,lb::recording::active()?tr(L"结束录屏",L"Stop recording"):tr(L"开始录屏",L"Start recording"));AppendMenuW(menu,MF_STRING,502,tr(L"停止壁纸",L"Stop wallpaper"));AppendMenuW(menu,MF_STRING,505,tr(L"恢复系统壁纸",L"Restore original wallpaper"));AppendMenuW(menu,MF_SEPARATOR,0,NULL);AppendMenuW(menu,MF_STRING,900,tr(L"退出轻块桌面测试版",L"Quit Light Block Desktop Preview"));POINT p;GetCursorPos(&p);SetForegroundWindow(window);int id=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_RIGHTBUTTON,p.x,p.y,0,window,NULL);DestroyMenu(menu);if(id) command(id);PostMessageW(window,WM_NULL,0,0); }return 0;
     }
+    case WM_QUERYENDSESSION:return app_session_end(-1);
+    case WM_ENDSESSION:return app_session_end(wp?1:0);
     case WM_CLOSE:ShowWindow(window,SW_HIDE);return 0;
-    case WM_DESTROY:configure_tool_hotkeys(false,false);Shell_NotifyIconW(NIM_DELETE,&g_app.tray);UnregisterHotKey(window,1);UnregisterHotKey(window,2);player_dispose();save_config();RemovePropW(window,L"LB.Profile");RemovePropW(window,L"LB.PlayerPID");RemovePropW(window,L"LB.Ready");PostQuitMessage(0);return 0;
+    case WM_DESTROY:log_line(L"shutdown complete elapsed=%llu ms",shutdown_started?GetTickCount64()-shutdown_started:0);configure_tool_hotkeys(false,false);Shell_NotifyIconW(NIM_DELETE,&g_app.tray);UnregisterHotKey(window,1);UnregisterHotKey(window,2);player_dispose();save_config();RemovePropW(window,L"LB.Profile");RemovePropW(window,L"LB.PlayerPID");RemovePropW(window,L"LB.Ready");PostQuitMessage(0);return 0;
     }
     return DefWindowProcW(window,message,wp,lp);
 }
@@ -339,16 +431,16 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR line,int show) {
     typedef BOOL (WINAPI *DpiFn)(DPI_AWARENESS_CONTEXT);DpiFn dpi=(DpiFn)(void*)GetProcAddress(GetModuleHandleW(L"user32.dll"),"SetProcessDpiAwarenessContext");if(dpi) dpi(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     GetModuleFileNameW(NULL,g_app.exe,LB_PATH);StringCchCopyW(g_app.directory,LB_PATH,g_app.exe);PathRemoveFileSpecW(g_app.directory);path_join(g_app.data,LB_PATH,g_app.directory,L"data");
     int argc=0;wchar_t **argv=CommandLineToArgvW(GetCommandLineW(),&argc);if(!argv) return 2;
-    BOOL static_helper=FALSE,worker=FALSE,quit=FALSE,self_test=FALSE,stress=FALSE,crash=FALSE,background=FALSE,taskbar_helper=FALSE,icon_lease=FALSE,organizer_preview=FALSE,pointer_helper=FALSE,legacy_ui=FALSE,custom_profile=FALSE;const wchar_t *report=NULL,*ui_snapshots=nullptr,*update_fixture=nullptr,*performance_report=nullptr;int desktop_action=0;
+    BOOL static_helper=FALSE,worker=FALSE,quit=FALSE,self_test=FALSE,stress=FALSE,crash=FALSE,background=FALSE,taskbar_helper=FALSE,icon_lease=FALSE,organizer_preview=FALSE,pointer_helper=FALSE,legacy_ui=FALSE,custom_profile=FALSE,lifecycle_fixture=FALSE;const wchar_t *report=NULL,*ui_snapshots=nullptr,*update_fixture=nullptr,*performance_report=nullptr;int desktop_action=0;
     for(int n=1;n<argc;++n) { if(!wcscmp(argv[n],L"--data-dir") && n+1<argc) { custom_profile=TRUE;wchar_t full[LB_PATH];DWORD length=GetFullPathNameW(argv[++n],LB_PATH,full,NULL);if(!length || length>=LB_PATH) { LocalFree(argv);return 2; }StringCchCopyW(g_app.data,LB_PATH,full); }
-        else if(!wcscmp(argv[n],L"--static-wallpaper-helper")) static_helper=TRUE;else if(!wcscmp(argv[n],L"--desktop-action")&&n+1<argc) { auto value=argv[++n];desktop_action=!wcscmp(value,L"note")?700:!wcscmp(value,L"sound")?506:0;if(!desktop_action){LocalFree(argv);return 2;}background=TRUE; }else if(!wcscmp(argv[n],L"--update-flow-fixture")&&n+1<argc) update_fixture=argv[++n];else if(!wcscmp(argv[n],L"--ui-snapshots")&&n+1<argc) ui_snapshots=argv[++n];else if(!wcscmp(argv[n],L"--legacy-ui")) legacy_ui=TRUE;else if(!wcscmp(argv[n],L"--worker")) worker=TRUE;else if(!wcscmp(argv[n],L"--taskbar-helper")) taskbar_helper=TRUE;else if(!wcscmp(argv[n],L"--icon-lease")) icon_lease=TRUE;else if(!wcscmp(argv[n],L"--pointer-helper")) pointer_helper=TRUE;else if(!wcscmp(argv[n],L"--organizer-preview")) organizer_preview=TRUE;else if(!wcscmp(argv[n],L"--background")) background=TRUE;else if(!wcscmp(argv[n],L"--quit")) quit=TRUE;else if(!wcscmp(argv[n],L"--performance-test")&&n+1<argc){performance_report=argv[++n];background=TRUE;}else if(!wcscmp(argv[n],L"--self-test")) self_test=TRUE;else if(!wcscmp(argv[n],L"--stress-test")) stress=TRUE;else if(!wcscmp(argv[n],L"--crash-test")) { stress=TRUE;crash=TRUE; }else if(!wcscmp(argv[n],L"--report") && n+1<argc) report=argv[++n]; }
-    bool fixture=ui_snapshots||update_fixture||self_test||stress||performance_report;bool helper=worker||taskbar_helper||icon_lease||pointer_helper||static_helper;
+        else if(!wcscmp(argv[n],L"--static-wallpaper-helper")) static_helper=TRUE;else if(!wcscmp(argv[n],L"--desktop-action")&&n+1<argc) { auto value=argv[++n];desktop_action=!wcscmp(value,L"note")?700:!wcscmp(value,L"sound")?506:0;if(!desktop_action){LocalFree(argv);return 2;}background=TRUE; }else if(!wcscmp(argv[n],L"--update-flow-fixture")&&n+1<argc) update_fixture=argv[++n];else if(!wcscmp(argv[n],L"--ui-snapshots")&&n+1<argc) ui_snapshots=argv[++n];else if(!wcscmp(argv[n],L"--lifecycle-fixture")) lifecycle_fixture=TRUE;else if(!wcscmp(argv[n],L"--legacy-ui")) legacy_ui=TRUE;else if(!wcscmp(argv[n],L"--worker")) worker=TRUE;else if(!wcscmp(argv[n],L"--taskbar-helper")) taskbar_helper=TRUE;else if(!wcscmp(argv[n],L"--icon-lease")) icon_lease=TRUE;else if(!wcscmp(argv[n],L"--pointer-helper")) pointer_helper=TRUE;else if(!wcscmp(argv[n],L"--organizer-preview")) organizer_preview=TRUE;else if(!wcscmp(argv[n],L"--background")) background=TRUE;else if(!wcscmp(argv[n],L"--quit")) quit=TRUE;else if(!wcscmp(argv[n],L"--performance-test")&&n+1<argc){performance_report=argv[++n];background=TRUE;}else if(!wcscmp(argv[n],L"--self-test")) self_test=TRUE;else if(!wcscmp(argv[n],L"--stress-test")) stress=TRUE;else if(!wcscmp(argv[n],L"--crash-test")) { stress=TRUE;crash=TRUE; }else if(!wcscmp(argv[n],L"--report") && n+1<argc) report=argv[++n]; }
+    bool fixture=lifecycle_fixture||ui_snapshots||update_fixture||self_test||stress||performance_report;bool helper=worker||taskbar_helper||icon_lease||pointer_helper||static_helper;
     fixture_mode=fixture;
     if(fixture&&!custom_profile){LocalFree(argv);return 2;}
     if(!helper&&!fixture){auto profile=lb::profile::select_with_progress(g_app.exe,custom_profile?std::filesystem::path(g_app.data):std::filesystem::path{});if(!profile.ok){MessageBoxW(nullptr,profile.error.c_str(),L"轻块桌面",MB_ICONERROR);LocalFree(argv);return 3;}StringCchCopyW(g_app.data,LB_PATH,profile.path.c_str());}
     if(!ensure_directory(g_app.data)){MessageBoxW(nullptr,L"The data folder is not writable.",L"Light Block Desktop",MB_ICONERROR);LocalFree(argv);return 3;}
     path_join(g_app.config,LB_PATH,g_app.data,L"settings.ini");if(fixture&&GetFileAttributesW(g_app.config)!=INVALID_FILE_ATTRIBUTES){LocalFree(argv);return 2;}load_config();
-    if(ui_snapshots||update_fixture||performance_report){g_app.settings.organizer_enabled=g_app.settings.taskbar_enabled=g_app.settings.cursor_theme=g_app.settings.cursor_particles=g_app.settings.clipboard_enabled=g_app.settings.restore_on_start=g_app.settings.notes_background=g_app.settings.capture_enabled=0;}
+    if(lifecycle_fixture||ui_snapshots||update_fixture||performance_report){g_app.settings.organizer_enabled=g_app.settings.taskbar_enabled=g_app.settings.cursor_theme=g_app.settings.cursor_particles=g_app.settings.clipboard_enabled=g_app.settings.restore_on_start=g_app.settings.notes_background=g_app.settings.capture_enabled=0;}
     if(static_helper){int result=lb::static_wallpaper::helper_main(argc,argv);LocalFree(argv);return result;}
     if(worker) { int result=worker_main(argc,argv);LocalFree(argv);return result; }
     if(taskbar_helper) { int result=lb::taskbar::helper_main(argc,argv);LocalFree(argv);return result; }
@@ -358,12 +450,13 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR line,int show) {
     if(self_test) { int result=run_self_tests(report);CoUninitialize();LocalFree(argv);return result; }
     DWORD hash=2166136261u;for(const wchar_t *p=g_app.data;*p;++p) hash=(hash^(DWORD)towlower(*p))*16777619u;if(!hash) hash=1;
     wchar_t mutex[100];StringCchPrintfW(mutex,100,L"Local\\LightBlockDesktopNative-%08lx",hash);g_app.mutex=CreateMutexW(NULL,FALSE,mutex);BOOL exists=GetLastError()==ERROR_ALREADY_EXISTS;
-    if(quit || exists) { Existing e={hash,NULL};EnumWindows(find_existing,(LPARAM)&e);if(e.window) PostMessageW(e.window,WM_COMMAND,quit?900:desktop_action?desktop_action:901,0);if(g_app.mutex) CloseHandle(g_app.mutex);CoUninitialize();LocalFree(argv);return quit&&!e.window?1:0; }
+    if(quit || exists) { Existing e={hash,NULL};EnumWindows(find_existing,(LPARAM)&e);if(e.window&&(quit||desktop_action||!background)) PostMessageW(e.window,WM_COMMAND,quit?900:desktop_action?desktop_action:901,0);if(g_app.mutex) CloseHandle(g_app.mutex);CoUninitialize();LocalFree(argv);return quit&&!e.window?1:0; }
     if(!fixture)lb::recording::audio::cleanup_abandoned(std::filesystem::path(g_app.data)/L"recordings");
     INITCOMMONCONTROLSEX controls={sizeof controls,ICC_STANDARD_CLASSES|ICC_LISTVIEW_CLASSES|ICC_TAB_CLASSES|ICC_BAR_CLASSES|ICC_HOTKEY_CLASS|ICC_DATE_CLASSES};InitCommonControlsEx(&controls);g_app.dpi=GetDpiForSystem();fonts();load_library();
     taskbar_created=RegisterWindowMessageW(L"TaskbarCreated");WNDCLASSEXW cls={};cls.cbSize=sizeof cls;cls.lpfnWndProc=window_proc;cls.hInstance=instance;cls.lpszClassName=LB_CLASS;cls.hCursor=LoadCursorW(NULL,IDC_ARROW);cls.hIcon=LoadIconW(instance,MAKEINTRESOURCEW(1));RegisterClassExW(&cls);
     HWND window=CreateWindowExW(0,LB_CLASS,tr(LB_PRODUCT_NAME,LB_PRODUCT_ENGLISH),WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,px(1090),px(800),NULL,NULL,instance,(void*)(uintptr_t)hash);
     if(!window) return 5;
+    if(lifecycle_fixture) SetPropW(window,L"LB.LifecycleFixture",HANDLE(1));
     bool qt_frontend=!stress&&!legacy_ui&&lb::frontend::initialize(!background&&!ui_snapshots&&!update_fixture);
     if(!stress&&!legacy_ui&&!qt_frontend) { MessageBoxW(nullptr,tr(L"界面组件不完整，请重新安装轻块桌面。你的数据会被保留。",L"UI components are incomplete. Reinstall Light Block Desktop; your data will be preserved."),L"Light Block Desktop",MB_OK|MB_ICONERROR);DestroyWindow(window);for(UINT n=0;n<g_app.count;++n) if(g_app.items[n].thumb) DeleteObject(g_app.items[n].thumb);CloseHandle(g_app.mutex);LocalFree(argv);CoUninitialize();return 9; }
     lb::thumbnails::start();for(UINT n=0;n<std::min(g_app.count,12u);++n) lb::thumbnails::request(g_app.items[n].path);theme_window(window);set_status(L"选择壁纸，预览或应用到桌面",L"Choose a wallpaper to preview or apply to your desktop.");if(performance_report)lb::performance::start(performance_report);else if(stress) stress_begin(report,crash);else if(!background&&!qt_frontend&&!ui_snapshots&&!update_fixture) { ShowWindow(window,show);ShowWindow(window,SW_RESTORE);SetWindowPos(window,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_SHOWWINDOW);SetForegroundWindow(window);UpdateWindow(window); }

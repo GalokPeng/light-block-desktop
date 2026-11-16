@@ -133,10 +133,14 @@ bool launch(wchar_t const* path,bool restoring) {
     if(FAILED(StringCchPrintfW(command,ARRAYSIZE(command),L"%s --static-wallpaper-helper --path %s --fit %d --data-dir %s --parent %lu --parent-created %llu --cancel-event %s %s",executable,file,g_app.settings.fit,data,GetCurrentProcessId(),creation.QuadPart,event_name,restoring?L"--restore":L""))) return false;
     unique_handle job(CreateJobObjectW(nullptr,nullptr));JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};limits.BasicLimitInformation.LimitFlags=JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
     if(!job||!SetInformationJobObject(job.get(),JobObjectExtendedLimitInformation,&limits,sizeof limits)) return false;
-    STARTUPINFOW startup{sizeof startup};PROCESS_INFORMATION info{};
-    if(!CreateProcessW(g_app.exe,command,nullptr,nullptr,FALSE,CREATE_SUSPENDED|CREATE_NO_WINDOW,nullptr,g_app.directory,&startup,&info)) return false;
+    SIZE_T bytes=0;InitializeProcThreadAttributeList(nullptr,1,0,&bytes);
+    auto memory=std::make_unique<BYTE[]>(bytes);auto attributes=reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(memory.get());
+    if(!InitializeProcThreadAttributeList(attributes,1,0,&bytes)) return false;
+    scope_exit delete_attributes([&]{DeleteProcThreadAttributeList(attributes);});HANDLE owned_job=job.get();
+    if(!UpdateProcThreadAttribute(attributes,0,PROC_THREAD_ATTRIBUTE_JOB_LIST,&owned_job,sizeof owned_job,nullptr,nullptr)) return false;
+    STARTUPINFOEXW startup{};startup.StartupInfo.cb=sizeof startup;startup.lpAttributeList=attributes;PROCESS_INFORMATION info{};
+    if(!CreateProcessW(g_app.exe,command,nullptr,nullptr,FALSE,EXTENDED_STARTUPINFO_PRESENT|CREATE_SUSPENDED|CREATE_NO_WINDOW,nullptr,g_app.directory,&startup.StartupInfo,&info)) return false;
     unique_handle process(info.hProcess),thread(info.hThread);
-    if(!AssignProcessToJobObject(job.get(),process.get())) { TerminateProcess(process.get(),ERROR_CANCELLED);return false; }
     if(ResumeThread(thread.get())==DWORD(-1)) return false;
     session.process=std::move(process);session.job=std::move(job);session.cancel_event=std::move(cancelled);session.path=path?path:L"";session.restoring=restoring;session.began=GetTickCount64();session.cancelled=session.timed_out=false;
     SetTimer(g_app.window,1,80,nullptr);set_status(restoring?L"正在恢复原系统壁纸…":L"正在后台应用静态壁纸…",restoring?L"Restoring the original Windows wallpaper…":L"Applying the static wallpaper in the background…");return true;

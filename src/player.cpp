@@ -19,14 +19,15 @@ bool& qt_backend(Player& p) {if(auto slot=result_slot(p))return slot->qt;return 
 class attribute_list {
     std::unique_ptr<std::byte[]> memory_;
     LPPROC_THREAD_ATTRIBUTE_LIST list_{};
-    HANDLE inherited_{};
+    HANDLE inherited_{},job_{};
 public:
-    explicit attribute_list(HANDLE inherited) noexcept:inherited_(inherited) {
-        SIZE_T bytes=0;InitializeProcThreadAttributeList(nullptr,1,0,&bytes);if(!bytes) return;
+    explicit attribute_list(HANDLE inherited,HANDLE job) noexcept:inherited_(inherited),job_(job) {
+        SIZE_T bytes=0;InitializeProcThreadAttributeList(nullptr,2,0,&bytes);if(!bytes) return;
         memory_.reset(new(std::nothrow) std::byte[bytes]);if(!memory_) return;
         auto list=reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(memory_.get());
-        if(!InitializeProcThreadAttributeList(list,1,0,&bytes)) return;list_=list;
-        if(!UpdateProcThreadAttribute(list_,0,PROC_THREAD_ATTRIBUTE_HANDLE_LIST,&inherited_,sizeof inherited_,nullptr,nullptr)) { DeleteProcThreadAttributeList(list_);list_=nullptr; }
+        if(!InitializeProcThreadAttributeList(list,2,0,&bytes)) return;list_=list;
+        if(!UpdateProcThreadAttribute(list_,0,PROC_THREAD_ATTRIBUTE_HANDLE_LIST,&inherited_,sizeof inherited_,nullptr,nullptr)||
+           !UpdateProcThreadAttribute(list_,0,PROC_THREAD_ATTRIBUTE_JOB_LIST,&job_,sizeof job_,nullptr,nullptr)) { DeleteProcThreadAttributeList(list_);list_=nullptr; }
     }
     ~attribute_list() { if(list_) DeleteProcThreadAttributeList(list_); }
     LPPROC_THREAD_ATTRIBUTE_LIST get() const noexcept { return list_; }
@@ -47,16 +48,16 @@ bool launch_child(Player &p) {
     p.token=serial.fetch_add(1);if(!p.token) p.token=serial.fetch_add(1);
     lb::unique_handle parent(OpenProcess(SYNCHRONIZE,FALSE,GetCurrentProcessId()));HANDLE inherited_raw=nullptr;
     if(!parent||!DuplicateHandle(GetCurrentProcess(),parent.get(),GetCurrentProcess(),&inherited_raw,0,TRUE,DUPLICATE_SAME_ACCESS)) return false;
-    lb::unique_handle inherited(inherited_raw);attribute_list attributes(inherited.get());if(!attributes.get()) return false;
+    lb::unique_handle inherited(inherited_raw);
     auto slot=result_slot(p);HWND owner=slot?slot->owner:g_app.window;
     HRESULT hr=StringCchPrintfW(command,ARRAYSIZE(command),L"%s --worker --path %s --data-dir %s --owner %llu --token %lu --parent-handle %llu --embed %llu %s %s %s",executable,file,data,reinterpret_cast<unsigned long long>(owner),p.token,reinterpret_cast<unsigned long long>(inherited.get()),reinterpret_cast<unsigned long long>(p.embed),p.pending_desktop?L"--desktop":L"",qt_backend(p)?L"--qt-media":L"",GetPropW(g_app.window,L"LB.HiddenProbe")?L"--hidden-probe":L"");
     if(FAILED(hr)) return false;
-    STARTUPINFOEXW startup{};startup.StartupInfo.cb=sizeof startup;startup.lpAttributeList=attributes.get();
     lb::unique_handle job(CreateJobObjectW(nullptr,nullptr));JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};limits.BasicLimitInformation.LimitFlags=JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
     if(!job||!SetInformationJobObject(job.get(),JobObjectExtendedLimitInformation,&limits,sizeof limits)) return false;
+    attribute_list attributes(inherited.get(),job.get());if(!attributes.get()) return false;
+    STARTUPINFOEXW startup{};startup.StartupInfo.cb=sizeof startup;startup.lpAttributeList=attributes.get();
     PROCESS_INFORMATION info{};if(!CreateProcessW(g_app.exe,command,nullptr,nullptr,TRUE,EXTENDED_STARTUPINFO_PRESENT|CREATE_SUSPENDED,nullptr,g_app.directory,&startup.StartupInfo,&info)) return false;
     lb::unique_handle process(info.hProcess),thread(info.hThread);
-    if(!AssignProcessToJobObject(job.get(),process.get())) { TerminateProcess(process.get(),2);return false; }
     if(ResumeThread(thread.get())==DWORD(-1)) return false;
     p.process=std::move(process);p.job=std::move(job);p.pid=info.dwProcessId;p.started=GetTickCount64();p.pending=FALSE;p.closing=0;p.ready=FALSE;p.failed=FALSE;
     running_path(p)=p.pending_path;
@@ -99,6 +100,7 @@ void tick(Player &p,ULONGLONG now) {
 }
 }
 void player_request(const wchar_t *path,BOOL desktop) {
+    if(g_app.close_requested) return;
     if(desktop&&deletion_restoring) {set_status(L"正在恢复系统壁纸以安全删除，完成后请再应用",L"Restoring the system wallpaper for safe deletion. Apply again once it finishes.");return;}
     if(path&&!deleting_path.empty()&&!_wcsicmp(path,deleting_path.c_str())&&!deletion_failed) {set_status(L"正在释放这张壁纸，完成后即可删除",L"Releasing this wallpaper before deleting it.");return;}
     if(desktop) restore_pending=false;
@@ -115,7 +117,7 @@ Player* player_result_state(HWND host){for(auto& slot:result_slots)if(slot->play
 size_t player_result_slots(){return std::count_if(result_slots.begin(),result_slots.end(),[](auto const& slot){return slot->player.process||slot->player.pending;});}
 bool player_result_releasing(){return std::any_of(result_slots.begin(),result_slots.end(),[](auto const& slot){return (slot->retired||slot->player.closing)&&(slot->player.process||slot->player.pending);});}
 BOOL player_result_request(wchar_t const* path,HWND host,HWND owner){
-    if(quitting||!IsWindow(host)||!IsWindow(owner)||!path)return FALSE;
+    if(g_app.close_requested||quitting||!IsWindow(host)||!IsWindow(owner)||!path)return FALSE;
     auto attributes=GetFileAttributesW(path);if(attributes==INVALID_FILE_ATTRIBUTES||(attributes&FILE_ATTRIBUTE_DIRECTORY))return FALSE;
     if(auto existing=player_result_state(host)){if(!existing->process&&!existing->pending&&player_result_slots()>=2)return FALSE;if(existing->ready&&!existing->closing&&!wcscmp(existing->pending_path,path))return TRUE;request(*existing,path,false,host);return existing->process||existing->pending;}
     if(player_result_slots()>=2)return FALSE;auto slot=std::make_unique<ResultSlot>();slot->owner=owner;slot->player.embed=host;auto pointer=slot.get();result_slots.push_back(std::move(slot));request(pointer->player,path,false,host);if(!pointer->player.process&&!pointer->player.pending){result_slots.pop_back();return FALSE;}return TRUE;

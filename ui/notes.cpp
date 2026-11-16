@@ -145,6 +145,7 @@ int notes_shutdown(int preserve) { if(!save_page()) return 0;preserving=preserve
 void refresh_notes() { for(auto const& pin:pins) pin.second->reload();notes_refresh_page(); }
 void notes_refresh_page() { if(page.window) list_notes(); }
 bool notes_flush() { return save_page(); }
+bool notes_flush_all() { bool ok=save_page();for(auto const& pin:pins) ok=pin.second->save()&&ok;return ok; }
 bool notes_ui_tests(QString const& directory) {
     if(!QDir().mkpath(directory)) return false;
     // Test the real controls against isolated files; never pin windows or notify the engine.

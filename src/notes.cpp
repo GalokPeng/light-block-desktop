@@ -84,6 +84,7 @@ void note_create(HWND owner) {
     if(write_utf8_atomic(file,L"")) note_open_saved(file,TRUE);else error_box(g_app.window,tr(L"无法创建便签",L"Could not create a note"),E_FAIL);
 }
 void note_close_saved(const wchar_t *file) { if(lb::frontend::note_close(file)) return;for(UINT n=0;n<ARRAYSIZE(notes);++n) if(notes[n].window && !wcscmp(notes[n].file,file)) SendMessageW(notes[n].window,WM_CLOSE,0,0); }
+BOOL notes_flush(void) { BOOL ok=TRUE;for(auto& note:notes) if(note.window) ok=note_save(&note)&&ok;return ok; }
 BOOL notes_shutdown(void) { if(!lb::frontend::notes_shutdown(true)) return FALSE;shutting_down=TRUE;KillTimer(g_app.window,14);for(UINT i=0;i<ARRAYSIZE(notes);++i) if(notes[i].window) { SendMessageW(notes[i].window,WM_CLOSE,0,0);if(notes[i].window) { shutting_down=FALSE;return FALSE; } }return TRUE; }
 void notes_restore(void) {
     shutting_down=FALSE;wchar_t directory[LB_PATH],pattern[LB_PATH],file[LB_PATH];path_join(directory,LB_PATH,g_app.data,L"notes");path_join(pattern,LB_PATH,directory,L"note-*.txt");WIN32_FIND_DATAW data;HANDLE find=FindFirstFileW(pattern,&data);if(find==INVALID_HANDLE_VALUE) return;

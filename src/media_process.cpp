@@ -9,12 +9,13 @@ std::wstring runtime_path() { return (std::filesystem::path(g_app.directory)/L"r
 namespace {
 std::wstring quote_command_arg(std::wstring const& value) { std::vector<wchar_t> out(value.size()*2+5);if(!quote_arg(out.data(),out.size(),value.c_str())) throw std::length_error("argument too long");return out.data(); }
 class AttributeList {
-    std::unique_ptr<BYTE[]> storage_;LPPROC_THREAD_ATTRIBUTE_LIST value_{};
+    std::unique_ptr<BYTE[]> storage_;LPPROC_THREAD_ATTRIBUTE_LIST value_{};HANDLE job_{};
 public:
-    explicit AttributeList(std::array<HANDLE,3> const& handles) {
-        SIZE_T bytes=0;InitializeProcThreadAttributeList(nullptr,1,0,&bytes);storage_=std::make_unique<BYTE[]>(bytes);auto value=reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage_.get());
-        if(!InitializeProcThreadAttributeList(value,1,0,&bytes)) throw winrt::hresult_error(HRESULT_FROM_WIN32(GetLastError()));value_=value;
-        if(!UpdateProcThreadAttribute(value_,0,PROC_THREAD_ATTRIBUTE_HANDLE_LIST,const_cast<HANDLE*>(handles.data()),sizeof handles,nullptr,nullptr)) { HRESULT error=HRESULT_FROM_WIN32(GetLastError());DeleteProcThreadAttributeList(value_);value_=nullptr;throw winrt::hresult_error(error); }
+    explicit AttributeList(std::array<HANDLE,3> const& handles,HANDLE job):job_(job) {
+        SIZE_T bytes=0;InitializeProcThreadAttributeList(nullptr,2,0,&bytes);storage_=std::make_unique<BYTE[]>(bytes);auto value=reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage_.get());
+        if(!InitializeProcThreadAttributeList(value,2,0,&bytes)) throw winrt::hresult_error(HRESULT_FROM_WIN32(GetLastError()));value_=value;
+        if(!UpdateProcThreadAttribute(value_,0,PROC_THREAD_ATTRIBUTE_HANDLE_LIST,const_cast<HANDLE*>(handles.data()),sizeof handles,nullptr,nullptr)||
+           !UpdateProcThreadAttribute(value_,0,PROC_THREAD_ATTRIBUTE_JOB_LIST,&job_,sizeof job_,nullptr,nullptr)) { HRESULT error=HRESULT_FROM_WIN32(GetLastError());DeleteProcThreadAttributeList(value_);value_=nullptr;throw winrt::hresult_error(error); }
     }
     ~AttributeList() { if(value_) DeleteProcThreadAttributeList(value_); }
     LPPROC_THREAD_ATTRIBUTE_LIST get() const { return value_; }
@@ -33,13 +34,16 @@ Result run(std::vector<std::wstring> const& arguments,std::filesystem::path cons
         if(!CreatePipe(&in_read,&in_write,&security,4096)) throw winrt::hresult_error(HRESULT_FROM_WIN32(GetLastError()));
         unique_handle input_child(in_read),input(in_write);SetHandleInformation(output.get(),HANDLE_FLAG_INHERIT,0);SetHandleInformation(input.get(),HANDLE_FLAG_INHERIT,0);
         unique_handle error(CreateFileW(log.c_str(),GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE,&security,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr));if(!error) throw winrt::hresult_error(HRESULT_FROM_WIN32(GetLastError()));
-        std::array<HANDLE,3> handles{input_child.get(),output_child.get(),error.get()};AttributeList attributes(handles);
+        std::array<HANDLE,3> handles{input_child.get(),output_child.get(),error.get()};
         std::wstring command=quote_command_arg(executable)+L" -hide_banner -loglevel warning -y -progress pipe:1 -nostats";for(auto const& argument:arguments) command+=L" "+quote_command_arg(argument);if(command.size()>30000) throw winrt::hresult_error(E_INVALIDARG);
         unique_handle job(CreateJobObjectW(nullptr,nullptr));JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};limits.BasicLimitInformation.LimitFlags=JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;if(!job||!SetInformationJobObject(job.get(),JobObjectExtendedLimitInformation,&limits,sizeof limits)) throw winrt::hresult_error(HRESULT_FROM_WIN32(GetLastError()));
+        // Assign at creation: a parent crash between CreateProcess and a later
+        // AssignProcessToJobObject otherwise leaves a suspended orphan forever.
+        AttributeList attributes(handles,job.get());
         STARTUPINFOEXW startup{};startup.StartupInfo.cb=sizeof startup;startup.StartupInfo.dwFlags=STARTF_USESTDHANDLES|STARTF_USESHOWWINDOW;startup.StartupInfo.wShowWindow=SW_HIDE;
         startup.StartupInfo.hStdInput=input_child.get();startup.StartupInfo.hStdOutput=output_child.get();startup.StartupInfo.hStdError=error.get();startup.lpAttributeList=attributes.get();
         PROCESS_INFORMATION information{};if(!CreateProcessW(executable.c_str(),command.data(),nullptr,nullptr,TRUE,CREATE_NO_WINDOW|CREATE_SUSPENDED|EXTENDED_STARTUPINFO_PRESENT,nullptr,g_app.directory,&startup.StartupInfo,&information)) throw winrt::hresult_error(HRESULT_FROM_WIN32(GetLastError()));
-        unique_handle process(information.hProcess),thread(information.hThread);if(!AssignProcessToJobObject(job.get(),process.get())) { TerminateProcess(process.get(),1);throw winrt::hresult_error(HRESULT_FROM_WIN32(GetLastError())); }
+        unique_handle process(information.hProcess),thread(information.hThread);
         if(control.cancel||control.stop){result.error=HRESULT_FROM_WIN32(ERROR_CANCELLED);return result;}
         if(control.started)control.started();
         if(ResumeThread(thread.get())==DWORD(-1)) throw winrt::hresult_error(HRESULT_FROM_WIN32(GetLastError()));input_child.reset();output_child.reset();error.reset();

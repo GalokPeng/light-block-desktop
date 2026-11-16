@@ -23,8 +23,11 @@ bool launcher_show();
 bool show_tool(int action);
 bool update_tests(wchar_t const* directory);
 void update_exit_failed();
+bool prepare_exit(bool closing);
+bool capture_hidden();
 }
 int settings_describe(int id,UiSetting* out);
 int settings_change(int id,int value);
 void app_command(int id);
+int app_session_end(int phase);
 void app_delete_item(int index);

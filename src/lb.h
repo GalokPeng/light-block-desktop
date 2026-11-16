@@ -164,6 +164,7 @@ BOOL fullscreen_on(HMONITOR monitor, HWND own);
 
 void note_create(HWND owner);
 BOOL notes_shutdown(void);
+BOOL notes_flush(void);
 void notes_restore(void);
 void notes_manager(void);
 void notes_tick(void);
