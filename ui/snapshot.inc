@@ -51,7 +51,19 @@ bool snapshots(QString const& directory) {
     auto focusPage=new FocusPage;focusPage->resize(880,610);focusPage->ensurePolished();focusPage->layout()->activate();bool focus=focusPage->fixture_tests(directory);delete focusPage;report["focus_ui"]=focus;ok=focus&&ok;
     auto filePage=new FileWorkbench;bool files=filePage->fixture_tests(directory);delete filePage;report["file_previews"]=files;ok=files&&ok;
     bool local_library=LocalLibraryView::fixture_tests(directory);report["local_library_virtualization"]=local_library;ok=local_library&&ok;
-    bool preview_overlay=Preview::fixture_tests(directory);report["native_preview_decorations"]=preview_overlay;ok=preview_overlay&&ok;
+    // The decoration fixture owns its theme while it pumps Qt events. A Main
+    // refresh would legitimately replace that theme from the backend and break
+    // the unchanged-decoration upload count. Exercise this with the opposite
+    // service theme and a ready refresh timer, then isolate only that timer's
+    // signal; retain all native paints, visibility and cache assertions.
+    bool preview_dark=state.dark!=0;if(preview_dark){api.action(601);refresh_state();}
+    int preview_interval=refresh_.interval();refresh_.setInterval(0);
+    bool preview_overlay=false;{
+        QSignalBlocker isolated_theme(refresh_);
+        preview_overlay=Preview::fixture_tests(directory);
+    }
+    refresh_.setInterval(preview_interval);if(preview_dark){api.action(601);refresh_state();}
+    report["native_preview_decorations"]=preview_overlay;ok=preview_overlay&&ok;
     bool coalesced=ImageLoader::fixture_tests(directory);report["bounded_image_decoder_requests"]=coalesced;ok=coalesced&&ok;
     bool clipboard=ClipboardPage::fixture_tests(directory);report["clipboard_previews"]=clipboard;ok=clipboard&&ok;
     bool launcher=launcher_fixture_tests(directory);report["launcher_ui"]=launcher;ok=launcher&&ok;

@@ -67,3 +67,7 @@ FFmpeg空输出追加诊断在320次查询中得到45次退出码0、输出为�
 帧数原来来自MF的屏幕呈现统计，不是独立的软件解码计数。[ShowWindow文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow)说明首次显示受启动器的STARTUPINFO控制；[MF统计文档](https://learn.microsoft.com/en-us/windows/win32/api/mfmediaengine/ne-mfmediaengine-mf_media_engine_statistic)将FRAMES_RENDERED定义为已呈现的视频帧。云端隐藏运行不能代替实际桌面呈现验收，也不能只凭PLAYING/ready认定画面已显示。
 
 现在本地默认仍以`native-mf`完成同样的至少10帧检查；托管Windows工作流显式使用随包的`qt-ffmpeg`兼容播放后端，检查真实有效视频帧、后端标识和退出回收，帧数阈值没有降低。两种范围分别记录在报告的`video_probe_backend`中。新路径本地已得到94帧、error=0；完整联合结果和新的云端运行仍须核对。这是测试环境与验证范围修正，不宣称已修复某个未复现的硬件驱动问题。
+
+后续云端检查`43812190135`通过112项原生检查、Qt界面、101帧兼容视频解码与网站14项检查；打包流程`43812190106`的录屏运行时320/0通过，但繁体中文安装组在预览装饰层缓存检查处停止。失败证据中`UpdateLayeredWindow`成功、Win32错误为0，失败集中于上传次数和主题变更。主窗口200ms刷新会在夹具的`processEvents()`中从后端覆盖夹具专用主题，违反“不变主题”这一测试前提。
+
+本地将服务主题设为浅色、刷新计时器设为立即就绪后，修正前稳定得到`theme_text_invalidate_cache=false`（`.local/refresh-interference-before/screens/preview-native-overlay-checks.json`）。现在只在该夹具运行期间用`QSignalBlocker`隔离主窗口刷新信号，保留全部原生绘制、缓存、层级、显隐和销毁断言；压力条件及主题/计时器恢复保留在回归中。修正后`.local/test-20261116-141253/summary.json`完整通过，UI为`LightBlockUi-cc1208627c15.dll`，原生MF视频92帧。变更仅涉及快照测试隔离，不修改用户界面的刷新或播放路径；新的云端安装流程仍须完成后方可发布。
