@@ -8,6 +8,7 @@
 #include "network.h"
 #include "organizer.hpp"
 #include "organizer_geometry.hpp"
+#include "window_shape.hpp"
 bool settings_display_tests();
 bool settings_runtime_tests();
 bool settings_startup_tests();
@@ -116,6 +117,8 @@ int run_self_tests(const wchar_t *report) {
     check(settings_display_tests(),L"friendly-display-labels-primary-dpi-no-device-path");
     check(system_appearance_tests(),L"night-light-unavailable-policy-and-display-reasons");
     check(lb::organizer::shelf_geometry_tests(),L"organizer-icon-size-hover-bounds-96-to-240-dpi");
+    check(lb::organizer::shelf_taskbar_tests(),L"organizer-taskbar-reservation-reopen-resize-alignments-multimonitor");
+    check(lb::window_shape::tests(),L"rounded-popup-corners-and-resize-regions-96-to-240-dpi");
     check(settings_patch_test(),L"single-setting-commit-retains-unrelated-state-and-rolls-back-save-failure");
     check(lb::recording::export_test((std::filesystem::path(g_app.data)/L"recording-fixture").wstring()),L"bundled-video-trim-and-two-gif-export-modes");
     check(lb::recording::audio::tests(std::filesystem::path(g_app.data)/L"recording-audio-fixture"),L"wasapi-timestamp-silence-overlap-and-synthetic-single-dual-audio-mux");

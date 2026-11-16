@@ -1,3 +1,15 @@
+# v2.0.1 release verification
+
+Local Windows build and 118 native checks passed on 2026-11-16. New geometry cases cover 96–240 DPI, negative-coordinate secondary displays, all four taskbar edges, auto-hidden taskbars, repeated icon-size/expanded-size changes, top/center/bottom alignment and custom-position clamping. Hidden test windows verify rounded-region corners and bounds across repeated resizes. Website checks (13) and release-protocol checks (6) passed.
+
+The organizer previously used the expanded system work area that taskbar styling deliberately exposes to regular applications. It now independently reserves each monitor's physical taskbar edge. A bounded 750 ms check only relayouts on geometry changes, including changes that do not broadcast a work-area event. Resize animation updates the clipping region without resetting acrylic every frame.
+
+Custom translucent surfaces now suppress competing DWM non-client rendering; GDI rounded clipping uses the same exclusive bounds as painting. Capture, recording and scrolling-panel snapshot gates check transparent corners; desktop-note fixtures additionally check corner alpha. Native taskbar XAML rounding and the ordinary settings-window system frame remain on their existing rendering paths. Microsoft documents the distinction between [system rounding and custom regions/per-pixel alpha](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/ui/apply-rounded-corners).
+
+A synthetic organizer was inspected once locally; no personal desktop files were used. Desktop automation was stopped by the maintainer with Escape before repeated reopen/resize interaction checks, and was not resumed. Geometry/region tests are not a substitute for compositor testing on every Windows build and monitor arrangement. Full Qt, lifecycle, isolated installer/upgrade and updater checks remain mandatory CI gates for the exact release commit; their artifacts record the final results.
+
+---
+
 # v2.0.0 release verification
 
 Local Windows regression on 2026-11-16: 116 native checks passed; static/GIF/MP4 rendered real frames; 12 rapid media switches completed with zero failures and no remaining child processes. Qt interface and desktop-note fixtures passed. Six isolated Qt/native shutdown scenarios passed, including repeated exit, background relaunch, cancelled session ending and capture pending at exit; actual Run/StartupApproved registry values were unchanged.

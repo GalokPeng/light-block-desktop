@@ -4,7 +4,7 @@
 <p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases"><strong>下载最新安装包</strong></a> · <a href="#功能展示">功能展示</a> · <a href="https://light-block-desktop.vercel.app/?lang=zh">产品官网</a> · <a href="README.en.md">English</a> · <a href="CHANGES.md">更新日志</a></p>
 
 
-**v2.0.0 正式版**：壁纸、截屏录屏、桌面美化和便签，集成所需播放与录制组件。
+**v2.0.1 正式版**：壁纸、截屏录屏、桌面美化和便签，集成所需播放与录制组件。
 
 ## 下载与安装
 

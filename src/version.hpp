@@ -1,11 +1,11 @@
 #pragma once
 // The only release-version source. Packaging and Windows resources read this file.
-#define LB_VERSION_UTF8 "2.0.0"
-#define LB_VERSION_NUMERIC_UTF8 "2.0.0.0"
+#define LB_VERSION_UTF8 "2.0.1"
+#define LB_VERSION_NUMERIC_UTF8 "2.0.1.0"
 #define LB_WIDEN_IMPL(value) L##value
 #define LB_WIDEN(value) LB_WIDEN_IMPL(value)
 #define LB_VERSION LB_WIDEN(LB_VERSION_UTF8)
-#define LB_VERSION_COMMA 2,0,0,0
+#define LB_VERSION_COMMA 2,0,1,0
 #define LB_PREVIEW_BUILD 0
 #define LB_PRODUCT_NAME L"轻块桌面"
 #define LB_PREVIEW_LABEL L""

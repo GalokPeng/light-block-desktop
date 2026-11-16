@@ -17,7 +17,7 @@ try {
     if ($LASTEXITCODE -ne 0 -or $compilerVersion -ne '13.1.0') { throw 'Qt 6.8.3 frontend requires its matching GCC 13.1.0 ABI.' }
     $dll = Join-Path $root 'build/LightBlockUi.next.dll'
     $includes = @('include','include/QtWidgets','include/QtGui','include/QtCore','include/QtConcurrent','include/QtNetwork') | ForEach-Object { '-I'+(Join-Path $QtRoot $_) }
-    $inputs = @(Get-ChildItem -LiteralPath (Join-Path $root 'ui') -Recurse -File) + @(Get-ChildItem -LiteralPath (Join-Path $root 'src') -Filter '*ui_api.h') + @(Get-Item -LiteralPath (Join-Path $root 'src/version.hpp'),$Compiler,(Join-Path $QtRoot 'bin/Qt6Core.dll'))
+    $inputs = @(Get-ChildItem -LiteralPath (Join-Path $root 'ui') -Recurse -File) + @(Get-ChildItem -LiteralPath (Join-Path $root 'src') -Filter '*ui_api.h') + @(Get-Item -LiteralPath (Join-Path $root 'src/version.hpp'),(Join-Path $root 'src/window_shape.hpp'),$Compiler,(Join-Path $QtRoot 'bin/Qt6Core.dll'))
     $signature = (@($inputs | Sort-Object FullName | ForEach-Object { $_.FullName+':'+(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }) -join "`n") + "`nflags-v2-c++23-O2-shared-network"
     $stamp = Join-Path $root 'build/qt-ui-signature.txt'
     if (-not (Test-Path -LiteralPath $dll) -or -not (Test-Path -LiteralPath $stamp) -or (Get-Content -LiteralPath $stamp -Raw) -cne $signature) {

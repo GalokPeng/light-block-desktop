@@ -126,7 +126,7 @@ public:
     }
     void retire(){callback_=nullptr;qApp->removeEventFilter(this);side_->hide();hide();SetWindowLongPtrW(HWND(winId()),GWLP_HWNDPARENT,0);deleteLater();}
     bool owns(HWND focus){auto root=GetAncestor(focus,GA_ROOT);for(int n=0;root&&n<12;++n){if(root==HWND(winId())||root==HWND(side_->winId()))return true;root=GetWindow(root,GW_OWNER);}return false;}
-    bool snapshot(QString const& path){ensurePolished();layout()->activate();QImage frame(size()*devicePixelRatioF(),QImage::Format_ARGB32_Premultiplied);frame.setDevicePixelRatio(devicePixelRatioF());frame.fill(Qt::transparent);render(&frame);return frame.save(path);}
+    bool snapshot(QString const& path){ensurePolished();layout()->activate();QImage frame(size()*devicePixelRatioF(),QImage::Format_ARGB32_Premultiplied);frame.setDevicePixelRatio(devicePixelRatioF());frame.fill(Qt::transparent);render(&frame);return frame.save(path)&&capture_ui::transparent_corners(frame);}
     bool checks()const{for(auto box:findChildren<QComboBox*>())if(box->isEditable())return false;return !tools_.empty()&&undo_->isEnabled()==bool(state_.can_undo)&&redo_->isEnabled()==bool(state_.can_redo)&&(state_.mode<=0||(state_.cropping?(!crop_bar_->isHidden()&&actions_->isHidden()&&panels_->isHidden()&&rect().contains(crop_bar_->geometry())):(!actions_->isHidden()&&rect().contains(actions_->geometry()))))&&(state_.tool!=11||(!tools_.at(6)->isHidden()&&tools_.at(6)->isChecked()));}
 };
 std::map<uintptr_t,QPointer<CaptureTools>> instances;

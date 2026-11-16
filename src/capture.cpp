@@ -3,6 +3,7 @@
 #include "scroll_capture.hpp"
 #include "frontend.hpp"
 #include "pin_glow.hpp"
+#include "window_shape.hpp"
 #include <commdlg.h>
 #include <set>
 #include <array>
@@ -339,7 +340,7 @@ LRESULT CALLBACK toolbar_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
         if(surface->complete) { for(int id:{19,20,24,26,27}) EnableWindow(GetDlgItem(window,id),FALSE);SetWindowTextW(GetDlgItem(window,22),L"✓"); }
         return 0;
     }
-    case WM_SIZE: { RECT r{};GetClientRect(window,&r);SetWindowRgn(window,CreateRoundRectRgn(0,0,r.right+1,r.bottom+1,px(22),px(22)),TRUE);return 0; }
+    case WM_SIZE: { lb::window_shape::own_frame(window);lb::window_shape::clip(window,px(22));return 0; }
     case WM_ERASEBKGND: { RECT rect{};GetClientRect(window,&rect);rounded(HDC(wp),rect,px(11),RGB(24,27,33),RGB(55,63,74));RECT line{px(12),px(51),rect.right-px(12),px(52)};SetDCBrushColor(HDC(wp),RGB(47,53,63));FillRect(HDC(wp),&line,HBRUSH(GetStockObject(DC_BRUSH)));return 1; }
     case WM_MEASUREITEM: { auto measure=reinterpret_cast<MEASUREITEMSTRUCT*>(lp);if(measure->CtlType==ODT_COMBOBOX) { measure->itemHeight=px(26);return TRUE; }break; }
     case WM_CTLCOLORLISTBOX:SetTextColor(HDC(wp),RGB(232,237,242));SetBkColor(HDC(wp),RGB(35,40,49));SetDCBrushColor(HDC(wp),RGB(35,40,49));return LRESULT(GetStockObject(DC_BRUSH));

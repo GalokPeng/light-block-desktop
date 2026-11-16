@@ -1,10 +1,16 @@
 #pragma once
 #include <QtWidgets>
 #include <initializer_list>
+#include "../src/window_shape.hpp"
 
 // Shared by screenshot annotation and recording controls. Geometry and icon paths
 // follow the Python 1.0.0 capture UI; these widgets do not own capture state.
 namespace capture_ui {
+inline bool transparent_corners(QImage const& image) {
+    if(image.isNull()||image.width()<8||image.height()<8)return false;
+    for(auto p:{QPoint(0,0),QPoint(image.width()-1,0),QPoint(0,image.height()-1),QPoint(image.width()-1,image.height()-1)})if(qAlpha(image.pixel(p))!=0)return false;
+    return qAlpha(image.pixel(image.width()/2,2))>0;
+}
 inline constexpr char const* style = R"QSS(
 QFrame#captureStrip { background:#191c22; border:1px solid #3a414d; border-radius:9px; }
 QFrame#toolDivider { background:#39414c; border:0; }
@@ -134,6 +140,7 @@ inline QIcon icon(QString key, bool grouped=false) {
 }
 
 inline void apply(QWidget* widget) {
+    lb::window_shape::own_frame(reinterpret_cast<HWND>(widget->winId()));
     widget->setStyleSheet(QString::fromLatin1(style));
     widget->setFont(QFont(QStringLiteral("Microsoft YaHei UI"),9));
     QPalette palette=widget->palette();

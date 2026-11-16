@@ -1,3 +1,12 @@
+# v2.0.1 · 收纳布局与圆角修复 / Organizer layout and rounded surfaces
+
+- 修复重新开启收纳、调整图标大小或展开收起后与任务栏重叠：按所在显示器的任务栏实际边界独立预留位置，普通窗口仍可铺满原工作区。上、中、下布局及自定义位置均限制在安全范围；任务栏位置变化时自动校准。
+- 修复自绘圆角与系统非客户区边框叠加的角部残影，统一绘制与裁剪边界。收纳缩放期间只更新裁剪，不反复初始化玻璃效果；同样检查并处理截屏、录屏、长图工具栏与便签的自绘窗口边缘。
+- 增加多 DPI、多显示器、四边任务栏、自动隐藏、反复尺寸切换和透明角像素回归。兼容 1.0.0 / 2.0.0 正式版覆盖升级，保留用户数据。
+- Prevents organizer/taskbar overlap after reopening, resizing icons or expanding/collapsing, while retaining the full work area for other applications. Reserves the taskbar edge per monitor and reconciles layout changes.
+- Removes competing system borders on custom rounded surfaces, aligns painted and clipped bounds, and avoids reinitializing acrylic during shelf resize animations. Covers capture/recording/scroll panels and notes.
+- Adds DPI, multi-monitor, taskbar-edge, repeated resize and transparent-corner checks. Existing stable installs can upgrade in place with their data preserved.
+
 # v2.0.0 · 更顺畅的桌面工作台 / A smoother desktop workspace
 
 - 作为正式版提供壁纸、截屏录屏、桌面收纳、原生任务栏美化、便签与效率工具；安装包含播放、录制和导出组件，无需另装 FFmpeg 或虚拟声卡。
