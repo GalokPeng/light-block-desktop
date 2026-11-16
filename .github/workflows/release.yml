@@ -106,6 +106,7 @@ jobs:
             build/setup-checks.json
             build/update-flow-qa/
             build/package-smoke-evidence/
+            build/recording-runtime-checks.json
             build/recording-runtime/configure.log
           if-no-files-found: warn
           retention-days: 14

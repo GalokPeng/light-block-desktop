@@ -32,7 +32,7 @@ struct Session {
     Edits edits;std::vector<capture::Annotation> annotations;unique_gdi<HBITMAP> snapshot,overlay_bitmap,overlay_preview;bool crop_mode{},crop_drag{},resume_after{};POINT crop_anchor{};RECT crop_selection{},overlay_crop{};SIZE overlay_size{};capture::Tool annotation_tool{capture::Tool::pen};
     std::deque<EditSnapshot> past,future;capture::Document::History editor_history;
     unique_gdi<HBITMAP> poster;bool waiting_player{},restore_position{};
-    UiRecordingState last_ui{};bool ui_valid{};
+    UiRecordingState last_ui{};bool ui_valid{},restore_frame_after_edit{};
 };
 std::unique_ptr<Session> session;
 std::vector<std::unique_ptr<Session>> results;
@@ -252,7 +252,7 @@ void position_overlay(Session &state) {
     HDC dc=CreateCompatibleDC(nullptr);if(!dc)return;auto old=SelectObject(dc,state.overlay_preview.get());POINT origin{screen.left+layout.viewport.left,screen.top+layout.viewport.top},source{};BLENDFUNCTION blend{AC_SRC_OVER,0,255,AC_SRC_ALPHA};UpdateLayeredWindow(state.overlay_window,nullptr,&origin,&size,dc,&source,0,&blend,ULW_ALPHA);SelectObject(dc,old);DeleteDC(dc);SetWindowPos(state.overlay_window,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);
 }
 void end_edit(Session &state) {
-    state.phase=3;state.snapshot.reset();state.editor=nullptr;if(state.host)ShowWindow(state.host,SW_SHOWNOACTIVATE);ShowWindow(state.controls,SW_SHOWNOACTIVATE);position_controls(state);set_status(state,tr(L"预览显示当前标注与裁剪；点击播放继续。源文件保留。",L"Preview shows the annotations and crop. Press Play to continue. Source preserved."));
+    state.phase=3;state.snapshot.reset();state.editor=nullptr;if(state.host)ShowWindow(state.host,SW_SHOWNOACTIVATE);if(std::exchange(state.restore_frame_after_edit,false)&&!state.close_requested)ShowWindow(state.frame,SW_SHOWNOACTIVATE);ShowWindow(state.controls,SW_SHOWNOACTIVATE);position_controls(state);set_status(state,tr(L"预览显示当前标注与裁剪；点击播放继续。源文件保留。",L"Preview shows the annotations and crop. Press Play to continue. Source preserved."));
 }
 size_t edit_bytes(EditSnapshot const& snapshot){size_t bytes=sizeof(snapshot)+snapshot.items.capacity()*sizeof(capture::Annotation);for(auto const& item:snapshot.items)bytes+=item.points.capacity()*sizeof(POINT)+(item.text.capacity()+item.style.font.capacity())*sizeof(wchar_t);return bytes;}
 void limit_edit_history(Session& state){
@@ -285,7 +285,10 @@ EditSnapshot editor_snapshot(std::vector<capture::Annotation> items,int width,in
 void show_editor(Session &state) {
     RECT rect{};GetWindowRect(state.frame,&rect);RECT location{rect.left+2,rect.top+2,rect.right-2,rect.bottom-2};state.phase=6;if(!state.crop_mode)ShowWindow(state.controls,SW_HIDE);if(state.host)ShowWindow(state.host,SW_HIDE);
     if(state.crop_mode) { state.crop_selection=state.edits.crop;if(state.crop_selection.right<=state.crop_selection.left) state.crop_selection={0,0,state.source_width,state.source_height};state.editor=CreateWindowExW(0,L"LightBlockDesktopNative.VideoCrop",L"",WS_CHILD|WS_VISIBLE,2,2,location.right-location.left,location.bottom-location.top,state.frame,nullptr,g_app.instance,&state);if(state.editor){SetWindowPos(state.editor,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);SetFocus(state.editor);}else end_edit(state); }
-    else { auto id=state.began;capture::Document::History history;for(auto const& item:state.past)history.past.push_back(editor_items(item.items,item.crop,state.source_width,state.source_height));for(auto const& item:state.future)history.future.push_back(editor_items(item.items,item.crop,state.source_width,state.source_height));state.editor_history={};
+    else { // The annotation pin replaces the preview at the same coordinates.
+        // Its separate toolbar must not sit behind the old topmost frame.
+        state.restore_frame_after_edit=IsWindowVisible(state.frame)!=FALSE;ShowWindow(state.frame,SW_HIDE);
+        auto id=state.began;capture::Document::History history;for(auto const& item:state.past)history.past.push_back(editor_items(item.items,item.crop,state.source_width,state.source_height));for(auto const& item:state.future)history.future.push_back(editor_items(item.items,item.crop,state.source_width,state.source_height));state.editor_history={};
         auto layout=preview_layout(state.source_width,state.source_height,location,state.edits.crop);location=layout.viewport;
         state.editor=capture::edit_project(state.snapshot.release(),location,editor_items(state.annotations,state.edits.crop,state.source_width,state.source_height),[id](std::vector<capture::Annotation> items) {
         auto owner=find_session_id(id);if(!owner||owner->close_requested)return;auto &s=*owner;s.editor=nullptr;auto snapshot=editor_snapshot(std::move(items),s.source_width,s.source_height);s.annotations=std::move(snapshot.items);s.edits.crop=snapshot.crop;s.past.clear();s.future.clear();for(auto& item:s.editor_history.past)s.past.push_back(editor_snapshot(std::move(item),s.source_width,s.source_height));for(auto& item:s.editor_history.future)s.future.push_back(editor_snapshot(std::move(item),s.source_width,s.source_height));s.editor_history={};limit_edit_history(s);refresh_annotations(s);

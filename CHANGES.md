@@ -5,6 +5,7 @@
 - 壁纸和工具页采用内嵌预览，截屏／录屏使用紧凑图标工具栏，设置即改即存；媒体工作台回到主窗口内。
 - 贴图补齐普通滚轮透明度、Ctrl滚轮锚点缩放、原位编辑、可隐藏的圆角微光和非破坏裁剪；局部橡皮精确擦除标注层，矩形/自由马赛克保留独立参数。长图缩略图不再因GDI透明通道显示成白块，恢复4000万像素上限。
 - 录屏补齐多结果独立预览、跨裁剪撤销/重做、逐帧双端时间轴和未修改文件直接复制；修复媒体尺寸误读MP4流编号、关闭编辑窗口后的迟到回调以及并发导出同名临时文件冲突。
+- 修复录屏裁剪后工具栏被撑高、旧预览遮挡原位标注画面；内置FFmpeg提前刷新退出输出，发布时增加320次能力输出稳定性检查。
 - 录屏准备栏可分别选择系统声音和麦克风，两项默认关闭，点击开始才采集。使用 Windows WASAPI，无需虚拟声卡；停止后复制视频流合并音轨，预览可试听／静音，MP4 与 MKV 导出保留声音，GIF 不含音轨。
 - 音频按共同时间起点对齐，静音和缺口补零；权限不足、设备断开或默认设备切换会明确报错。驱动无响应时有界结束任务，后台只保留自身状态，不阻塞应用退出，也不删除仍在写入的缓存。
 - 录屏编码线程和输入队列有上限，音频采集与合并在后台处理；新增合成单／双音轨、波形对齐、视频流完整性及音频线程超时回归。实机声音设备与音画启动延迟仍需在目标硬件上验证，不据此声称所有环境均能硬件编码或零时差。
@@ -16,6 +17,7 @@
 - Inline preview/tool pages, immediate settings, compact capture controls and an integrated media studio; improved appearance headers, discrete icon sizing, hover bounds, display names and bilingual chrome.
 - Pins restore wheel opacity, cursor-anchored Ctrl-wheel zoom, in-place editing, optional rounded glow and non-destructive crop. Precise partial erasing and independent rectangular/freehand mosaic controls; scrolling thumbnails preserve opaque GDI pixels and the original 40-million-pixel limit.
 - Recording restores independent result previews, crop-aware undo/redo, frame-accurate trim handles and unchanged-file copy. Fixes MP4 stream IDs mistaken for image dimensions, stale callbacks and concurrent export temporary-file collisions.
+- Fixes oversized recording controls after crop and the previous preview occluding annotation editing. The bundled FFmpeg flushes output before DLL teardown; packaging verifies 320 capability responses without retries.
 - Recording can capture system audio, microphone, or both through Windows WASAPI. Both inputs default off and open only on Start. Audio is combined without re-encoding the video; preview supports listening/muting, MP4/MKV keep audio, and GIF remains silent.
 - Common-clock audio alignment, silence padding, explicit permission/device-change failures, bounded driver-timeout handling and bounded recording queues/threads. Synthetic audio, video-stream preservation and stalled-worker lifecycle tests cover these paths; real-device compatibility and startup synchronization still require hardware testing.
 - Publication requires preview-specific checks. A successful build or synthetic fixture is not complete hardware or visual acceptance.

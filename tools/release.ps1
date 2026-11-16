@@ -13,6 +13,8 @@ try {
     if (-not (Test-Path -LiteralPath $IsccPath)) { throw 'Provide Inno Setup 6 with -IsccPath.' }
     if (-not $SkipBuild) { & ./build.ps1 -PythonPath $PythonPath -CompilerRoot $CompilerRoot -QtRoot $QtRoot -RuntimeDirectory $RuntimeDirectory -Offline:$Offline | Out-Host }
     if (-not $SkipTests) { & ./tools/test.ps1 -SkipBuild | Out-Host }
+    & $PythonPath tools/test_recording_runtime.py 'dist/LightBlockDesktopPreview/runtime/recording/ffmpeg.exe' --report 'build/recording-runtime-checks.json'
+    if ($LASTEXITCODE -ne 0) { throw 'Recording runtime output stability checks failed.' }
     $version=(& $PythonPath tools/release.py version).Trim()
     if ($LASTEXITCODE -ne 0) { throw 'Invalid release version.' }
     $numericVersion=(& $PythonPath tools/release.py numeric-version).Trim()

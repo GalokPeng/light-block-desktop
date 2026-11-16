@@ -108,6 +108,32 @@ def git_bash():
     raise FileNotFoundError("Building the recording runtime requires Git for Windows with Git Bash.")
 
 
+def patch_exit_flush(source):
+    """Flush before DLL teardown with the pinned pre-fix MinGW CRT.
+
+    See msys2/MINGW-packages#26646 and mingw-w64 commit 96d60fc.
+    Only our ffmpeg CLI is built. Keep this small source transformation in the
+    recipe/source archive so rebuilding gets the same fix, without changing
+    upstream archive hashes or relying on a machine-wide runtime update.
+    """
+    entry = source / "fftools" / "ffmpeg.c"
+    code = entry.read_text(encoding="utf-8")
+    main = "int main(int argc, char **argv)\n"
+    init = "    init_dynload();\n"
+    if code.count(main) != 1 or code.count(init) != 1:
+        raise ValueError("Unexpected FFmpeg CLI entry point for exit-flush patch")
+    callback = """/* Flush before Windows DLL teardown can terminate the process. */
+static void light_block_exit_flush(void)
+{
+    fflush(NULL);
+}
+
+"""
+    code = code.replace(main, callback + main).replace(
+        init, "    if (atexit(light_block_exit_flush) != 0)\n        return 1;\n\n" + init)
+    entry.write_text(code, encoding="utf-8", newline="\n")
+
+
 def build():
     DOWNLOADS.mkdir(parents=True, exist_ok=True)
     fingerprint = sha256(SCRIPT.read_bytes() + RECIPE.read_bytes()).hexdigest()[:16]
@@ -143,6 +169,7 @@ def build():
             raise ValueError("Unexpected FFmpeg response-file recipe.")
         # Let make write the response file without passing the object list through Windows' command line.
         library_rules.write_text(rules.replace(echo_objects, "\t$(file >$@.objs,$^)"), encoding="utf-8", newline="\n")
+        patch_exit_flush(library_rules.parent.parent)
         windows = Path(os.environ["SystemRoot"])
         env = dict(os.environ, PATH=os.pathsep.join(map(str, (bash.parent, tools, assembler.parent,
                                                               windows / "System32", windows))))
@@ -164,6 +191,7 @@ def build():
                              "Extract this archive on Windows x64 with Python 3.11, Git and 7-Zip, then run:\n"
                              "    py -3.11 tools/build_recording_runtime.py\n"
                              "The build downloads SHA-256-pinned compiler and assembler packages.\n"
+                             "The recipe applies an explicit atexit stdio flush for the pinned Windows CRT.\n"
                              "License notices are included in the FFmpeg, x264 and zlib archives.\n")
         output.mkdir(exist_ok=True)
         (work / executable.name).replace(executable)
