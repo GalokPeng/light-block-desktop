@@ -103,7 +103,7 @@ int wmain(int argc, wchar_t** argv) {
     }
     if (result!=0 && result!=2) {
         MessageBoxW(nullptr,language==L"english" ? L"The update could not be installed. Try updating again or download Setup from the website."
-                    : L"测试版安装未完成，请重新下载测试版安装包。",LB_PRODUCT_ENGLISH,MB_OK|MB_ICONWARNING);
+                    : L"安装未完成，请重新下载安装包。",LB_PRODUCT_ENGLISH,MB_OK|MB_ICONWARNING);
     }
     // Interactive Setup owns its Launch checkbox. Silent upgrades restart the
     // same installation and profile, including when Setup was cancelled/failed.

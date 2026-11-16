@@ -1,63 +1,37 @@
-# C++ 测试版构建与分发
+# 构建与发布
 
 [English](release.en.md)
 
-展示名称为 **测试版（极度优化）**，同时明确标注：**不稳定、独立安装、不替换正式版**。正式 main、Python v1.0.0、v1.0.0 标签和归档分支保持原样。测试版只在 `cpp-preview` 开发，以 GitHub prerelease 分发，不进入正式用户更新通道，不能将本分支合并到 main。
+版本唯一来源为 `src/version.hpp`，正式版本采用 `X.Y.Z`，Windows 数值版本为 `X.Y.Z.0`。产品名称保持轻块桌面 / Light Block Desktop，不在产品入口强调实现语言。
 
-## 固定身份
+## 安装与升级契约
 
-版本唯一来源为 `src/version.hpp`。显示版本采用 `1.1.0-beta.2`，Windows 文件和安装器数值版本为 `1.1.0.0`。后续测试版递增 beta.N 或 rc.N，不能省略预发布后缀。
+- AppId：`{3CD16B31-077E-4CE9-BB01-578642D94876}`；程序 `轻块桌面.exe`；默认目录 `%LOCALAPPDATA%/Programs/Light Block Desktop`。
+- 固定 Setup 下载名 `Qingkuai-Setup-x64.exe`；标签 `v<VERSION>`；正式发布必须为 latest，不能标记 prerelease。
+- 自启动沿用 `StillWallpaper`，桌面菜单沿用 `LightBlockDesktop.note/sound`。未启用自启动时不能在升级时擅自开启。
+- 默认数据 `data/profile-v2`；只读安装回退 `%LOCALAPPDATA%/StillWallpaper/profile-v2`。旧数据不删除；迁移备份、校验、原子提交并保持幂等。卸载保留用户数据。
+- `python-v1.0.0` 分支、`v1.0.0` 标签和发布资产永久保留，不移动。官网提供固定 v1.0.0 历史下载。
 
-| 内容 | 测试版约定 |
-| --- | --- |
-| AppId | `{C07C418A-08FE-4E9B-8136-348822397B6B}` |
-| 程序文件 | `轻块桌面测试版.exe` |
-| 默认安装目录 | `%LOCALAPPDATA%/Programs/Light Block Desktop Preview` |
-| 数据/自启动/右键菜单命名空间 | `LightBlockDesktopPreview` |
-| 本地构建目录 | `dist/LightBlockDesktopPreview` |
-| 发布标签 | `preview-v1.1.0-beta.2` |
-| 测试版固定下载名 | `Qingkuai-Preview-Setup-x64.exe` |
+## 验证
 
-安装器拒绝覆盖包含正式版程序的目录、正式默认目录及已登记正式安装目录的子目录。测试版默认使用安装目录下的 `data-preview`，不可写时回退到 `%LOCALAPPDATA%/LightBlockDesktopPreview`。卸载只处理测试版注册项并保留这些用户数据。不能自动迁移、写入或删除正式版真实配置；需要测试迁移时只能使用复制的合成测试数据。
-
-## 本地构建与验证
-
-需要 Windows x64、PowerShell 7、Git、Python 3.11+（仅构建与测试脚本）、7-Zip；打包另需 Inno Setup 6。依赖在当前项目的 build 中下载和校验，不依赖相邻仓库。程序运行不要求安装 Python 或 FFmpeg。
+Windows x64、PowerShell 7、Git、Python 3.11+（构建工具）、7-Zip；打包另需 Inno Setup 6。依赖下载并校验固定版本，用户不用另装 Python/Qt/FFmpeg。
 
 ```powershell
 ./build.ps1
 ./tools/test.ps1 -SkipBuild
 node --test tests/test_website_downloads.mjs tests/test_website_theme.mjs tests/test_preview_download.mjs
+python tools/test_release_protocol.py
 python tools/check_wallpaper_catalog.py
 ```
 
-测试使用独立配置和生成素材。实机的多 DPI、全屏、Explorer 重建、屏幕采集和异常恢复需另外确认；离屏测试不能证明全部电脑兼容。用户正在体验的实例不能擅自关闭或覆盖。
+回归覆盖原生模块、实际媒体帧、切换与崩溃清理、Qt 界面、便签、独立进程退出、取消注销、自启动命令与设置落盘。系统消息测试只针对自己的隔离进程，不实际注销或重启。多 DPI、全屏、Explorer 重建、声音设备、截屏残影需额外实机确认。
 
-确认源码提交完整后，生成与该提交一致的包：
+源码完整提交后执行 `./tools/release.ps1 -SkipBuild -SkipTests`，再执行 `python tools/test_setup.py --iscc <ISCC.exe>` 与 `python tools/test_update_flow.py --iscc <ISCC.exe>`。安装测试使用随机 AppId 和独立目录，不能覆盖维护者真实安装。
 
-```powershell
-./tools/release.ps1 -IsccPath 'C:/path/to/ISCC.exe' -SkipBuild -SkipTests
-python tools/test_setup.py --iscc 'C:/path/to/ISCC.exe'
-python tools/test_update_flow.py --iscc 'C:/path/to/ISCC.exe'
-```
+## 自动发布
 
-安装测试使用临时 AppId 和目录，验证系统语言/简中/繁中/英文、同测试版升级、卸载保留数据及拒绝覆盖正式目录。更新器测试只调用合成 Setup 验证工具隔离；测试版 UI 不提供正式版自动更新。没有通过当前提交的完整 QA，不能发布。
+`main` 推送或 `v*` 标签触发构建与验证；仅版本比历史正式标签更新时发布。`cpp-preview` 可作准备分支，只构建不发布。手动 workflow 的 publish 仅对 main 或精确版本标签生效。每个 checkout 固定触发 SHA，不构建漂移的分支头。
 
-## 资产与许可证
+`release/` 包含版本化 Setup、固定名 Setup、便携 ZIP、应用源码 ZIP、Qt/FFmpeg 对应源码 ZIP 和 SHA256SUMS。两份 Setup 字节必须一致，安装包不超过 128 MiB，产物不带用户数据或开发缓存。尚未配置代码签名，不宣称安装包已签名。每个公开版本不可静默覆盖；修复后递增版本。
 
-`preview-release/` 必须包含：
-
-- `Qingkuai-Preview-v<VERSION>-Setup-x64.exe` 和相同字节的 `Qingkuai-Preview-Setup-x64.exe`。
-- `Qingkuai-Preview-v<VERSION>-Windows-x64.zip`。
-- `Qingkuai-Preview-v<VERSION>-source.zip`、`-ffmpeg-source.zip`、`-qt-source.zip`。
-- `Qingkuai-Preview-v<VERSION>-SHA256SUMS.txt`。
-
-禁止生成或上传正式版固定资产 `Qingkuai-Setup-x64.exe`。打包校验程序资源中的测试版名称和版本，Setup 体积预算为 128 MiB。未配置签名时，须如实说明安装包未签名。
-
-Qt 动态库和媒体解码用 LGPL FFmpeg 7.1、独立录屏用 GPL FFmpeg 8.1.3 分别附许可证和对应源码。不能把应用 MIT 许可证理解为覆盖全部依赖。
-
-## 手动发布与官网
-
-Checks 只监听 cpp-preview。测试分支或 preview-v* 标签推送仅构建，不自动公开；发布需要维护者在 **C++ preview prerelease** workflow 手动设置 publish=true。发布固定使用 `--prerelease --latest=false`，不能改为正式 latest。已经公开的同版本不能静默覆盖；修复后递增测试版编号。
-
-官网默认下载、正式版更新 API 和原有稳定资产继续指向正式版本。测试包只能从额外的测试版入口下载，显示不稳定、独立安装及可能存在缺陷的说明。发布后核对预发布标记、标签提交、所有校验和及许可源码资产，确认 GitHub 正式 latest 和正式更新 API 没有变化。推送成功不代表分发完成。
+发布完成必须确认 GitHub latest、全部资产与摘要、官网中英文下载与更新 JSON、v1.0.0 下载和归档仍可用。官网旧 `/preview/` 链接跳转正式页面。推送成功不代表发布成功。

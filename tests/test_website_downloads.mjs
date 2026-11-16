@@ -50,15 +50,17 @@ test('HTML defaults work with JavaScript disabled', async () => {
 
 test('switching sources updates every download link, with language-specific storage', async () => {
   const links = [{}, {}];
+  const archive = {};
   const control = { addEventListener(_event, handler) { this.change = handler; } };
   const values = new Map();
   const storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };
-  const doc = { documentElement: { lang: 'zh-CN' }, querySelectorAll: selector => selector.includes('source') ? [control] : links };
+  const doc = { documentElement: { lang: 'zh-CN' }, querySelectorAll: selector => selector === '[data-download-source]' ? [control] : selector === '[data-archive-download]' ? [archive] : selector === '[data-setup-download]' ? links : [] };
   await bindDownloads(doc, storage, async () => ({ version, name: setupName, url: setupUrl('github', version) }));
   assert.equal(links[0].href, setupUrl('gh-proxy', version));
   control.value = 'ghfast';
   control.change();
   assert.ok(links.every(link => link.href === setupUrl('ghfast', version)));
+  assert.equal(archive.href, setupUrl('ghfast', 'v1.0.0'));
   assert.equal(values.get('qingkuai-download-zh'), 'ghfast');
   doc.documentElement.lang = 'en';
   bindDownloads(doc, storage);
@@ -67,7 +69,7 @@ test('switching sources updates every download link, with language-specific stor
 
 test('offline metadata and blocked browser storage retain working default links', async () => {
   const link = {};
-  const doc = { documentElement: { lang: 'en' }, querySelectorAll: selector => selector.includes('source') ? [] : [link] };
+  const doc = { documentElement: { lang: 'en' }, querySelectorAll: selector => selector === '[data-setup-download]' ? [link] : [] };
   await bindDownloads(doc, { getItem() { throw Error('blocked'); } }, async () => { throw Error('offline'); });
   assert.equal(link.href, setupUrl('github'));
 });

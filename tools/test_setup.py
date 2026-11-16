@@ -29,15 +29,17 @@ def verify_setup(setup, app_id, folder, language, title):
     def install():
         subprocess.run((str(setup), *quiet, *lang_arg, "/CURRENTUSER", "/NOICONS", f"/DIR={app}",
                         f"/LOG={folder / 'setup.log'}"), check=True, timeout=180)
+    app.mkdir(parents=True)
+    (app / EXE_NAME).write_bytes(b"isolated old executable fixture")
     try:
         install()
         if display_name(app_id) != title:
             raise RuntimeError(f"Unexpected installer language: {display_name(app_id)!r}")
         # Existing installation data must survive both an in-place upgrade and uninstall.
-        data = app / "data-preview"
-        data.mkdir()
+        data = app / "data/profile-v2"
+        data.mkdir(parents=True)
         stable_data = app / "data/settings.json"
-        stable_data.parent.mkdir()
+        stable_data.parent.mkdir(exist_ok=True)
         stable_data.write_bytes(b'{"version":"1.0.0","keep":"stable fixture"}')
         preserved = {"user-kept.txt": b"user-owned data", "wallpapers/original.jpg": b"unchanged media bytes", "notes/preserved.txt": "旧便签".encode()}
         for name, value in preserved.items():
@@ -48,7 +50,7 @@ def verify_setup(setup, app_id, folder, language, title):
         if any((data / name).read_bytes() != value for name, value in preserved.items()):
             raise RuntimeError("Upgrade changed user data")
         if stable_data.read_bytes() != b'{"version":"1.0.0","keep":"stable fixture"}':
-            raise RuntimeError("Preview upgrade changed stable data")
+            raise RuntimeError("Upgrade changed stable data")
         smoke_at(app / EXE_NAME, config)
     finally:
         uninstaller = next(app.glob("unins*.exe"), None)
@@ -59,7 +61,7 @@ def verify_setup(setup, app_id, folder, language, title):
     if any((data / name).read_bytes() != value for name, value in preserved.items()):
         raise RuntimeError("Uninstall removed user data")
     if stable_data.read_bytes() != b'{"version":"1.0.0","keep":"stable fixture"}':
-        raise RuntimeError("Preview uninstall changed stable data")
+        raise RuntimeError("Uninstall changed stable data")
     return dict(language=language or "system", install=True, upgrade_preserves_data=True, startup=True, uninstall_preserves_data=True, stable_data_unchanged=True)
 
 
@@ -82,22 +84,8 @@ def main():
             raise RuntimeError("Preview Setup exceeds the 128 MiB package budget")
         setup_hash = digest(setup)
         langid = ctypes.windll.kernel32.GetUserDefaultUILanguage()
-        title = ("轻块桌面测试版（极度优化）" if langid in (0x0804, 0x1004) else "輕塊桌面測試版（極度優化）") if langid & 0x03FF == 4 else "Light Block Desktop Preview (Extensive optimization)"
-        stable = folder / "stable-installation"
-        stable.mkdir()
-        sentinel = stable / "轻块桌面.exe"
-        sentinel.write_bytes(b"stable application must not be replaced")
-        for forbidden in (stable, stable / "data/nested-preview"):
-            try:
-                rejected = subprocess.run((str(setup), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/NOICONS", f"/DIR={forbidden}"), timeout=120)
-                if rejected.returncode == 0 or sentinel.read_bytes() != b"stable application must not be replaced" or (forbidden / EXE_NAME).exists():
-                    raise RuntimeError("Preview installer did not reject a stable installation folder or descendant")
-            finally:
-                # A failing test must still clean its isolated uninstall registration.
-                accidental = next(forbidden.glob("unins*.exe"), None)
-                if accidental:
-                    subprocess.run((str(accidental), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"), check=True, timeout=120)
-        for language, display in ((None, title), ("chinesesimplified", "轻块桌面测试版（极度优化）"), ("chinesetraditional", "輕塊桌面測試版（極度優化）"), ("english", "Light Block Desktop Preview (Extensive optimization)")):
+        title = ("轻块桌面" if langid in (0x0804, 0x1004) else "輕塊桌面") if langid & 0x03FF == 4 else "Light Block Desktop"
+        for language, display in ((None, title), ("chinesesimplified", "轻块桌面"), ("chinesetraditional", "輕塊桌面"), ("english", "Light Block Desktop")):
             case = folder / (language or "system")
             case.mkdir()
             results.append(verify_setup(setup, app_id, case, language, display))
@@ -106,7 +94,7 @@ def main():
         passed=True, version=version, executable_sha256=digest(portable / EXE_NAME),
         ui_dll=(portable / "ui-current.txt").read_text(encoding="ascii").strip(),
         setup_bytes=setup_bytes, setup_sha256=setup_hash, isolated_app_id=True,
-        stable_installation_rejected=True, checks=results), ensure_ascii=False, indent=2), encoding="utf-8")
+        stable_upgrade_identity=True, checks=results), ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":

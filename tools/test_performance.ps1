@@ -2,7 +2,7 @@ param([switch]$SkipBuild)
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 if (-not $SkipBuild) { & (Join-Path $root 'build.ps1') }
-$exe=Join-Path $root 'dist/LightBlockDesktopPreview/轻块桌面测试版.exe'
+$exe=Join-Path $root 'dist/LightBlockDesktop/轻块桌面.exe'
 $qa=Join-Path $root ('.local/performance-'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Path $qa | Out-Null
 $report=Join-Path $qa 'samples.json'

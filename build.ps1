@@ -5,7 +5,7 @@ $CompilerRoot = & (Join-Path $root 'tools/setup_native_toolchain.ps1') -Compiler
 $clang = Join-Path $CompilerRoot 'bin/clang++.exe'
 if (-not (Test-Path -LiteralPath $clang)) { throw 'Pass -CompilerRoot pointing to an LLVM-MinGW toolchain containing bin/clang++.exe.' }
 $build = Join-Path $root 'build'
-$dist = Join-Path $root 'dist/LightBlockDesktopPreview'
+$dist = Join-Path $root 'dist/LightBlockDesktop'
 New-Item -ItemType Directory -Force -Path $build, $dist | Out-Null
 $buildGuard=$null
 try {
@@ -20,7 +20,7 @@ $resourcePath=$env:PATH
 try { $env:PATH=(Split-Path $ResourceCompiler)+';'+$resourcePath;& $ResourceCompiler --codepage=65001 -i app.rc -O coff -o (Join-Path $build 'app.res.o'); if ($LASTEXITCODE -ne 0) { throw 'Resource compilation failed.' } }
 finally { $env:PATH=$resourcePath;Pop-Location }
 $sources = @(Get-ChildItem -LiteralPath (Join-Path $root 'src') -Filter '*.cpp')
-$exe = Join-Path $dist '轻块桌面测试版.exe'
+$exe = Join-Path $dist '轻块桌面.exe'
 $linkedExe = Join-Path $build 'LightBlockDesktopNative.next.exe'
 $flags = @('--target=x86_64-w64-mingw32','-DUNICODE','-D_UNICODE','-DWINVER=0x0A00','-D_WIN32_WINNT=0x0A00','-std=c++23','-Os','-Wall','-Wextra','-Werror','-Wno-missing-field-initializers',('-I'+$build))
 $pch = Join-Path $build 'native.pch'

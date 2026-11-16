@@ -2,6 +2,7 @@
 #include "migration.hpp"
 #include "lb.h"
 #include "json.h"
+#include "network.h"
 #include "sqlite.hpp"
 #include <thread>
 
@@ -35,7 +36,7 @@ struct PreparationWindow {
         if(message==WM_CLOSE)return 0;
         if(message==WM_CTLCOLORSTATIC){SetTextColor(HDC(wp),RGB(231,238,247));SetBkColor(HDC(wp),RGB(25,32,42));SetDCBrushColor(HDC(wp),RGB(25,32,42));return LRESULT(GetStockObject(DC_BRUSH));}
         if(message==WM_ERASEBKGND){RECT r{};GetClientRect(window,&r);SetDCBrushColor(HDC(wp),RGB(25,32,42));FillRect(HDC(wp),&r,HBRUSH(GetStockObject(DC_BRUSH)));return 1;}
-        if(message==WM_CREATE&&self){self->font=CreateFontW(-16,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Microsoft YaHei UI");auto label=CreateWindowExW(0,L"STATIC",self->english?L"Preparing your settings and data…\r\nPreview settings are kept separate.":L"正在准备设置与数据，请稍候…\r\n测试版设置独立保存。",WS_CHILD|WS_VISIBLE,24,18,450,55,window,nullptr,GetModuleHandleW(nullptr),nullptr);SendMessageW(label,WM_SETFONT,WPARAM(self->font),TRUE);auto bar=CreateWindowExW(0,PROGRESS_CLASSW,L"",WS_CHILD|WS_VISIBLE|PBS_MARQUEE,24,88,450,9,window,nullptr,GetModuleHandleW(nullptr),nullptr);SendMessageW(bar,PBM_SETMARQUEE,TRUE,35);return 0;}
+        if(message==WM_CREATE&&self){self->font=CreateFontW(-16,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Microsoft YaHei UI");auto label=CreateWindowExW(0,L"STATIC",self->english?L"Preparing your settings and data…\r\nYour existing data is preserved.":L"正在准备设置与数据，请稍候…\r\n原有数据将完整保留。",WS_CHILD|WS_VISIBLE,24,18,450,55,window,nullptr,GetModuleHandleW(nullptr),nullptr);SendMessageW(label,WM_SETFONT,WPARAM(self->font),TRUE);auto bar=CreateWindowExW(0,PROGRESS_CLASSW,L"",WS_CHILD|WS_VISIBLE|PBS_MARQUEE,24,88,450,9,window,nullptr,GetModuleHandleW(nullptr),nullptr);SendMessageW(bar,PBM_SETMARQUEE,TRUE,35);return 0;}
         return DefWindowProcW(window,message,wp,lp);
     }
     void show(){
@@ -45,12 +46,30 @@ struct PreparationWindow {
 }
 Selection select(fs::path const& executable,fs::path const& custom,fs::path const& override_legacy) noexcept {
     try {
-        auto exe=fs::absolute(executable).lexically_normal();auto primary=exe.parent_path()/L"data-preview";
+        auto exe=fs::absolute(executable).lexically_normal();
+        auto primary=exe.parent_path()/L"data";
         auto fallback=override_legacy.empty()?legacy_directory():fs::absolute(override_legacy).lexically_normal();
-        auto chosen=custom.empty()?(writable(primary)?primary:fallback):fs::absolute(custom).lexically_normal();no_links(chosen);
-        require(!present(chosen/L"settings.json"),"This is a Python stable profile. Preview builds require an independent data directory; no files were changed.");
-        return direct(chosen);
-    }catch(std::exception const& e){Selection out;try{out.error=sql::wide(e.what());}catch(...){out.error=L"Could not select an independent preview profile.";}return out;}catch(...){Selection out;out.error=L"Could not select an independent preview profile.";return out;}
+        auto prepare=[&](fs::path const& source,fs::path const& destination){
+            no_links(source);no_links(destination);require(writable(destination),"The upgraded profile directory is not writable");
+            auto result=migration::upgrade(source,destination,exe.parent_path()/L"assets");
+            require(result.ok,sql::utf8(result.error).c_str());Selection out;out.ok=true;out.migrated=result.migrated;out.path=destination;return out;
+        };
+        // Explicit test/portable profiles never discover or mutate another profile.
+        if(!custom.empty()){
+            auto chosen=fs::absolute(custom).lexically_normal();no_links(chosen);
+            if(present(chosen/L"settings.json"))return prepare(chosen,chosen/L"profile-v2");
+            return direct(chosen);
+        }
+        auto base=writable(primary)?primary:fallback;
+        auto destination=base/L"profile-v2";
+        // Reuse only a fully committed native profile. Failed migration staging is
+        // never selected; an unexpected partial destination is rejected below.
+        if(present(destination/L"settings.ini"))return direct(destination);
+        if(present(primary/L"settings.json"))return prepare(primary,destination);
+        if(present(fallback/L"settings.json"))return prepare(fallback,destination);
+        require(!present(destination),"Incomplete v2 profile; inspect the directory before retrying");
+        return direct(destination);
+    }catch(std::exception const& e){Selection out;try{out.error=sql::wide(e.what());}catch(...){out.error=L"Could not prepare your application profile.";}return out;}catch(...){Selection out;out.error=L"Could not prepare your application profile.";return out;}
 }
 Selection select_with_progress(fs::path const& executable,fs::path const& custom) noexcept {
     try{
@@ -94,14 +113,25 @@ bool desktop_menu(fs::path const& executable,bool enabled,bool official,bool eng
 bool tests(fs::path const& root){
     try{
         require(!present(root),"Profile fixture directory must be new");fs::create_directories(root/L"install");auto exe=root/L"install"/LB_PRODUCT_EXE,fallback=root/L"preview-fallback";
-        auto fresh=select(exe,{},fallback);require(fresh.ok&&fresh.path==exe.parent_path()/L"data-preview"&&!fresh.migrated,"Preview profile was not independent");
-        auto stable=exe.parent_path()/L"data";fs::create_directories(stable);require(write_utf8_atomic((stable/L"settings.json").c_str(),L"{\"version\":\"1.0.0\",\"library\":[]}"),"Fixture old profile failed");auto again=select(exe,{},fallback);require(again.ok&&again.path==fresh.path&&!again.migrated&&!present(stable/L"profile-v1.1"),"Preview touched a stable profile");
-        auto refused=select(exe,stable,fallback);require(!refused.ok&&present(stable/L"settings.json"),"Explicit stable profile must be refused without mutation");
-        auto custom=select(exe,root/L"custom",fallback);require(custom.ok&&custom.path==root/L"custom","Explicit preview profile changed");
-        auto denied=root/L"denied";fs::create_directories(denied);require(write_utf8_atomic((denied/L"data-preview").c_str(),L"blocking file"),"Fixture blocker failed");auto other=select(denied/LB_PRODUCT_EXE,{},fallback);require(other.ok&&other.path==fallback,"Preview-only fallback failed");
-        auto plan=desktop_menu_entries(exe,false,root/L"custom",true);require(plan.size()==2&&plan[0].key.find(LB_DESKTOP_MENU_PREFIX)!=std::wstring::npos&&plan[0].command.find(L" --desktop-action note")!=std::wstring::npos&&plan[1].command.find(L" --desktop-action sound")!=std::wstring::npos&&plan[0].command.find(L" --data-dir ")!=std::wstring::npos&&plan[0].icon.ends_with(L",0"),"Preview desktop command plan invalid");require(desktop_menu(exe,true,false),"Fixture registry guard failed");
-        auto records=root/L"inno-records";fs::create_directories(records);auto identity=std::wstring(L"Inno Setup Uninstall Log\n")+LB_INSTALL_APP_ID;require(write_utf8_atomic((records/L"unins000.dat").c_str(),identity.c_str()),"Inno fixture failed");require(!inno_record(records),"Uninstaller without executable trusted");require(write_utf8_atomic((records/L"unins000.exe").c_str(),L"fixture placeholder")&&inno_record(records),"Preview identity rejected");
-        return write_utf8_atomic((root/L"result.json").c_str(),L"{\"preview_isolated\":true,\"stable_untouched\":true,\"explicit_stable_rejected\":true,\"custom_exact\":true,\"preview_fallback\":true,\"desktop_profile_command\":true,\"registry_untouched\":true,\"preview_install_identity\":true}")!=FALSE;
+        auto upgrade_install=root/L"upgrade";auto old=upgrade_install/L"data";fs::create_directories(old);
+        auto legacy_text=L"{\"version\":\"1.0.0\",\"library\":[],\"settings_theme\":\"light\",\"capture_shortcut\":\"Ctrl+Alt+A\"}";
+        require(write_utf8_atomic((old/L"settings.json").c_str(),legacy_text),"Fixture legacy settings failed");
+        auto upgraded=select(upgrade_install/LB_PRODUCT_EXE,{},fallback);
+        require(upgraded.ok&&upgraded.migrated&&upgraded.path==old/L"profile-v2"&&present(upgraded.path/L"legacy-backup"/L"settings.json"),"Default legacy migration failed");
+        require(GetPrivateProfileIntW(L"appearance",L"dark",1,(upgraded.path/L"settings.ini").c_str())==0,"Migration lost theme preference");
+        wchar_t old_hash[65]{},backup_hash[65]{};require(hash_file((old/L"settings.json").c_str(),L"SHA256",old_hash,65)&&hash_file((upgraded.path/L"legacy-backup"/L"settings.json").c_str(),L"SHA256",backup_hash,65)&&!wcscmp(old_hash,backup_hash),"Migration modified the old settings");
+        auto repeat=select(upgrade_install/LB_PRODUCT_EXE,{},fallback);require(repeat.ok&&!repeat.migrated&&repeat.path==upgraded.path,"Migration was not idempotent");
+        auto fresh=select(exe,{},fallback);require(fresh.ok&&fresh.path==exe.parent_path()/L"data"/L"profile-v2"&&!fresh.migrated,"Fresh v2 profile path differs");
+        require(write_utf8_atomic((fresh.path/L"settings.ini").c_str(),L"[app]\nversion=2.0.0\n"),"Fixture native profile failed");
+        auto stable=exe.parent_path()/L"data";require(write_utf8_atomic((stable/L"settings.json").c_str(),L"{\"version\":\"1.0.0\",\"library\":[]}"),"Fixture old profile failed");
+        auto again=select(exe,{},fallback);require(again.ok&&again.path==fresh.path&&!again.migrated&&present(stable/L"settings.json"),"Existing v2 profile was replaced");
+        auto custom=select(exe,root/L"custom",fallback);require(custom.ok&&custom.path==root/L"custom","Explicit profile changed");
+        auto bad=root/L"invalid-legacy";fs::create_directories(bad);require(write_utf8_atomic((bad/L"settings.json").c_str(),L"invalid"),"Fixture corrupt old profile failed");
+        auto refused=select(exe,bad,fallback);require(!refused.ok&&!present(bad/L"profile-v2")&&present(bad/L"settings.json"),"Corrupt old data must not produce an empty new profile");
+        auto denied=root/L"denied";fs::create_directories(denied);require(write_utf8_atomic((denied/L"data").c_str(),L"blocking file"),"Fixture blocker failed");auto other=select(denied/LB_PRODUCT_EXE,{},fallback);require(other.ok&&other.path==fallback/L"profile-v2","Per-user fallback failed");
+        auto plan=desktop_menu_entries(exe,false,root/L"custom",true);require(plan.size()==2&&plan[0].key.find(LB_DESKTOP_MENU_PREFIX)!=std::wstring::npos&&plan[0].command.find(L" --desktop-action note")!=std::wstring::npos&&plan[1].command.find(L" --desktop-action sound")!=std::wstring::npos&&plan[0].command.find(L" --data-dir ")!=std::wstring::npos&&plan[0].icon.ends_with(L",0"),"Desktop command plan invalid");require(desktop_menu(exe,true,false),"Fixture registry guard failed");
+        auto records=root/L"inno-records";fs::create_directories(records);auto identity=std::wstring(L"Inno Setup Uninstall Log\n")+LB_INSTALL_APP_ID;require(write_utf8_atomic((records/L"unins000.dat").c_str(),identity.c_str()),"Inno fixture failed");require(!inno_record(records),"Uninstaller without executable trusted");require(write_utf8_atomic((records/L"unins000.exe").c_str(),L"fixture placeholder")&&inno_record(records),"Installer identity rejected");
+        return write_utf8_atomic((root/L"result.json").c_str(),L"{\"native_profile_reused\":true,\"legacy_untouched\":true,\"partial_migration_rejected\":true,\"custom_exact\":true,\"fallback\":true,\"registry_untouched\":true}")!=FALSE;
     }catch(std::exception const& e){std::fprintf(stderr,"Profile fixture failed: %s\n",e.what());return false;}catch(...){return false;}
 }
 }

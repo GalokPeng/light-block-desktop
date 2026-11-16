@@ -1,9 +1,7 @@
-name: C++ preview checks
+name: Quality checks
 on:
   pull_request:
-    branches: [cpp-preview]
-  push:
-    branches: [cpp-preview]
+    branches: [main, cpp-preview]
 permissions:
   contents: read
 jobs:
@@ -30,7 +28,7 @@ jobs:
         shell: pwsh
         run: |
           python tools/test_release_protocol.py
-          if ($LASTEXITCODE -ne 0) { throw 'Preview release isolation contract failed.' }
+          if ($LASTEXITCODE -ne 0) { throw 'Release contract failed.' }
           ./build.ps1
       - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: steps.recorder-cache.outputs.cache-hit != 'true'

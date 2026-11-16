@@ -1,3 +1,13 @@
+# v2.0.0 release verification
+
+Local Windows regression on 2026-11-16: 116 native checks passed; static/GIF/MP4 rendered real frames; 12 rapid media switches completed with zero failures and no remaining child processes. Qt interface and desktop-note fixtures passed. Six isolated Qt/native shutdown scenarios passed, including repeated exit, background relaunch, cancelled session ending and capture pending at exit; actual Run/StartupApproved registry values were unchanged.
+
+Capture visual acceptance used a synthetic checkerboard only. Preparation completed after 235 ms; the maintainer confirmed no residual window shadow. The fixture subsequently exited in 204 ms. No real desktop capture is included in public assets.
+
+Migration/profile regression verifies backup hashes, preserved theme settings, idempotency, existing native profile reuse, partial/corrupt-source rejection, explicit data isolation and fallback storage. The native migration suite additionally covers notes, groups, history and failure cases. Installer/updater tests and final published-asset checks are release gates; CI evidence is authoritative for the final commit. These tests do not certify every Explorer build, monitor arrangement or audio driver.
+
+---
+
 # v1.1.0-beta.2 测试版验证 · 2026-11-16
 
 本节属于独立 C++ 测试版，下方 Python v1.0.0 及更早记录仅作历史保留，不能当作当前实现的验收结果。

@@ -14,11 +14,11 @@ BEGIN
  BEGIN
   BLOCK "040904b0"
   BEGIN
-   VALUE "FileDescription", "轻块桌面测试版 / Light Block Desktop Preview"
-   VALUE "ProductName", "Light Block Desktop Preview"
+   VALUE "FileDescription", "轻块桌面 / Light Block Desktop"
+   VALUE "ProductName", "Light Block Desktop"
    VALUE "FileVersion", LB_VERSION_NUMERIC_UTF8
    VALUE "ProductVersion", LB_VERSION_UTF8
-   VALUE "OriginalFilename", "轻块桌面测试版.exe"
+   VALUE "OriginalFilename", "轻块桌面.exe"
   END
  END
  BLOCK "VarFileInfo"

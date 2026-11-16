@@ -34,6 +34,7 @@ export function bindDownloads(doc, storage, fetchRelease) {
     if (!downloadSources.some(source => source.id === value)) return;
     selected = value;
     for (const link of doc.querySelectorAll('[data-setup-download]')) link.href = setupUrl(value, version);
+    for (const link of doc.querySelectorAll('[data-archive-download]')) link.href = setupUrl(value, 'v1.0.0');
     for (const control of controls) control.value = value;
   }
   apply(selected);

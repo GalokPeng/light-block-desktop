@@ -1,3 +1,21 @@
+# v2.0.0 · 更顺畅的桌面工作台 / A smoother desktop workspace
+
+- 作为正式版提供壁纸、截屏录屏、桌面收纳、原生任务栏美化、便签与效率工具；安装包含播放、录制和导出组件，无需另装 FFmpeg 或虚拟声卡。
+- 修复托盘退出停留在“正在结束后台任务”：任务栏回收不再被反复计时延期；退出前保存即时设置与便签，监督的媒体子进程同步回收。重复后台启动不再弹出设置。
+- 截屏等待设置窗口隐藏和桌面合成帧完成，减少残影；本轮实机已由维护者确认。长图可直接完成贴图、滚动浏览、缩放和调整透明度；换页采集自动拼接或追加。
+- 录屏可选择系统声音和麦克风，结束后贴屏预览、拖动时间轴逐帧裁剪、标注并导出 MP4/GIF/MKV。
+- 在线图库 52 张静图、11 款 GIF、29 段视频。新增经授权、原文件尺寸和体积核验的 NASA 动态影像；每项不超过 20 MB，保留作者、许可和可核验热度。下载显示连接、进度、等待与校验状态。
+- 兼容原正式版安装与更新入口。升级迁移设置、本地素材、便签、分组及支持的历史，保留旧数据与备份。官网提供 v1.0.0 历史下载，归档源码分支保留；测试版入口下架。
+- Windows 10/11 x64；安装包目前未签名。实际多屏、Explorer 版本和音频驱动差异仍可能影响兼容性，可通过 Issues 反馈。
+
+- Stable release with wallpapers, capture/recording, desktop organization, native taskbar styling, notes and local tools. Playback and export dependencies are included.
+- Fixes shutdown getting stuck after restoring the desktop, saves pending edits before exit and reaps supervised media processes. Duplicate background starts stay quiet.
+- Capture waits for the settings window to hide and compositor frames to finish. The maintainer verified the residual-shadow fix. Long captures finish as scrollable pins with zoom and opacity controls.
+- Record system audio and microphone, preview in place, trim using frame-accurate handles, annotate and export MP4/GIF/MKV.
+- The online gallery now includes 52 images, 11 GIFs and 29 videos. Licensed motion additions preserve original bytes, meet the HD and 20 MB limits, and include attribution and available popularity evidence.
+- Upgrade-compatible Setup and update feeds preserve v1.0.0 data and backups. The website retains the v1.0.0 download and the original source branch; preview downloads are retired.
+- Windows 10/11 x64. Setup is currently unsigned. Hardware, multi-monitor and Explorer/driver differences still require real-world compatibility testing.
+
 # v1.1.0-beta.2 · 长截图与任务栏修复 / Capture and taskbar fixes
 
 - 独立、不稳定的测试版；Python v1.0.0 继续作为正式版，main、正式安装和自动更新通道保持不变。请使用独立目录安装。

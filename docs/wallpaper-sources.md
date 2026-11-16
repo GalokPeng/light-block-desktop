@@ -1,8 +1,8 @@
 # 在线壁纸来源 / Online wallpaper credits
 
-当前精选：静态 52、GIF 11、视频 27。旧 300 项目录已全部退下，不再按内容题材分组。
+当前精选：静态 52、GIF 11、视频 29。旧 300 项目录已全部退下，不再按内容题材分组。
 
-Current selection: 52 images, 11 GIFs and 27 videos. The former 300-item catalog was retired. Only the three media types remain.
+Current selection: 52 images, 11 GIFs and 29 videos. The former 300-item catalog was retired. Only the three media types remain.
 
 所有入选原文件宽度至少 1920、高度至少 1080，且不超过 20,000,000 字节（20 MB），不通过放大或软件转码凑数量。GitHub 与安装包只提供 URL 和署名元数据；正式下载保留发布者提供文件的原始字节。
 
@@ -143,4 +143,11 @@ One GIF and seven videos are added from NASA SVS HTTPS URLs. Videos range from 1
 | [炽红光环 / Ember Ring](https://svs.gsfc.nasa.gov/13326/#media_group_322616) | NASA Goddard Space Flight Center / Jeremy Schnittman | [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) | [4041](https://svs.gsfc.nasa.gov/api/search/?search=Black+Hole+Accretion+Disk+Visualization&limit=50) | 1920 × 1080 · 12,492,579 B |
 | [黑洞环游 / Around a Black Hole](https://svs.gsfc.nasa.gov/13326/#media_group_322612) | NASA Goddard Space Flight Center / Jeremy Schnittman | [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) | [4041](https://svs.gsfc.nasa.gov/api/search/?search=Black+Hole+Accretion+Disk+Visualization&limit=50) | 1920 × 1080 · 1,878,127 B |
 
-新客户端使用 `assets/online-wallpapers-v2.json`（schema 4，revision 3）。`assets/online-wallpapers.json` 保持原有 82 项，供不支持 NASA 主机的 beta.1/beta.2 客户端刷新；不得向该旧入口加入新主机。两条目录都只属于测试分支，正式 Python v1.0.0 的目录、下载与更新不受影响。
+新客户端使用 `assets/online-wallpapers-v2.json`（schema 4，revision 4）。`assets/online-wallpapers.json` 保持原有 82 项，供不支持 NASA 主机的 beta.1/beta.2 客户端刷新；不得向该旧入口加入新主机。v2 正式客户端使用新版入口；旧入口继续兼容旧客户端。
+
+## v2.0.0 补充 / Additional motion selection
+
+原文件为 2880×1080 无音轨 MP4，分别为 18.19 MB 与 3.52 MB；完整作者片段，非无缝循环，不修改原文件。来源页公开热度为过去 10 天页面浏览，不是点赞或下载次数，同源素材不累加该数值。/ Original silent MP4 clips, not guaranteed seamless loops. Page views cover the preceding ten days and are shared by both clips.
+
+- [金色日珥 / Golden Solar Prominence](https://svs.gsfc.nasa.gov/20192/#media_group_348115) — NASA Goddard Space Flight Center / Walt Feimer / Michael Lentz · [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) · 18,192,727 bytes · [page views: None](https://svs.gsfc.nasa.gov/api/search/?search=Space+Weather&limit=100)
+- [极光之环 / Auroral Ring from Space](https://svs.gsfc.nasa.gov/20192/#media_group_348122) — NASA Goddard Space Flight Center / Walt Feimer / Michael Lentz · [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) · 3,516,813 bytes · [page views: None](https://svs.gsfc.nasa.gov/api/search/?search=Space+Weather&limit=100)

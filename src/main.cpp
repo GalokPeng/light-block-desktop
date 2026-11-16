@@ -234,7 +234,7 @@ void app_open_settings(int page) { if(lb::frontend::active()) { lb::frontend::sh
 static void tray_add(void) {
     ZeroMemory(&g_app.tray,sizeof g_app.tray);g_app.tray.cbSize=sizeof g_app.tray;g_app.tray.hWnd=g_app.window;g_app.tray.uID=1;g_app.tray.uFlags=NIF_MESSAGE|NIF_ICON|NIF_TIP;g_app.tray.uCallbackMessage=WM_LB_TRAY;
     g_app.tray.hIcon=LoadIconW(g_app.instance,MAKEINTRESOURCEW(1));if(!g_app.tray.hIcon) g_app.tray.hIcon=LoadIconW(NULL,IDI_APPLICATION);
-    StringCchCopyW(g_app.tray.szTip,ARRAYSIZE(g_app.tray.szTip),LB_PRODUCT_NAME L" / Light Block Desktop Preview");Shell_NotifyIconW(NIM_ADD,&g_app.tray);g_app.tray.uVersion=NOTIFYICON_VERSION_4;Shell_NotifyIconW(NIM_SETVERSION,&g_app.tray);
+    StringCchCopyW(g_app.tray.szTip,ARRAYSIZE(g_app.tray.szTip),LB_PRODUCT_NAME L" / Light Block Desktop");Shell_NotifyIconW(NIM_ADD,&g_app.tray);g_app.tray.uVersion=NOTIFYICON_VERSION_4;Shell_NotifyIconW(NIM_SETVERSION,&g_app.tray);
 }
 static void cancel_capture_start() {
     capture_gate.cancel();KillTimer(g_app.window,9);
@@ -412,7 +412,7 @@ static LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wp,LPARAM lp
     case WM_DROPFILES: { wchar_t path[LB_PATH];if(DragQueryFileW((HDROP)wp,0,path,LB_PATH)) import_file(path);DragFinish((HDROP)wp);return 0; }
     case WM_LB_TRAY: {
         UINT event=LOWORD(lp);if(event==NIN_SELECT || event==NIN_KEYSELECT || event==WM_LBUTTONUP) show_main();
-        else if(event==WM_CONTEXTMENU || event==WM_RBUTTONUP) { HMENU menu=CreatePopupMenu();AppendMenuW(menu,MF_STRING,901,tr(L"打开设置",L"Open settings"));AppendMenuW(menu,MF_STRING,700,tr(L"新建便签",L"New note"));AppendMenuW(menu,MF_STRING,712,lb::recording::active()?tr(L"结束录屏",L"Stop recording"):tr(L"开始录屏",L"Start recording"));AppendMenuW(menu,MF_STRING,502,tr(L"停止壁纸",L"Stop wallpaper"));AppendMenuW(menu,MF_STRING,505,tr(L"恢复系统壁纸",L"Restore original wallpaper"));AppendMenuW(menu,MF_SEPARATOR,0,NULL);AppendMenuW(menu,MF_STRING,900,tr(L"退出轻块桌面测试版",L"Quit Light Block Desktop Preview"));POINT p;GetCursorPos(&p);SetForegroundWindow(window);int id=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_RIGHTBUTTON,p.x,p.y,0,window,NULL);DestroyMenu(menu);if(id) command(id);PostMessageW(window,WM_NULL,0,0); }return 0;
+        else if(event==WM_CONTEXTMENU || event==WM_RBUTTONUP) { HMENU menu=CreatePopupMenu();AppendMenuW(menu,MF_STRING,901,tr(L"打开设置",L"Open settings"));AppendMenuW(menu,MF_STRING,700,tr(L"新建便签",L"New note"));AppendMenuW(menu,MF_STRING,712,lb::recording::active()?tr(L"结束录屏",L"Stop recording"):tr(L"开始录屏",L"Start recording"));AppendMenuW(menu,MF_STRING,502,tr(L"停止壁纸",L"Stop wallpaper"));AppendMenuW(menu,MF_STRING,505,tr(L"恢复系统壁纸",L"Restore original wallpaper"));AppendMenuW(menu,MF_SEPARATOR,0,NULL);AppendMenuW(menu,MF_STRING,900,tr(L"退出轻块桌面",L"Quit Light Block Desktop"));POINT p;GetCursorPos(&p);SetForegroundWindow(window);int id=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_RIGHTBUTTON,p.x,p.y,0,window,NULL);DestroyMenu(menu);if(id) command(id);PostMessageW(window,WM_NULL,0,0); }return 0;
     }
     case WM_QUERYENDSESSION:return app_session_end(-1);
     case WM_ENDSESSION:return app_session_end(wp?1:0);

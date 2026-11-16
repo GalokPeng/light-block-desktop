@@ -4058,7 +4058,107 @@
         "present": true,
         "silent_verified": true
       }
+    },
+    {
+      "id": "nasa-solar-prominence",
+      "revision": 1,
+      "title": {
+        "zh": "金色日珥",
+        "en": "Golden Solar Prominence"
+      },
+      "kind": "video",
+      "tags": [
+        "太阳",
+        "极光",
+        "太空",
+        "sun",
+        "aurora",
+        "space"
+      ],
+      "search_text": "金色日珥 Golden Solar Prominence 太阳 极光 太空 Sun aurora space",
+      "original_filename": "P2_s5_prom_0000.mp4",
+      "filename": "nasa-solar-prominence.mp4",
+      "thumbnail_url": "https://svs.gsfc.nasa.gov/vis/a020000/a020100/a020192/P2_s5_prom_0367_print.jpg",
+      "download_url": "https://svs.gsfc.nasa.gov/vis/a020000/a020100/a020192/P2_s5_prom_0000.mp4",
+      "bytes": 18192727,
+      "sha1": "d512cb6b055dc26c491015d6b53a5ae3d770d4d4",
+      "width": 2880,
+      "height": 1080,
+      "duration_seconds": 12.5,
+      "author": "NASA Goddard Space Flight Center / Walt Feimer / Michael Lentz",
+      "author_url": "https://svs.gsfc.nasa.gov/20192/",
+      "source_url": "https://svs.gsfc.nasa.gov/20192/#media_group_348115",
+      "license": "Public domain (NASA SVS)",
+      "license_url": "https://svs.gsfc.nasa.gov/help/#faq",
+      "changes": "Publisher original bytes unchanged. Publisher still used for browsing. No resizing, trimming, upscaling or transcoding.",
+      "reviewed_at": "2026-11-16",
+      "review_method": "Original downloaded; byte cap, hash, decoded native dimensions and silent audio absence verified. Three spaced frames visually reviewed. NASA SVS reuse policy and item credits checked.",
+      "popularity": {
+        "platform": "NASA SVS",
+        "views": null,
+        "likes": null,
+        "favorites": null,
+        "votes": null,
+        "evidence_url": "https://svs.gsfc.nasa.gov/api/search/?search=Space+Weather&limit=100",
+        "period": "Page views over the preceding 10 days; updated daily by NASA SVS",
+        "checked_at": "2026-11-16"
+      },
+      "source_page_id": 20192,
+      "audio": {
+        "present": false,
+        "silent_verified": false
+      }
+    },
+    {
+      "id": "nasa-aurora-from-space",
+      "revision": 1,
+      "title": {
+        "zh": "极光之环",
+        "en": "Auroral Ring from Space"
+      },
+      "kind": "video",
+      "tags": [
+        "太阳",
+        "极光",
+        "太空",
+        "sun",
+        "aurora",
+        "space"
+      ],
+      "search_text": "极光之环 Auroral Ring from Space 太阳 极光 太空 Sun aurora space",
+      "original_filename": "SBP05Shots01_02_00000.mp4",
+      "filename": "nasa-aurora-from-space.mp4",
+      "thumbnail_url": "https://svs.gsfc.nasa.gov/vis/a020000/a020100/a020192/SBP05Shots01_02_00450_print.jpg",
+      "download_url": "https://svs.gsfc.nasa.gov/vis/a020000/a020100/a020192/SBP05Shots01_02_00000.mp4",
+      "bytes": 3516813,
+      "sha1": "916c23f5dbca90de52818955f31d66edfd78ddae",
+      "width": 2880,
+      "height": 1080,
+      "duration_seconds": 8.03,
+      "author": "NASA Goddard Space Flight Center / Walt Feimer / Michael Lentz",
+      "author_url": "https://svs.gsfc.nasa.gov/20192/",
+      "source_url": "https://svs.gsfc.nasa.gov/20192/#media_group_348122",
+      "license": "Public domain (NASA SVS)",
+      "license_url": "https://svs.gsfc.nasa.gov/help/#faq",
+      "changes": "Publisher original bytes unchanged. Publisher still used for browsing. No resizing, trimming, upscaling or transcoding.",
+      "reviewed_at": "2026-11-16",
+      "review_method": "Original downloaded; byte cap, hash, decoded native dimensions and silent audio absence verified. Three spaced frames visually reviewed. NASA SVS reuse policy and item credits checked.",
+      "popularity": {
+        "platform": "NASA SVS",
+        "views": null,
+        "likes": null,
+        "favorites": null,
+        "votes": null,
+        "evidence_url": "https://svs.gsfc.nasa.gov/api/search/?search=Space+Weather&limit=100",
+        "period": "Page views over the preceding 10 days; updated daily by NASA SVS",
+        "checked_at": "2026-11-16"
+      },
+      "source_page_id": 20192,
+      "audio": {
+        "present": false,
+        "silent_verified": false
+      }
     }
   ],
-  "catalog_revision": 3
+  "catalog_revision": 4
 }

@@ -124,7 +124,7 @@ class OnlinePage:public QWidget {
         auto catalog_api=api.extension?static_cast<UiCatalogApi const*>(api.extension(6)):nullptr;
         if(!catalog_api||catalog_api->version!=LB_ONLINE_CATALOG_ABI||catalog_api->size!=sizeof(UiCatalogApi)){status_->setText(ui::tr("目录组件未就绪。","Catalog service is unavailable."));return;}
         refresh_button_->setEnabled(false);status_->setText(ui::tr("正在获取在线目录…","Fetching the online catalog…"));
-        QNetworkRequest request(QUrl("https://raw.githubusercontent.com/GalokPeng/light-block-desktop/cpp-preview/assets/online-wallpapers-v2.json"));request.setTransferTimeout(15000);request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,QNetworkRequest::ManualRedirectPolicy);request.setRawHeader("User-Agent","Light-Block-Desktop/" LB_VERSION_UTF8);
+        QNetworkRequest request(QUrl("https://raw.githubusercontent.com/GalokPeng/light-block-desktop/main/assets/online-wallpapers-v2.json"));request.setTransferTimeout(15000);request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,QNetworkRequest::ManualRedirectPolicy);request.setRawHeader("User-Agent","Light-Block-Desktop/" LB_VERSION_UTF8);
         auto reply=network_->get(request);reply->setReadBufferSize(64*1024);auto bytes=std::make_shared<QByteArray>();
         connect(reply,&QNetworkReply::metaDataChanged,this,[reply]{if(reply->header(QNetworkRequest::ContentLengthHeader).toLongLong()>2*1024*1024)reply->abort();});
         connect(reply,&QNetworkReply::readyRead,this,[reply,bytes]{*bytes+=reply->readAll();if(bytes->size()>2*1024*1024)reply->abort();});

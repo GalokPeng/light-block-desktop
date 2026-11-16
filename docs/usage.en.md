@@ -1,31 +1,30 @@
-# Light Block Desktop preview guide
+# Light Block Desktop guide
 
-[简体中文](usage.zh-CN.md) · [Preview README](../README.en.md)
+[简体中文](usage.zh-CN.md) · [README](../README.en.md)
 
-> **Preview (Extensive optimization) / 测试版（极度优化）· Unstable.** This guide describes the independent `1.1.0-beta.1` preview. Stable Python 1.0.0, `main`, the production website and its update feed remain unchanged.
+> **v2.0.0** — Current stable release. v1.0.0 remains available as an archived download.
 
 Light Block Desktop supports Windows 10 / 11 x64 and combines wallpapers, screen capture, recording, desktop organization, native taskbar styling and local tools. Settings, notes and downloaded wallpapers stay on your computer; online wallpapers and updates use network access when requested.
 
 ## Installation and everyday use
 
-Choose a **Pre-release** on [GitHub Releases](https://github.com/GalokPeng/light-block-desktop/releases), or extract its complete portable ZIP and run `轻块桌面测试版.exe`. Keep its DLLs, plugins, assets and runtime folders together. Users do not need to install Python, Qt or FFmpeg separately.
+Download the latest stable Setup from [GitHub Releases](https://github.com/GalokPeng/light-block-desktop/releases), or extract its complete portable ZIP and run `轻块桌面.exe`. Keep its DLLs, plugins, assets and runtime folders together. Users do not need to install Python, Qt or FFmpeg separately.
 
 Setup follows the Windows display language and supports Simplified Chinese, Traditional Chinese and English. At first launch, the app selects Simplified Chinese for Chinese systems and English otherwise. The language button switches Chinese and English; the sun/moon button switches the theme. Version information is shown in About.
 
 Changes save and apply automatically; slider updates are briefly combined. Closing Settings leaves enabled desktop services and the tray running. Use the tray Quit command to exit completely. Start with Windows is available in Settings.
 
-The lower-left Preview information action opens preview documentation. It does not check or install stable updates. This branch ships independent prerelease assets and does not push them to stable users.
+The lower-left update button checks for new releases and displays download progress. After checksum verification, the app exits normally and launches Setup. Cancelling or failing a download keeps the current app running.
 
 ## Upgrades and data
 
-The preview has separate installation, executable and autorun identities. Its default profile is `data-preview` beside the test executable, falling back to `%LOCALAPPDATA%\LightBlockDesktopPreview` if needed. **About → Open settings and logs** opens the active folder.
+v2.0.0 uses the original installation identity. It imports v1.0.0 settings, local wallpapers, notes, groups and supported local history into `data/profile-v2`. A read-only installation uses `%LOCALAPPDATA%/StillWallpaper/profile-v2`. About opens the active data directory.
 
-Startup does not read, migrate, delete or stop the stable app or its profile. Even an explicit `--data-dir` containing Python `settings.json` is rejected and requires an independent folder. Do not copy the preview manually over a stable installation.
+Original data remains untouched. Migration creates a `legacy-backup` and a completion report, then atomically commits the new profile. Failure does not silently start an empty replacement. Subsequent launches reuse the new profile. Missing media is reported; old operation journals are retained in the backup rather than executed in the new version.
 
-Future preview updates retain the preview's own data. The legacy migration module in source is retained for isolated fixtures and future compatibility research, not as a user upgrade path for this preview. Stable notes, clipboard history and undo journals are not automatically imported. Keep the stable profile and its real `organizer_files` intact.
+v1.0.0 remains available on the website and its source on `python-v1.0.0`. Exit the current app before rollback and use a separate installation directory. New changes are not synchronized back to v1.0.0. Do not run multiple versions with taskbar, organizer or cursor styling enabled simultaneously.
 
-Organizer, taskbar and system cursors are global resources. Disable another version's corresponding styling before testing them; merely opening preview Settings should not acquire them. Developers should always use a fresh `--data-dir <folder>` for validation.
-
+Developers must use a fresh `--data-dir <folder>` for validation. Tests never access real user data or change the original installation.
 
 ## Wallpapers
 
@@ -55,7 +54,7 @@ Desktop organizer, native taskbar and pointer options are separate collapsible s
 
 Settings also links to Windows Night light. This opens the system control rather than pretending to control its color-temperature state; the entry is unavailable on unsupported systems.
 
-Enable tool shortcuts separately in Settings → Tool preferences; they are off by default in this preview. `Ctrl+Alt+Space` opens the launcher, `Ctrl+Alt+V` opens clipboard history, and `Ctrl+Alt+R` starts/stops recording. Capture has its own shortcut setting; an active recording retains its stop shortcut. Registration conflicts report an error and preserve the previous settings.
+Enable tool shortcuts separately in Settings → Tool preferences; they are off by default in this version. `Ctrl+Alt+Space` opens the launcher, `Ctrl+Alt+V` opens clipboard history, and `Ctrl+Alt+R` starts/stops recording. Capture has its own shortcut setting; an active recording retains its stop shortcut. Registration conflicts report an error and preserve the previous settings.
 
 ## Capture and recording
 
@@ -69,11 +68,11 @@ Record from a selected region. Its boundary stays visible while recording; stop 
 
 Export MP4, GIF or lossless MKV at original/1080p/720p/480p resolution and the original or a fixed frame rate. Fast GIF mode reduces palette-analysis sampling, not the chosen output dimensions. Before recording, enable system audio, microphone, or both in the preparation bar. Both are off by default, and devices open only after Start. After Stop, audio is finalized in the background before preview. Missing permission, disconnection, or a default-device change produces an explicit error rather than silently claiming a successful audio recording. GIF has no audio. Media studio can preserve existing audio for supported export formats.
 
-**Recording and export use the packaged FFmpeg runtime with fixed-hash verification; the app does not search PATH for an alternative.** If files are missing or fail verification, reinstall or extract the matching complete preview package. Developers should rebuild/stage the runtime. Do not follow old instructions to install arbitrary FFmpeg binaries.
+**Recording and export use the packaged FFmpeg runtime with fixed-hash verification; the app does not search PATH for an alternative.** If files are missing or fail verification, reinstall or extract the matching complete release package. Developers should rebuild/stage the runtime. Do not follow old instructions to install arbitrary FFmpeg binaries.
 
 The preparation bar remembers audio choices for the next recording; no input is captured before Start. Listen/Mute in the recording preview affects playback only; exported audio remains intact. System audio and microphone capture use Windows WASAPI without a virtual audio driver. Combining audio copies the video stream without another video encode. Original resolution, higher frame rates and lossless recording still increase CPU, disk and memory use; hardware encoding is not guaranteed.
 
-An unresponsive audio driver times out the task while preserving recorded files. If the device remains occupied, exit the preview normally to release it. Abandoned audio cache is cleaned only on a later launch after the original process exits. Synthetic tests cover mixed audio and stalled-worker lifetimes; actual devices, privacy permissions and startup synchronization still require testing on the target PC.
+An unresponsive audio driver times out the task while preserving recorded files. If the device remains occupied, exit the app normally to release it. Abandoned audio cache is cleaned only on a later launch after the original process exits. Synthetic tests cover mixed audio and stalled-worker lifetimes; actual devices, privacy permissions and startup synchronization still require testing on the target PC.
 
 ## Tools
 
@@ -81,19 +80,19 @@ An unresponsive audio driver times out the task while preserving recorded files.
 - **Clipboard history:** automatic capture is off by default. Enable it for local history, or explicitly use Record current content. Search, pin, copy and delete entries, with inline text/image previews. Automated fixtures use synthetic history and do not read the real clipboard.
 - **Quick launch:** searches desktop and Start menu entries and supports limited arithmetic; an item opens only when selected for execution.
 - **File workbench:** inline browsing, previews, digests and batch-rename plans. Inspect the plan before applying changes. Undo/recovery records generated by this version use the new format and do not execute legacy journals.
-- **Focus workspaces:** focus/rest timers, history and workspace switching. Preview history is independent; stable history and timers are not imported automatically.
+- **Focus workspaces:** focus/rest timers, history and workspace switching. Supported earlier history is imported; active timers remain stopped during upgrade.
 
 ## Troubleshooting and development
 
-Open the active profile from About. The current log is `native.log`; preview records are separate from stable configuration. Review file paths before sharing logs. A missing old wallpaper or a blocked network source is separate from losing configuration data.
+Open the active profile from About. The current log is `native.log`; migrated records remain separate from v1.0.0 originals. Review file paths before sharing logs. A missing old wallpaper or a blocked network source is separate from losing configuration data.
 
 There is no universal memory-use figure: resolution, frame rate, decoding backend and display count all matter. Old Python measurements do not describe the current runtime; measure a specific workload on the target machine.
 
-The preview runtime is C++23, Qt Widgets and Win32. Python is used only by development/build tools. Use an isolated development profile:
+The app runtime is C++23, Qt Widgets and Win32. Python is used only by development/build tools. Use an isolated development profile:
 
 ```powershell
 ./build.ps1
-& ".\dist\LightBlockDesktopPreview\轻块桌面测试版.exe" --data-dir "$PWD\.local\dev-profile"
+& ".\dist\LightBlockDesktop\轻块桌面.exe" --data-dir "$PWD\.local\dev-profile"
 ./tools/test.ps1 -SkipBuild
 ```
 

@@ -2,7 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 if (-not $SkipBuild) { & (Join-Path $root 'build.ps1') }
-$exe = Join-Path $root 'dist/LightBlockDesktopPreview/轻块桌面测试版.exe'
+$exe = Join-Path $root 'dist/LightBlockDesktop/轻块桌面.exe'
 $qa = Join-Path $root ('.local/test-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Force -Path $qa | Out-Null
 function Invoke-NativeTest([string[]]$TestArgs, [int]$Timeout = 120000, [int]$ExpectedExit = 0) {

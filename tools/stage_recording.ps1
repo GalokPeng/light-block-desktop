@@ -25,7 +25,7 @@ try {
     } elseif ($binaryHash -cne '0a79c6f218c1dc7c4b838717f8cc7bf0be5ff50376af9e8b08579a858163504c' -or $sourceHash -cne '8332c10f2d4dc9592670edf14c5fa673f1d6b52dba546aa689b7bbcef954bfdd') {
         throw 'External runtime needs a matching build manifest; unverified binary rejected.'
     }
-    if (-not $DestinationDirectory) { $DestinationDirectory=Join-Path $root 'dist/LightBlockDesktopPreview/runtime/recording' }
+    if (-not $DestinationDirectory) { $DestinationDirectory=Join-Path $root 'dist/LightBlockDesktop/runtime/recording' }
     $sources=Join-Path $root 'build/corresponding-sources'
     New-Item -ItemType Directory -Force -Path $DestinationDirectory,$sources | Out-Null
     $stagedBinary=Join-Path $DestinationDirectory 'ffmpeg.exe'

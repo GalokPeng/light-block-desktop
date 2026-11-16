@@ -1,4 +1,4 @@
-"""Isolated C++ preview builds; never publishes or replaces the stable channel."""
+"""Reproducible stable builds with upgrade-compatible identity and exact source checks."""
 import argparse
 import ctypes
 import hashlib
@@ -13,22 +13,22 @@ import uuid
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION_PATTERN = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-(beta|rc)\.([1-9][0-9]*)")
-EXE_NAME = "轻块桌面测试版.exe"
-PREVIEW_ALIAS = "Qingkuai-Preview-Setup-x64.exe"
-TAG_PREFIX = "preview-v"
-PREVIEW_APP_ID = "{C07C418A-08FE-4E9B-8136-348822397B6B}"
+VERSION_PATTERN = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
+EXE_NAME = "轻块桌面.exe"
+SETUP_ALIAS = "Qingkuai-Setup-x64.exe"
+TAG_PREFIX = "v"
+APP_ID = "{3CD16B31-077E-4CE9-BB01-578642D94876}"
 MAX_SETUP_BYTES = 128 * 1024 * 1024
 
 
 def components(version):
     match = VERSION_PATTERN.fullmatch(version)
     if not match:
-        raise ValueError(f"Preview version must be X.Y.Z-beta.N or X.Y.Z-rc.N, got {version!r}")
+        raise ValueError(f"Stable version must be X.Y.Z, got {version!r}")
     parts = tuple(map(int, match.groups()[:3]))
     if any(value > 65535 for value in parts):
         raise ValueError("Windows version components cannot exceed 65535")
-    return (*parts, {"beta": 0, "rc": 1}[match[4]], int(match[5]))
+    return parts
 
 
 def windows_version(version):
@@ -46,13 +46,13 @@ def read_version(root=ROOT):
         raise ValueError("Windows resource version differs from application version")
     if f'#define LB_VERSION_NUMERIC_UTF8 "{windows_version(version)}"' not in text:
         raise ValueError("Numeric installer version differs from Windows resources")
-    if '#define LB_PREVIEW_BUILD 1' not in text or f'#define LB_INSTALLER_APP_ID "{PREVIEW_APP_ID}"' not in text:
-        raise ValueError("Preview product identity is required")
+    if '#define LB_PREVIEW_BUILD 0' not in text or f'#define LB_INSTALLER_APP_ID "{APP_ID}"' not in text:
+        raise ValueError("Stable product identity is required")
     return version
 
 
 def prefix(version):
-    return f"Qingkuai-Preview-v{version}"
+    return f"Qingkuai-v{version}"
 
 
 def digest(file):
@@ -69,7 +69,7 @@ def should_publish(version, tags):
         return False
     previous = [components(tag[len(TAG_PREFIX):]) for tag in tags if tag.startswith(TAG_PREFIX) and VERSION_PATTERN.fullmatch(tag[len(TAG_PREFIX):])]
     if previous and components(version) <= max(previous):
-        raise ValueError("Preview version must be newer than every published preview tag")
+        raise ValueError("Preview version must be newer than every published stable tag")
     return True
 
 
@@ -77,10 +77,10 @@ def verify_source_ref(version):
     head = git("rev-parse", "HEAD")
     branch = git("branch", "--show-current")
     if os.environ.get("GITHUB_ACTIONS") == "true":
-        if os.environ.get("GITHUB_REF") not in ("refs/heads/cpp-preview", "refs/tags/" + TAG_PREFIX + version) or os.environ.get("GITHUB_SHA") != head:
+        if os.environ.get("GITHUB_REF") not in ("refs/heads/main", "refs/heads/cpp-preview", "refs/tags/" + TAG_PREFIX + version) or os.environ.get("GITHUB_SHA") != head:
             raise ValueError("CI must build the exact triggering SHA on the preview branch/tag")
-    elif branch != "cpp-preview" and (branch or git("describe", "--tags", "--exact-match") != TAG_PREFIX + version):
-        raise ValueError("Packaging is restricted to cpp-preview or the exact preview tag")
+    elif branch not in ("main", "cpp-preview") and (branch or git("describe", "--tags", "--exact-match") != TAG_PREFIX + version):
+        raise ValueError("Packaging is restricted to main, staging branch or the exact release tag")
     return head
 
 
@@ -123,21 +123,21 @@ def verify_identity(app, version):
     if not api.GetFileVersionInfoW(path, 0, size, buffer):
         raise ctypes.WinError(ctypes.get_last_error())
     for key, expected in (("ProductVersion", version), ("FileVersion", windows_version(version)),
-                          ("OriginalFilename", EXE_NAME), ("ProductName", "Light Block Desktop Preview")):
+                          ("OriginalFilename", EXE_NAME), ("ProductName", "Light Block Desktop")):
         address, length = ctypes.c_void_p(), ctypes.c_uint()
         if not api.VerQueryValueW(buffer, "\\StringFileInfo\\040904b0\\" + key, ctypes.byref(address), ctypes.byref(length)) or ctypes.wstring_at(address.value) != expected:
             raise ValueError(f"Preview executable identity mismatch: {key}")
-    if (app / "轻块桌面.exe").exists():
-        raise ValueError("Stable executable must not enter preview staging")
+    if (app / "轻块桌面测试版.exe").exists():
+        raise ValueError("Preview executable must not enter stable staging")
 
 
 def stage(version, dist):
-    source = dist / "LightBlockDesktopPreview"
+    source = dist / "LightBlockDesktop"
     verify_ui(source)
     verify_identity(source, version)
     target = safe_path(dist, f"{prefix(version)}-Windows-x64")
     if target.exists():
-        if target.parent != dist.resolve() or not target.name.startswith("Qingkuai-Preview-v"):
+        if target.parent != dist.resolve() or not target.name.startswith("Qingkuai-v"):
             raise ValueError("Refusing to replace an unexpected staging directory")
         shutil.rmtree(target)
     target.mkdir(parents=True)
@@ -162,7 +162,7 @@ def stage(version, dist):
         if (ROOT / name).is_file():
             copy_file(ROOT / name, target / name)
     info = dict(version=version, source_commit=git("rev-parse", "HEAD"), source_dirty=bool(git("status", "--porcelain")), executable_sha256=digest(target / EXE_NAME),
-                ui_dll=verify_ui(target)["ui_dll"], ffmpeg_sha256=recording["binary_sha256"], runtime_language="C++", channel="preview", installer_app_id=PREVIEW_APP_ID)
+                ui_dll=verify_ui(target)["ui_dll"], ffmpeg_sha256=recording["binary_sha256"], runtime_language="C++", channel="stable", installer_app_id=APP_ID)
     (target / "build-info.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
     if (target / "data").exists() or (target / "data-preview").exists() or any(target.rglob("*.pyc")) or any(target.rglob("python3*.dll")):
         raise ValueError("User data or Python runtime leaked into staging")
@@ -238,7 +238,7 @@ def bundle(version, dist, output):
         raise ValueError("Preview Setup exceeds the 128 MiB package budget")
     verify_ui(portable)
     info = json.loads((portable / "build-info.json").read_text(encoding="utf-8"))
-    if info.get("source_dirty", True) or info["source_commit"] != git("rev-parse", "HEAD") or info["version"] != version or info.get("channel") != "preview" or info.get("installer_app_id") != PREVIEW_APP_ID:
+    if info.get("source_dirty", True) or info["source_commit"] != git("rev-parse", "HEAD") or info["version"] != version or info.get("channel") != "stable" or info.get("installer_app_id") != APP_ID:
         raise ValueError("Staged binaries and source commit disagree")
     portable_zip = output / f"{portable.name}.zip"
     archive_files(portable_zip, [(file, str(file.relative_to(dist))) for file in sorted(portable.rglob("*")) if file.is_file()])
@@ -258,7 +258,7 @@ def bundle(version, dist, output):
     files += [(ROOT / "tools" / file, "tools/" + file) for file in ("setup_ui_sdk.ps1", "build_ui.ps1", "build_media_ui.ps1", "build_qt_ffmpeg.sh")]
     files += [(file, str(file.relative_to(portable))) for file in sorted((portable / "licenses").rglob("*")) if file.is_file()]
     archive_files(qt, files)
-    alias = output / PREVIEW_ALIAS
+    alias = output / SETUP_ALIAS
     copy_file(setup, alias)
     assets = (setup, alias, portable_zip, source_zip, ffmpeg, qt)
     for file in (source_zip, ffmpeg):
@@ -269,15 +269,15 @@ def bundle(version, dist, output):
 
 
 def verify_release(version, output, expected_commit=None):
-    if (output / "Qingkuai-Setup-x64.exe").exists():
-        raise ValueError("Stable installer alias is forbidden in preview output")
+    if (output / "Qingkuai-Preview-Setup-x64.exe").exists():
+        raise ValueError("Preview alias is forbidden in stable output")
     names = set()
     for line in (output / f"{prefix(version)}-SHA256SUMS.txt").read_text(encoding="ascii").splitlines():
         expected, name = line.split("  ", 1)
         if Path(name).name != name or name in names or digest(output / name) != expected:
             raise ValueError(f"Invalid release asset: {name}")
         names.add(name)
-    required = {f"{prefix(version)}-{suffix}" for suffix in ("Setup-x64.exe", "Windows-x64.zip", "source.zip", "ffmpeg-source.zip", "qt-source.zip")} | {PREVIEW_ALIAS}
+    required = {f"{prefix(version)}-{suffix}" for suffix in ("Setup-x64.exe", "Windows-x64.zip", "source.zip", "ffmpeg-source.zip", "qt-source.zip")} | {SETUP_ALIAS}
     if names != required:
         raise ValueError("Release assets are incomplete")
     portable = f"{prefix(version)}-Windows-x64"
@@ -286,7 +286,7 @@ def verify_release(version, output, expected_commit=None):
         if record.file_size > 64 * 1024:
             raise ValueError("Unexpected packaged build identity size")
         info = json.loads(archive.read(record))
-    if info.get("version") != version or info.get("channel") != "preview" or info.get("installer_app_id") != PREVIEW_APP_ID or info.get("source_dirty", True):
+    if info.get("version") != version or info.get("channel") != "stable" or info.get("installer_app_id") != APP_ID or info.get("source_dirty", True):
         raise ValueError("Packaged preview identity is invalid")
     if expected_commit is None and os.environ.get("GITHUB_ACTIONS") == "true":
         expected_commit = os.environ.get("GITHUB_SHA")
@@ -300,14 +300,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("version", "numeric-version", "tag", "plan", "stage", "smoke", "bundle", "verify"))
     parser.add_argument("--dist", type=Path, default=ROOT / "dist")
-    parser.add_argument("--output", type=Path, default=ROOT / "preview-release")
+    parser.add_argument("--output", type=Path, default=ROOT / "release")
     parser.add_argument("--app", type=Path)
     args = parser.parse_args()
     version = read_version()
     if args.command == "version": print(version)
     elif args.command == "numeric-version": print(windows_version(version))
     elif args.command == "tag": print(TAG_PREFIX + version)
-    elif args.command == "plan": print("true" if should_publish(version, git("tag", "--list", "preview-v*").splitlines()) else "false")
+    elif args.command == "plan": print("true" if should_publish(version, git("tag", "--list", "v*").splitlines()) else "false")
     elif args.command == "stage": print(stage(version, args.dist.resolve()))
     elif args.command == "smoke": smoke(args.app or args.dist / f"{prefix(version)}-Windows-x64" / EXE_NAME)
     elif args.command == "bundle": bundle(version, args.dist.resolve(), args.output.resolve())

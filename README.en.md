@@ -1,24 +1,24 @@
 <p align="center"><img src="assets/icon.png" width="88" alt="Light Block Desktop icon"></p>
 <h1 align="center">Light Block Desktop</h1>
 <p align="center">Live wallpaper, screenshots, screen recording, desktop organization, native taskbar styling and notes for Windows</p>
-<p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases"><strong>View preview releases</strong></a> · <a href="#feature-preview">Feature preview</a> · <a href="https://light-block-desktop.vercel.app/en/">Website</a> · <a href="README.md">简体中文</a> · <a href="CHANGES.md">Changelog</a></p>
+<p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases"><strong>Download latest release</strong></a> · <a href="#feature-preview">Feature preview</a> · <a href="https://light-block-desktop.vercel.app/en/">Website</a> · <a href="README.md">简体中文</a> · <a href="CHANGES.md">Changelog</a></p>
 
 
-**1.1.0-beta.2 · Preview (Extensive optimization) / 测试版（极度优化）**: this independent C++ migration branch is unstable and aims to match the Python 1.0.0 features and interactions. Python 1.0.0 remains stable; this preview does not replace `main`, the production website or its update channel.
+**v2.0.0 stable**: wallpapers, screen capture, recording, desktop styling and notes, with playback and recording components included.
 
 ## Download and install
 
-1. Select a **Pre-release** on [GitHub Releases](https://github.com/GalokPeng/light-block-desktop/releases) and download `Qingkuai-Preview-Setup-x64.exe`. Extract the complete portable archive before running `轻块桌面测试版.exe`. The stable download button still serves the stable application.
-2. Requires Windows 10 or 11 x64. Setup uses the Windows display language and includes English, Simplified Chinese and Traditional Chinese. The app selects Simplified Chinese on Chinese Windows and defaults to English otherwise.
-3. The preview has a separate installation identity, directory, executable, autorun key and `data-preview` profile. Read-only installations fall back to `%LOCALAPPDATA%\LightBlockDesktopPreview`. It does not read, migrate, stop or replace the stable app. Disable the other version’s global styling before testing taskbar, organizer or system cursor features. [Preview data details](docs/usage.en.md#upgrades-and-data)
+1. Download Setup directly from the [website](https://light-block-desktop.vercel.app/en/) or [GitHub](https://github.com/GalokPeng/light-block-desktop/releases/latest/download/Qingkuai-Setup-x64.exe). Extract the entire portable package before running `轻块桌面.exe`.
+2. Windows 10 / 11 x64. Setup follows the system language and includes English, Simplified and Traditional Chinese. Switch Chinese/English and light/dark themes within the app. No separate FFmpeg or virtual audio driver installation is required.
+3. Check for updates at the lower left, watch the download progress, then let the verified installer launch after a graceful exit. The installation identity remains compatible. Original v1.0.0 data is retained; migrated data uses `data/profile-v2`, falling back to `%LOCALAPPDATA%/StillWallpaper/profile-v2` for read-only installations. Migration backs up data and commits atomically.
 
-Setup installs for the current user by default. The installer and portable package include the components needed for wallpaper playback, screen capture, recording and media export. See the [third-party notices](THIRD_PARTY_NOTICES.md) for the recording component's license and source.
-
-This preview does not consume the stable auto-update feed or send an update to stable users. The lower-left Preview information action opens its documentation. Download each preview update from its prerelease assets; Setup can replace only this separate preview installation. The production website continues to present Python 1.0.0.
+[Download v1.0.0](https://github.com/GalokPeng/light-block-desktop/releases/download/v1.0.0/Qingkuai-Setup-x64.exe). Quit the current version before rollback and prefer a separate installation directory. New changes are not synchronized back to old data. Original source remains on [`python-v1.0.0`](https://github.com/GalokPeng/light-block-desktop/tree/python-v1.0.0).
 
 ## Feature preview
 
-The feature illustrations use Python 1.0.0, bundled media and fictional data as migration references, not proof of pixel-perfect preview parity.
+The image below shows the actual v2.0.0 interface. Further feature illustrations include earlier-version screenshots and use bundled media or fictional data.
+
+![v2.0.0 wallpaper interface](site/public/media/v2-wallpaper.webp)
 
 ### Wallpaper
 
@@ -64,7 +64,7 @@ Right-click the desktop background to create and pin a note. On Windows 11, star
 
 Settings and downloaded wallpapers stay on your device. The online gallery contacts media sources on demand. No account, ads or telemetry. Appearance offers three original silhouettes—Stream, Prism and Pixel—with custom colors and 75%–200% sizing. Mix them with independently colored Dots, Falling or Glow effects, which stop painting when idle. Settings retains the native Windows Night light entry. The app also includes a launcher, clipboard history, a file workbench and focus timers. [User guide](docs/usage.en.md)
 
-The preview branch online gallery has 52 images, 11 GIFs and 27 videos, with media-type filters and bilingual search. The maintainer approved retaining the ten GIFs from the local review build. Every source file is at least 1920 × 1080 and no larger than 20 MB, without app-side recompression, trimming or upscaling. GIF candidates must be original 1080p, 16:9 complete looping scenes. GIFs have no likes/favorites threshold; available metrics are recorded as reported. Images and earlier videos retain their public-vote or favorite-based selection. NASA additions use source provenance, dated public page views, visual review and decoded-original verification; unpublished metrics remain null. It supports on-demand previews, byte-preserving downloads, progress/cancellation, downloaded status and Apply. GitHub stores URL and attribution metadata only. Downloads continue when settings close; quitting cancels unfinished downloads. [Evaluation and selection](docs/wallpaper-evaluation.md)
+The online gallery has 52 images, 11 GIFs and 29 videos, with media-type filters and bilingual search. The maintainer approved retaining the ten GIFs from the local review build. Every source file is at least 1920 × 1080 and no larger than 20 MB, without app-side recompression, trimming or upscaling. GIF candidates must be original 1080p, 16:9 complete looping scenes. GIFs have no likes/favorites threshold; available metrics are recorded as reported. Images and earlier videos retain their public-vote or favorite-based selection. NASA additions use source provenance, dated public page views, visual review and decoded-original verification; unpublished metrics remain null. It supports on-demand previews, byte-preserving downloads, progress/cancellation, downloaded status and Apply. GitHub stores URL and attribution metadata only. Downloads continue when settings close; quitting cancels unfinished downloads. [Evaluation and selection](docs/wallpaper-evaluation.md)
 
 ![Online wallpaper gallery and source information](site/public/media/online-wallpaper-en.webp)
 
@@ -72,11 +72,11 @@ The preview branch online gallery has 52 images, 11 GIFs and 27 videos, with med
 
 ```powershell
 ./build.ps1
-& ".\dist\LightBlockDesktopPreview\轻块桌面测试版.exe" --data-dir "$PWD\.local\dev-profile"
+& ".\dist\LightBlockDesktop\轻块桌面.exe" --data-dir "$PWD\.local\dev-profile"
 ./tools/test.ps1 -SkipBuild
 ```
 
-This preview branch uses Windows x64, C++23, Qt Widgets and Win32. Python 3.11 is used only for build, packaging and validation tools; users do not need Python. The complete previous implementation is permanently available on the [`python-v1.0.0`](https://github.com/GalokPeng/light-block-desktop/tree/python-v1.0.0) branch and [`v1.0.0`](https://github.com/GalokPeng/light-block-desktop/tree/v1.0.0) tag. The [development Skill](skills/light-block-desktop-dev/SKILL.md) can onboard an agent. See the [contribution guidelines](CONTRIBUTING.en.md), [release workflow](docs/release.en.md) and [website deployment](docs/website.md).
+This version uses Windows x64, C++23, Qt Widgets and Win32. Python 3.11 is used only for build, packaging and validation tools; users do not need Python. The complete previous implementation is permanently available on the [`python-v1.0.0`](https://github.com/GalokPeng/light-block-desktop/tree/python-v1.0.0) branch and [`v1.0.0`](https://github.com/GalokPeng/light-block-desktop/tree/v1.0.0) tag. The [development Skill](skills/light-block-desktop-dev/SKILL.md) can onboard an agent. See the [contribution guidelines](CONTRIBUTING.en.md), [release workflow](docs/release.en.md) and [website deployment](docs/website.md).
 
 The application source uses the [MIT license](LICENSE). Bundled dependencies keep their [own licenses](THIRD_PARTY_NOTICES.md).
 

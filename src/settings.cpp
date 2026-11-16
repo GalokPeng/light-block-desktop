@@ -103,10 +103,18 @@ bool settings_display_tests(){
 }
 namespace {
 constexpr wchar_t startup_key[]=LR"(Software\Microsoft\Windows\CurrentVersion\Run)";
+bool default_startup_profile(std::wstring const& exe,std::wstring const& data) {
+    namespace fs=std::filesystem;
+    auto equal=[&](fs::path const& candidate){return !_wcsicmp(candidate.lexically_normal().c_str(),fs::path(data).lexically_normal().c_str());};
+    if(equal(fs::path(exe).parent_path()/L"data"/L"profile-v2"))return true;
+    wchar_t local[LB_PATH]{};DWORD length=GetEnvironmentVariableW(L"LOCALAPPDATA",local,LB_PATH);
+    return length&&length<LB_PATH&&equal(fs::path(local)/LB_PROFILE_DIRECTORY/L"profile-v2");
+}
 bool startup_command(std::wstring const& exe,std::wstring const& data,std::wstring& command) {
     wchar_t quoted_exe[LB_PATH*2],quoted_data[LB_PATH*2];
     if(!quote_arg(quoted_exe,ARRAYSIZE(quoted_exe),exe.c_str())||!quote_arg(quoted_data,ARRAYSIZE(quoted_data),data.c_str())) return false;
-    command=std::wstring(quoted_exe)+L" --background --data-dir "+quoted_data;
+    command=std::wstring(quoted_exe)+L" --background";
+    if(!default_startup_profile(exe,data))command+=L" --data-dir "+std::wstring(quoted_data);
     // Run/RunOnce command lines are documented as limited to 260 characters.
     if(command.size()>260) {SetLastError(ERROR_FILENAME_EXCED_RANGE);return false;}
     return true;
@@ -119,6 +127,7 @@ bool startup_matches(HKEY key,wchar_t const* name,std::wstring const& exe,std::w
     if(wcslen(value)+1!=bytes/2) return false;
     int count=0;auto args=CommandLineToArgvW(value,&count);if(!args) return false;
     lb::scope_exit release([&]{LocalFree(args);});
+    if(count==2&&!_wcsicmp(args[0],exe.c_str())&&!wcscmp(args[1],L"--background"))return default_startup_profile(exe,data);
     return count==4&&!_wcsicmp(args[0],exe.c_str())&&!wcscmp(args[1],L"--background")&&!wcscmp(args[2],L"--data-dir")&&!_wcsicmp(args[3],data.c_str());
 }
 LONG startup_write(HKEY key,wchar_t const* name,bool enabled,std::wstring const& exe,std::wstring const& data) {
@@ -147,7 +156,7 @@ bool settings_startup_tests() {
     if(RegCreateKeyExW(HKEY_CURRENT_USER,path.c_str(),0,nullptr,REG_OPTION_VOLATILE,KEY_ALL_ACCESS,nullptr,&key,&created)!=ERROR_SUCCESS) return false;
     if(created!=REG_CREATED_NEW_KEY) {RegCloseKey(key);return false;}
     lb::scope_exit close([&]{RegCloseKey(key);RegDeleteKeyW(HKEY_CURRENT_USER,path.c_str());});
-    std::wstring exe=L"D:\\Apps with spaces\\轻块桌面测试版.exe",data=L"D:\\资料 空格\\profile\\";
+    std::wstring exe=L"D:\\Apps with spaces\\轻块桌面.exe",data=L"D:\\资料 空格\\profile\\";
     constexpr auto name=L"Fixture";
     if(startup_matches(key,name,exe,data)||startup_write(key,name,true,exe,data)!=ERROR_SUCCESS||!startup_matches(key,name,exe,data)) return false;
     if(startup_matches(key,name,L"D:\\Old.exe",data)||startup_matches(key,name,exe,L"D:\\Other")) return false;
@@ -155,6 +164,10 @@ bool settings_startup_tests() {
     DWORD invalid=1;RegSetValueExW(key,name,0,REG_DWORD,reinterpret_cast<BYTE*>(&invalid),sizeof invalid);if(startup_matches(key,name,exe,data)) return false;
     std::wstring command;if(!startup_command(exe,data,command))return false;
     command+=L" --quit";RegSetValueExW(key,name,0,REG_SZ,reinterpret_cast<BYTE const*>(command.c_str()),DWORD((command.size()+1)*2));if(startup_matches(key,name,exe,data)) return false;
+    auto default_data=(std::filesystem::path(exe).parent_path()/L"data"/L"profile-v2").wstring();
+    if(!startup_command(exe,default_data,command)||command.find(L"--data-dir")!=std::wstring::npos)return false;
+    RegSetValueExW(key,name,0,REG_SZ,reinterpret_cast<BYTE const*>(command.c_str()),DWORD((command.size()+1)*2));
+    if(!startup_matches(key,name,exe,default_data)||startup_matches(key,name,exe,data))return false;
     return !startup_command(exe,std::wstring(300,L'x'),command)&&GetLastError()==ERROR_FILENAME_EXCED_RANGE;
 }
 BOOL night_light_supported(void) {
@@ -224,7 +237,7 @@ int settings_describe(int id,UiSetting* out) {
 }
 int settings_change(int id,int value) {
     if(g_app.close_requested) return 0;
-    if(id==int(ARRAYSIZE(options))) { bool ok=startup_set(value!=0);if(!ok) set_status(GetLastError()==ERROR_FILENAME_EXCED_RANGE?L"启动路径过长，请将测试版放到较短的目录后再开启自启动。":L"开机启动未能更改",GetLastError()==ERROR_FILENAME_EXCED_RANGE?L"Startup command is too long. Move the preview to a shorter folder first.":L"Startup could not be changed.");return ok; }
+    if(id==int(ARRAYSIZE(options))) { bool ok=startup_set(value!=0);if(!ok) set_status(GetLastError()==ERROR_FILENAME_EXCED_RANGE?L"启动路径过长，请将软件放到较短的目录后再开启自启动。":L"开机启动未能更改",GetLastError()==ERROR_FILENAME_EXCED_RANGE?L"Startup command is too long. Move the app to a shorter folder first.":L"Startup could not be changed.");return ok; }
     if(id<0||id>=int(ARRAYSIZE(options))) return 0;auto const& field=options[id];Settings before=g_app.settings;Settings next=before;
     if(field.kind==COMBO) { UiSetting description{};settings_describe(id,&description);if(std::find(description.choice_values,description.choice_values+description.choice_count,value)==description.choice_values+description.choice_count) return 0; }
     else if(field.kind!=HOTKEY&&(value<field.low||value>field.high)) return 0;

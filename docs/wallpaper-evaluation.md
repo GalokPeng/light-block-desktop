@@ -102,3 +102,7 @@
 - [Cinemagraph de fleur de pommier](https://commons.wikimedia.org/wiki/File:Cinemagraph_de_fleur_de_pommier.gif) 的文件为 1920×1088、约 7.61 MiB；虽然达到宽高下限，但原文件比例并非严格 16:9，未通过当前比例条件，未修改或裁切原文件凑数。
 - [Animated Pixel Art Wallpaper Pack / Louisselle](https://louisselle.gumroad.com/l/xsvmc) 的原作者明确提供 1920×1080 与 3840×2160 的 GIF／MP4 完整场景，但同时说明需购买且仅限个人使用，不符合本项目的免费在线分发条件，未购买或录入。
 - 当前仍无新增通过授权、原生像素、16:9、20 MB 与壁纸观感全部审核的 GIF。静图 20、视频 20 保持不变；上一批被否定的 10 个 GIF 保持撤下。本轮未更改程序版本、构建安装包、推送或发布。
+
+## v2.0.0 发布前补充
+
+增加金色日珥、极光之环两段 2880×1080 MP4，分别 18,192,727 与 3,516,813 字节。实际下载并核对 SHA-1、尺寸、无音轨和三个时刻画面。未采用同页重复视角；未为增加 GIF 数量加入温度示意图或三帧跳变太阳 GIF。此前审查合格的极光 GIF 保留。动漫候选缺少明确第三方目录复用许可，未录入。当前共 52 静图、11 GIF、29 视频。新版目录 revision 4；旧客户端目录不改。

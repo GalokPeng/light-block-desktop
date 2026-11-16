@@ -52,8 +52,8 @@ def main():
         return parent_session(Path(folder), Path(helper), Path(setup), digest)
     if not args.iscc or not args.iscc.is_file():
         raise SystemExit("Pass --iscc pointing to Inno Setup 6")
-    runtime = ROOT / "dist/LightBlockDesktopPreview"
-    exe = runtime / "轻块桌面测试版.exe"
+    runtime = ROOT / "dist/LightBlockDesktop"
+    exe = runtime / "轻块桌面.exe"
     helper = runtime / "runtime/QingkuaiUpdate.exe"
     compiler = ROOT / "build/native-toolchain/Compiler/bin/clang++.exe"
     workspace = ROOT / "build/update-flow-qa"
@@ -69,10 +69,10 @@ def main():
         if not folder.is_relative_to(workspace.resolve()):
             raise ValueError("Unexpected test directory")
         app = folder / "installed app 空格"
-        (app / "data-preview").mkdir(parents=True)
-        preserved = app / "data-preview/user-kept.txt"
+        (app / "data/profile-v2").mkdir(parents=True)
+        preserved = app / "data/profile-v2/user-kept.txt"
         preserved.write_text("preserve user data", encoding="utf-8")
-        fixture = folder / "轻块桌面测试版.exe"
+        fixture = folder / "轻块桌面.exe"
         subprocess.run((str(compiler), "--target=x86_64-w64-mingw32", "-std=c++23", "-DUNICODE", "-D_UNICODE", "-municode", "-static", "-Os", "-s",
                         str(ROOT / "native/tests/update_fixture.cpp"), "-o", str(fixture)), check=True)
         script = folder / "fixture.iss"
@@ -115,7 +115,7 @@ Source: "{fixture}"; DestDir: "{{app}}"; Flags: ignoreversion
             if not marker.is_file():
                 raise RuntimeError("The isolated Setup did not restart the synthetic app")
             content = marker.read_text(encoding="utf-8")
-            for value in ("parent-exited\n", "independent-environment\n", "clean-dll-search\n", str(app / "轻块桌面测试版.exe"), "--data-dir\n" + str(folder / "用户配置 空格")):
+            for value in ("parent-exited\n", "independent-environment\n", "clean-dll-search\n", str(app / "轻块桌面.exe"), "--data-dir\n" + str(folder / "用户配置 空格")):
                 if value not in content:
                     raise RuntimeError(f"Missing helper guarantee: {value}")
             if preserved.read_text(encoding="utf-8") != "preserve user data":
@@ -124,7 +124,7 @@ Source: "{fixture}"; DestDir: "{{app}}"; Flags: ignoreversion
                           isolated_real_setup=True, independent_restart=True, unicode_profile_preserved=True, user_data_preserved=True)
             report_name = "helper-only-summary.json" if args.helper_only else "summary.json"
             (workspace / report_name).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-            print("PASS isolated helper guarantees; full UI gate still pending" if args.helper_only else "PASS C++ preview policy, tamper rejection, graceful exit, isolated Setup, data preservation and restart", flush=True)
+            print("PASS isolated helper guarantees; full UI gate still pending" if args.helper_only else "PASS stable update policy, tamper rejection, graceful exit, isolated Setup, data preservation and restart", flush=True)
         finally:
             uninstaller = next(app.glob("unins*.exe"), None)
             if uninstaller:

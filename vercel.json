@@ -6,7 +6,9 @@
   "outputDirectory": "site/public",
   "trailingSlash": true,
   "functions": {
-    "api/setup.mjs": { "maxDuration": 80 }
+    "api/setup.mjs": {
+      "maxDuration": 80
+    }
   },
   "rewrites": [
     {
@@ -18,9 +20,27 @@
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
       ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/preview/",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/en/preview/",
+      "destination": "/en/",
+      "permanent": true
     }
   ]
 }

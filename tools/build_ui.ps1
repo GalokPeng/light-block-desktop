@@ -8,7 +8,7 @@ try {
     $sdk = & (Join-Path $PSScriptRoot 'setup_ui_sdk.ps1') -QtRoot $QtRoot -Offline:$Offline
     $QtRoot = $sdk.QtRoot
     if (-not $Compiler) { $Compiler = $sdk.Compiler }
-    if (-not $DestinationDirectory) { $DestinationDirectory = Join-Path $root 'dist/LightBlockDesktopPreview' }
+    if (-not $DestinationDirectory) { $DestinationDirectory = Join-Path $root 'dist/LightBlockDesktop' }
     $dist = [IO.Path]::GetFullPath($DestinationDirectory)
     New-Item -ItemType Directory -Force -Path $dist | Out-Null
     if (-not (Test-Path -LiteralPath $Compiler)) { throw 'Qt frontend requires GCC 13.1 from the pinned MinGW SDK.' }
