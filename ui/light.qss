@@ -1,0 +1,108 @@
+
+QWidget { color: #e9edf0; font-family: 'Microsoft YaHei UI', 'Segoe UI'; font-size: 12px; }
+QMainWindow, QDialog, QWidget#root { background: #11151c; }
+QFrame#sidebar { background: #151b24; border-right: 1px solid #272e38; }
+QFrame#panel, QFrame#surface { background: #1a212c; border: 1px solid #2a3340; border-radius: 14px; }
+QFrame#settingsRow { background:transparent; border:0; border-bottom:1px solid #dce5df; border-radius:0; }
+QLabel { background: transparent; border: none; }
+QLabel#muted { color: #8e9bad; }
+QLabel#eyebrow { color: #86b8a5; font-size: 10px; letter-spacing: 2px; }
+QLabel#title { font-size: 26px; font-weight: 600; }
+QLabel#section { font-size: 15px; font-weight: 600; }
+QLabel#notice { background: #1e3530; color: #b8ecd8; border: 1px solid #34594b; border-radius: 8px; padding: 9px 12px; }
+QPushButton { background: #242d39; border: 1px solid #354151; border-radius: 8px; padding: 9px 13px; font-weight: 500; }
+QPushButton:hover { background: #303b4a; border-color: #536276; }
+QPushButton:pressed { background: #1b2430; }
+QPushButton:disabled { background: #202732; color: #697688; border-color: #303947; }
+QPushButton#primary { background: #a6e4ca; color: #132b24; border: 1px solid #a6e4ca; font-weight: 700; }
+QPushButton#primary:hover { background: #bcf1db; }
+QPushButton#primary:pressed { background: #88c7ad; }
+QPushButton#primary:disabled { background: #344a43; color: #73877e; border-color: #344a43; }
+QPushButton#nav { text-align: left; border: none; padding: 12px 16px; background: transparent; color: #9caabd; }
+QPushButton#nav:hover { background: #1e2835; color: #e9edf0; }
+QPushButton#nav:checked { background: #273b37; color: #b8eed8; }
+QPushButton#pill { padding: 6px 12px; background: transparent; border: none; color: #8e9bad; border-radius: 6px; }
+QPushButton#pill:checked { background: #2b3a37; color: #b6ead6; }
+QPushButton#text { background: transparent; border: none; color: #a4b5c8; padding: 5px 0; text-align: left; }
+QPushButton#text:hover { color: #c7f0df; }
+QToolButton#themeToggle { background:#242d39; border:1px solid #354151; border-radius:8px; }
+QToolButton#themeToggle:hover, QToolButton#themeToggle:focus { border-color:#87b7a2; }
+QToolButton#cursorTheme { background:#141e29; color:#dae5ef; border:1px solid #354151; border-radius:10px; padding:10px; }
+QToolButton#cursorTheme:hover, QToolButton#cursorTheme:focus { background:#22323b; border-color:#87b7a2; }
+QToolButton#cursorTheme:checked { background:#273b37; color:#c2f1de; border:2px solid #87b7a2; padding:9px; }
+QToolButton#cursorTheme:disabled { color:#88949e; border-color:#313c48; }
+QComboBox { background: #121a24; border: 1px solid #354151; border-radius: 7px; min-height: 20px; padding: 7px 10px; }
+QComboBox:hover, QComboBox:focus { border-color: #7fae9b; }
+QComboBox::drop-down { border: none; width: 22px; }
+QComboBox QAbstractItemView { background: #202a36; selection-background-color: #365247; padding: 5px; outline: none; }
+QLineEdit { background: #171f2a; border: 1px solid #303b49; border-radius: 7px; padding: 7px 10px; selection-background-color: #426855; }
+QLineEdit:focus { border-color: #87b7a2; }
+QSpinBox, QDoubleSpinBox, QDateTimeEdit { background:#121a24; color:#e9edf0; border:1px solid #354151; border-radius:7px; padding:7px 9px; min-height:20px; }
+QProgressBar { background:#182432; color:#e5eee8; border:1px solid #344253; border-radius:7px; min-height:18px; text-align:center; }
+QProgressBar::chunk { background:#416f5c; border-radius:6px; }
+QTableWidget, QTreeWidget { background:#172330; color:#e7eef6; gridline-color:#344253; border:1px solid #344253; border-radius:8px; }
+QHeaderView::section { background:#273544; color:#d0dce8; border:0; padding:8px; }
+QMenu { background:#1b2836; color:#e8eff6; border:1px solid #38495b; padding:6px; }
+QMenu::item { padding:8px 20px; border-radius:5px; } QMenu::item:selected { background:#35564a; }
+QCalendarWidget QWidget { background:#202d3d; color:#e7eef6; }
+QCheckBox { spacing: 10px; }
+QCheckBox::indicator { width: 17px; height: 17px; background: #121a24; border: 1px solid #536275; border-radius: 5px; }
+QCheckBox::indicator:checked { background: #a6e4ca; border: 4px solid #4e8a73; }
+QCheckBox::indicator:hover { border-color: #a6e4ca; }
+QScrollArea { border: none; background: transparent; }
+QScrollArea > QWidget > QWidget { background: transparent; }
+QScrollBar:vertical { background: transparent; width: 6px; margin: 2px; }
+QScrollBar::handle:vertical { background: #394657; border-radius: 3px; min-height: 32px; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+QToolTip { background: #253442; color: #eaf2ef; border: 1px solid #567465; padding: 6px; }
+QListWidget#collectionList { background:transparent; border:0; outline:0; }
+QListWidget#collectionList::item { background:#202c3a; border:1px solid #334355; border-radius:10px; padding:16px; }
+QListWidget#collectionList::item:selected { background:#2c423e; border-color:#8ac1aa; }
+
+QWidget { color:#26343b; }
+QMainWindow, QDialog, QWidget#root { background:#f3f6f4; }
+QFrame#sidebar { background:#edf3f0; border-right-color:#d5e0db; }
+QFrame#panel, QFrame#surface { background:#ffffff; border-color:#d8e2dd; }
+QLabel#muted, QPushButton#pill { color:#53666c; }
+QLabel#eyebrow { color:#376c5b; }
+QLabel#notice { background:#e2f1e9; color:#254b3e; border-color:#b5d5c7; }
+QPushButton { background:#f6f8f7; border-color:#cbd9d2; }
+QPushButton:hover { background:#e9f0ec; border-color:#93afa3; }
+QPushButton:pressed { background:#dce9e3; }
+QPushButton:disabled { background:#edf2ef; color:#72827e; border-color:#dce6e1; }
+QPushButton#primary:disabled { background:#dce8e1; color:#64766c; border-color:#dce8e1; }
+QPushButton#nav { color:#4a6266; }
+QPushButton#nav:hover { background:#e3ede7; color:#26343b; }
+QPushButton#nav:checked, QPushButton#pill:checked { background:#d9ece2; color:#214e3f; }
+QPushButton#text { color:#496960; }
+QPushButton#text:hover { color:#1d5643; }
+QToolButton#themeToggle { background:#f6f8f7; border-color:#cbd9d2; }
+QToolButton#cursorTheme { background:#f7faf8; color:#263c34; border-color:#cbd9d2; }
+QToolButton#cursorTheme:hover, QToolButton#cursorTheme:focus { background:#eaf4ee; border-color:#6c9b84; }
+QToolButton#cursorTheme:checked { background:#d9ece2; color:#214e3f; border-color:#60987b; }
+QToolButton#cursorTheme:disabled { color:#89958f; border-color:#d5dfd9; }
+QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox, QDateTimeEdit {
+    background:#ffffff; color:#26343b; border-color:#c5d5cd;
+    selection-background-color:#d3e9de; selection-color:#203f35;
+}
+QComboBox QAbstractItemView { background:#ffffff; selection-background-color:#d3e9de; selection-color:#203f35; }
+QProgressBar, QTableWidget, QTreeWidget { background:#f5f8f6; color:#26343b; border-color:#cfddd6; gridline-color:#dce7e1; }
+QHeaderView::section { background:#e8f0ec; color:#3d5550; }
+QMenu, QToolTip { background:#ffffff; color:#26343b; border-color:#cadbd2; }
+QMenu::item:selected { background:#d9ece2; }
+QCalendarWidget QWidget { background:#f5f8f6; color:#26343b; }
+QCheckBox::indicator { background:#ffffff; border-color:#98afa4; }
+QCheckBox::indicator:checked { background:#d9ece2; border-color:#4e8a73; }
+QScrollBar::handle:vertical { background:#b1c5bb; }
+QListWidget#collectionList::item { background:#f2f6f4; border-color:#d9e5df; }
+QListWidget#collectionList::item:selected { background:#d9ece2; border-color:#77a994; }
+
+
+QPushButton#compactAction {padding:0;font-size:13px;}
+QComboBox#settingsCombo::down-arrow {image:none;}
+QComboBox {padding-right:26px;}
+
+QSpinBox#settingsSpin, QDoubleSpinBox#settingsSpin {padding-right:30px;}
+QSpinBox#settingsSpin::up-button, QDoubleSpinBox#settingsSpin::up-button {subcontrol-origin:border;subcontrol-position:top right;width:24px;border:0;}
+QSpinBox#settingsSpin::down-button, QDoubleSpinBox#settingsSpin::down-button {subcontrol-origin:border;subcontrol-position:bottom right;width:24px;border:0;}
+QSpinBox#settingsSpin::up-arrow, QSpinBox#settingsSpin::down-arrow, QDoubleSpinBox#settingsSpin::up-arrow, QDoubleSpinBox#settingsSpin::down-arrow {image:none;}

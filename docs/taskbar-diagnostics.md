@@ -1,4 +1,24 @@
-# 原生任务栏本地稳定性测试
+# 原生任务栏诊断与稳定性验证
+
+## 当前版本的检查入口
+
+1. 在「美化 → 原生任务栏」中开启或关闭，保留实际 Windows 构建号、显示器数量、缩放比例、复现时间和操作顺序。
+2. 观察新增／关闭应用、搜索、最大化、全屏、显示桌面、锁屏／休眠恢复和 Explorer 重启。保留原本发生冲突的环境信息，不凭单次表现认定某个第三方软件是原因。
+3. 从「关于 → 打开数据目录」保留当前 `native.log` 和相关任务栏恢复记录。不要再按旧文档寻找 `still.log`；测试版活动目录默认是安装目录下的 `data-preview`，不可写时为 `%LOCALAPPDATA%/LightBlockDesktopPreview`。日志可能包含本地文件路径，分享前检查。
+4. 使用独立测试配置，不同时让其他版本接管任务栏。关闭美化后应恢复原生状态。真实桌面接管、显隐、DPI 切换、长时间运行和第三方工具兼容性需要在目标机器单独检查。
+
+当前开发验证（先完成构建）：
+
+```powershell
+./tools/test.ps1 -SkipBuild
+./tools/test_taskbar.ps1 -CompilerRoot "$PWD/build/native-toolchain/Compiler"
+```
+
+任务栏夹具使用独立 XAML island，模拟属性改写、控件替换等条件，不以模拟检查代替真实 Explorer 验收。发行检查见[发布手册](release.md)，模块边界见[架构说明](cpp-migration/architecture.md)。
+
+## 以下为 v0.8.0 / Python 主线诊断记录
+
+> 本节保留旧修复背景、旧日志路径与字段口径，不代表新版的日志格式或本次发行测试结果。旧源码和测试入口见 [`python-v1.0.0`](https://github.com/GalokPeng/light-block-desktop/tree/python-v1.0.0)。不要在当前工作区执行下方旧命令。
 
 这批稳定性修复随 v0.8.0 提供。已完成本机与模拟故障验证，其他 Windows 版本和第三方工具组合仍需结合诊断记录核对。
 

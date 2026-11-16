@@ -26,9 +26,9 @@ export TMPDIR=.
     --enable-static --disable-shared --disable-autodetect --disable-network \
     --disable-debug --disable-doc --disable-ffplay --disable-ffprobe --disable-pthreads \
     --disable-indevs --enable-indev=gdigrab,lavfi --disable-outdevs \
-    --disable-encoders --enable-encoder=libx264,ffv1,gif,png,aac,flac,rawvideo,wrapped_avframe \
-    --disable-muxers --enable-muxer=mp4,matroska,gif,image2,image2pipe,null,rawvideo \
-    --disable-filters --enable-filter=abuffer,abuffersink,aformat,anull,aresample,buffer,buffersink,color,crop,format,fps,hflip,null,overlay,pad,palettegen,paletteuse,rotate,scale,testsrc2,transpose,vflip \
+    --disable-encoders --enable-encoder=libx264,ffv1,gif,png,aac,flac,pcm_s16le,rawvideo,wrapped_avframe \
+    --disable-muxers --enable-muxer=mp4,matroska,gif,image2,image2pipe,null,rawvideo,h264,pcm_s16le \
+    --disable-filters --enable-filter=abuffer,abuffersink,aformat,amix,anull,apad,aresample,asetpts,buffer,buffersink,color,crop,format,fps,hflip,null,overlay,pad,palettegen,paletteuse,rotate,scale,testsrc2,transpose,vflip \
     --enable-gpl --enable-version3 --enable-libx264 --enable-zlib \
     --pkg-config-flags=--static --extra-cflags=-I../local/include \
     --extra-ldflags="-static -L../local/lib"

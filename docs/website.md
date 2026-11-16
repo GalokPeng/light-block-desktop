@@ -20,12 +20,18 @@ The page resolves versioned asset links using `/download/?format=json`, retainin
 
 The parameter-free `/download/` endpoint retains the verified server relay for older clients. Explicit language/source routes redirect to versioned downloads. HEAD responses retain version and checksum headers.
 
+## 测试版独立入口 · Separate preview channel
+
+`/preview/` 与 `/en/preview/` 提供“测试版（极度优化）”，明确不稳定，使用 Preview 资产和 preview-v* tag。`preview-download.mjs` 独立处理线路，不能修改正式 `downloads.mjs` 或 `/download/` 更新契约。首页及现有演示图继续介绍 Python 1.0.0。
+
+The preview is explicitly unstable and separately installed. It never replaces stable Setup or enters the stable update channel.
+
 ## Vercel
 
 1. [用 GitHub 登录 Vercel / Sign in to Vercel with GitHub](https://vercel.com/login).
 2. [导入项目 / Import a project](https://vercel.com/new) and select `GalokPeng/light-block-desktop`. If Vercel needs GitHub app access, select this repository.
 3. 保持项目根目录为仓库根目录，生产分支为 `main`。Keep the repository root as the project root and use `main` for production. `vercel.json` publishes `site/public` and routes downloads to `api/setup.mjs`.
-4. 核对首页、语言切换和 Setup 下载。Verify the landing page, language links and direct Setup download. Future pushes to `main` deploy through the GitHub integration.
+4. 核对首页、语言切换和 Setup 下载。Verify the landing page, language links and direct Setup download. Do not push the C++ tree to main to deploy website changes. Build and verify the stable-plus-preview site from `cpp-preview`, then deploy that source to the existing Vercel project explicitly. Leave the Git production branch unchanged.
 
 ## 本地预览 · Local preview
 
@@ -35,4 +41,4 @@ python -m http.server 8080 --bind 127.0.0.1 --directory site/public
 
 Visit [the local site](http://127.0.0.1:8080/). Test `/download/` on Vercel, where the download function runs. Replace images only with isolated app fixtures and bundled media. Do not include actual desktop icons, user paths or data.
 
-Run `node --test tests/test_website_downloads.mjs tests/test_website_theme.mjs` to verify downloads and appearance without external services. Render isolated bilingual app views with `.venv/Scripts/python.exe tools/render_showcase.py zh light` (also `zh dark`, `en light`, `en dark`), then run `python tools/prepare_website_media.py` with Pillow installed to prepare website derivatives. See [demo media provenance](../site/public/media/README.md) for screenshot and wallpaper licenses. Never capture the user's desktop for public documentation.
+Run `node --test tests/test_website_downloads.mjs tests/test_website_theme.mjs tests/test_preview_download.mjs` to verify downloads and appearance without external services. C++ isolated UI fixtures are generated using `轻块桌面测试版.exe --ui-snapshots <new-output-directory> --data-dir <new-profile-directory>`. Keep these separate from stable Python showcase images. See [demo media provenance](../site/public/media/README.md); never publish the actual desktop.

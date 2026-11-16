@@ -1,40 +1,63 @@
-# Windows 构建与发布
+# C++ 测试版构建与分发
 
 [English](release.en.md)
 
-发布版本取自 `still/model.py` 中的 `VERSION`，例如 `0.5.0`。PyInstaller 的文件版本、便携包目录、Setup 文件名和 GitHub 标签都由它生成。
+展示名称为 **测试版（极度优化）**，同时明确标注：**不稳定、独立安装、不替换正式版**。正式 main、Python v1.0.0、v1.0.0 标签和归档分支保持原样。测试版只在 `cpp-preview` 开发，以 GitHub prerelease 分发，不进入正式用户更新通道，不能将本分支合并到 main。
 
-## 本地验证
+## 固定身份
 
-需要 Windows x64、Python 3.11、Git、7-Zip 和 [Inno Setup 6](https://jrsoftware.org/isdl.php)。先提交要打包的源码，使源码 ZIP 与可执行文件来自同一份 Git 代码。
+版本唯一来源为 `src/version.hpp`。显示版本采用 `1.1.0-beta.1`，Windows 文件和安装器数值版本为 `1.1.0.0`。后续测试版递增 beta.N 或 rc.N，不能省略预发布后缀。
+
+| 内容 | 测试版约定 |
+| --- | --- |
+| AppId | `{C07C418A-08FE-4E9B-8136-348822397B6B}` |
+| 程序文件 | `轻块桌面测试版.exe` |
+| 默认安装目录 | `%LOCALAPPDATA%/Programs/Light Block Desktop Preview` |
+| 数据/自启动/右键菜单命名空间 | `LightBlockDesktopPreview` |
+| 本地构建目录 | `dist/LightBlockDesktopPreview` |
+| 发布标签 | `preview-v1.1.0-beta.1` |
+| 测试版固定下载名 | `Qingkuai-Preview-Setup-x64.exe` |
+
+安装器拒绝覆盖包含正式版程序的目录、正式默认目录及已登记正式安装目录的子目录。测试版默认使用安装目录下的 `data-preview`，不可写时回退到 `%LOCALAPPDATA%/LightBlockDesktopPreview`。卸载只处理测试版注册项并保留这些用户数据。不能自动迁移、写入或删除正式版真实配置；需要测试迁移时只能使用复制的合成测试数据。
+
+## 本地构建与验证
+
+需要 Windows x64、PowerShell 7、Git、Python 3.11+（仅构建与测试脚本）、7-Zip；打包另需 Inno Setup 6。依赖在当前项目的 build 中下载和校验，不依赖相邻仓库。程序运行不要求安装 Python 或 FFmpeg。
 
 ```powershell
-python -m pip install -r requirements.txt
-python tools/run_tests.py
-# 在有 Explorer 桌面的 Windows 会话执行实机回归
-python tools/run_tests.py --desktop
-# 在源码根目录构建，或用 -IsccPath 指定编译器路径
-.\tools\release.ps1
+./build.ps1
+./tools/test.ps1 -SkipBuild
+node --test tests/test_website_downloads.mjs tests/test_website_theme.mjs tests/test_preview_download.mjs
+python tools/check_wallpaper_catalog.py
 ```
 
-`release/` 包含 Setup、免安装 ZIP、同一提交的源码 ZIP、FFmpeg 对应源码 ZIP 和 SHA-256。Setup 默认按当前用户安装，卸载保留应用配置目录。便携版移到安装版后，如已有自启动，可以在新版重新开启自启动以更新路径。安装包未签名。安装向导跟随 Windows 显示语言，并支持英文、简体中文和繁体中文。
+测试使用独立配置和生成素材。实机的多 DPI、全屏、Explorer 重建、屏幕采集和异常恢复需另外确认；离屏测试不能证明全部电脑兼容。用户正在体验的实例不能擅自关闭或覆盖。
 
-首次构建会下载经过 SHA-256 校验的原生组件工具链和 FFmpeg 源码。Setup 和便携包自带原生任务栏 DLL 和录屏所需的 FFmpeg。安装验证会检查 DLL 加载和随包 FFmpeg 的捕获设备与编码能力。三段式布局需要 Windows 11 22H2 或更新的 x64 系统。
+确认源码提交完整后，生成与该提交一致的包：
 
-上游源码站不可达时，构建脚本可从本项目已公开的 v0.8.1 FFmpeg 对应源码包恢复固定版本的原始源码。外层源码包和内部文件分别校验 SHA-256，不执行备用包的构建脚本。更换上游源码版本时需同时核对备用记录。
+```powershell
+./tools/release.ps1 -IsccPath 'C:/path/to/ISCC.exe' -SkipBuild -SkipTests
+python tools/test_setup.py --iscc 'C:/path/to/ISCC.exe'
+python tools/test_update_flow.py --iscc 'C:/path/to/ISCC.exe'
+```
 
-没有已安装版本的测试机上可执行 `python tools/test_setup.py`，在隔离目录检查自动选语言及中英文安装、启动、卸载和配置保留。
+安装测试使用临时 AppId 和目录，验证系统语言/简中/繁中/英文、同测试版升级、卸载保留数据及拒绝覆盖正式目录。更新器测试只调用合成 Setup 验证工具隔离；测试版 UI 不提供正式版自动更新。没有通过当前提交的完整 QA，不能发布。
 
-## GitHub 首次接入
+## 资产与许可证
 
-1. 在 GitHub 建立空的 `light-block-desktop` 仓库，将本仓库的 `main` 推送到 `origin`。仓库已有 MIT 文件，创建时可保留空仓库选项。
-2. 在 Actions 手动运行 **Windows release**，保持 `publish` 关闭，先下载构建产物并验证 Setup。
-3. 在 Settings → Secrets and variables → Actions → Variables 将 `PUBLISH_RELEASES` 设为 `true`。用 **Windows release** 手动运行一次并打开 `publish`，发布当前版本。GitHub Actions 由内置 `GITHUB_TOKEN` 发布，无需保存个人访问令牌。
+`preview-release/` 必须包含：
 
-## 后续发布
+- `Qingkuai-Preview-v<VERSION>-Setup-x64.exe` 和相同字节的 `Qingkuai-Preview-Setup-x64.exe`。
+- `Qingkuai-Preview-v<VERSION>-Windows-x64.zip`。
+- `Qingkuai-Preview-v<VERSION>-source.zip`、`-ffmpeg-source.zip`、`-qt-source.zip`。
+- `Qingkuai-Preview-v<VERSION>-SHA256SUMS.txt`。
 
-更新 `CHANGES.md`，递增 `still/model.py` 的 `VERSION`，提交并推送到 `main`。若使用受保护分支，合入发布 PR 同样会触发流程。
+禁止生成或上传正式版固定资产 `Qingkuai-Setup-x64.exe`。打包校验程序资源中的测试版名称和版本，Setup 体积预算为 128 MiB。未配置签名时，须如实说明安装包未签名。
 
-GitHub Actions 会验证版本、运行 Windows 测试、构建便携包和 Setup、验证安装与卸载，然后以触发提交创建对应标签与 Release。相同版本已经有标签时会跳过发布。普通 PR 和主题分支保持测试流程，仓库的发布权限只授予主分支的发布任务。
+Qt 动态库和媒体解码用 LGPL FFmpeg 7.1、独立录屏用 GPL FFmpeg 8.1.3 分别附许可证和对应源码。不能把应用 MIT 许可证理解为覆盖全部依赖。
 
-如果发布中断，先检查 Actions 日志和 Releases 是否残留草稿。保留已经发布的标签和资产。维护者可以补齐同一提交的草稿，或者递增版本重新发布。已安装的应用可从 Releases 下载新版 Setup。
+## 手动发布与官网
+
+Checks 只监听 cpp-preview。测试分支或 preview-v* 标签推送仅构建，不自动公开；发布需要维护者在 **C++ preview prerelease** workflow 手动设置 publish=true。发布固定使用 `--prerelease --latest=false`，不能改为正式 latest。已经公开的同版本不能静默覆盖；修复后递增测试版编号。
+
+官网默认下载、正式版更新 API 和原有稳定资产继续指向正式版本。测试包只能从额外的测试版入口下载，显示不稳定、独立安装及可能存在缺陷的说明。发布后核对预发布标记、标签提交、所有校验和及许可源码资产，确认 GitHub 正式 latest 和正式更新 API 没有变化。推送成功不代表分发完成。

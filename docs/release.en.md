@@ -1,40 +1,56 @@
-# Build and release for Windows
+# Building and distributing the C++ preview
 
 [简体中文](release.md)
 
-`VERSION` in `still/model.py` is the single release version. It drives the executable metadata, portable directory, Setup filename and GitHub tag.
+The Chinese display label is **测试版（极度优化）** (Preview — Extensive optimization). Always include the separate notice: **unstable, independent installation, does not replace the stable version**. The stable main branch, Python v1.0.0, its tag and archive references remain unchanged. Develop on `cpp-preview`; distribute only GitHub prereleases. Do not merge this branch into main or offer it through the stable update channel.
 
-## Local verification
+## Independent identity
 
-Use Windows x64, Python 3.11, Git, 7-Zip and [Inno Setup 6](https://jrsoftware.org/isdl.php). Commit the exact source you want to package so the binary and source ZIP come from the same commit.
+`src/version.hpp` is the version source. The display version is `1.1.0-beta.1`; Windows numeric versions are `1.1.0.0`. Subsequent previews increment beta.N or rc.N.
+
+| Item | Preview value |
+| --- | --- |
+| AppId | `{C07C418A-08FE-4E9B-8136-348822397B6B}` |
+| Executable | `轻块桌面测试版.exe` |
+| Default installation | `%LOCALAPPDATA%/Programs/Light Block Desktop Preview` |
+| Data, startup and desktop-menu namespace | `LightBlockDesktopPreview` |
+| Local build | `dist/LightBlockDesktopPreview` |
+| Tag | `preview-v1.1.0-beta.1` |
+| Fixed preview asset | `Qingkuai-Preview-Setup-x64.exe` |
+
+Setup refuses a directory containing the stable executable, the default stable directory, or a registered stable installation and its descendants. The preview defaults to `data-preview` beside its executable, falling back to `%LOCALAPPDATA%/LightBlockDesktopPreview` if necessary. Uninstall only cleans preview registration and keeps user data. Do not automatically import, modify or delete the stable profile. Migration testing uses copied synthetic fixtures only.
+
+## Build and verification
+
+Use Windows x64, PowerShell 7, Git, Python 3.11+ for build/test scripts, and 7-Zip. Packaging also requires Inno Setup 6. Dependency downloads are pinned and verified within this checkout; neighboring repositories are not required. Users do not need Python or a separate FFmpeg installation.
 
 ```powershell
-python -m pip install -r requirements.txt
-python tools/run_tests.py
-# Run in an interactive Windows session for native Explorer tests
-python tools/run_tests.py --desktop
-# Run from the repository root. Use -IsccPath for a different compiler location.
-.\tools\release.ps1
+./build.ps1
+./tools/test.ps1 -SkipBuild
+node --test tests/test_website_downloads.mjs tests/test_website_theme.mjs tests/test_preview_download.mjs
+python tools/check_wallpaper_catalog.py
 ```
 
-`release/` contains Setup, a portable ZIP, the app and FFmpeg source ZIPs, and SHA-256 checksums. Setup is unsigned and installs for the current user by default. It preserves settings on upgrade and uninstall. If you switch from portable to installed, toggle **Start with Windows** to update its path.
+Tests use separate profiles and synthetic media. Multi-DPI, fullscreen behavior, Explorer restart, actual screen recording and abnormal shutdown recovery still need interactive checks. Offscreen tests do not establish compatibility with every PC. Never stop or replace a user's active review instance without permission.
 
-The first build downloads SHA-256-verified LLVM/MinGW-w64 and C++/WinRT build tools. Setup and the portable archive include the native taskbar DLL. The installation checks verify that the DLL loads. The three-section layout requires Windows 11 22H2 or newer on x64.
+Commit the complete candidate before packaging its matching source archive:
 
-Setup selects English, Simplified Chinese or Traditional Chinese using the Windows display language. The app uses Simplified Chinese for Chinese display languages and English otherwise. On a Windows test machine without an existing installation, run `python tools/test_setup.py` to check language selection, startup, uninstall and config preservation in temporary directories.
+```powershell
+./tools/release.ps1 -IsccPath 'C:/path/to/ISCC.exe' -SkipBuild -SkipTests
+python tools/test_setup.py --iscc 'C:/path/to/ISCC.exe'
+python tools/test_update_flow.py --iscc 'C:/path/to/ISCC.exe'
+```
 
-The build verifies the FFmpeg source archives and build tools by SHA-256. Setup and the portable package include the resulting recording executable. Installation tests check that it can register the Windows capture device and encode video with a Windows-only PATH.
+Installer tests use temporary AppIds and directories, covering automatic/Chinese/Traditional Chinese/English language selection, preview upgrades, data preservation on uninstall, and refusal to overwrite a stable installation. Helper tests use synthetic Setup files only; the preview UI does not run stable automatic updates. Complete QA of the exact candidate is required before distribution.
 
-## First GitHub release
+## Artifacts and licensing
 
-1. Push `main` to an empty GitHub repository.
-2. Run **Windows release** from Actions with `publish` disabled. Download and verify the artifacts.
-3. Set the Actions repository variable `PUBLISH_RELEASES` to `true`. Dispatch **Windows release** with `publish` enabled. The workflow uses GitHub's built-in token for publication.
+`preview-release/` contains the versioned `Qingkuai-Preview-v<VERSION>-Setup-x64.exe`, byte-identical `Qingkuai-Preview-Setup-x64.exe`, portable Windows ZIP, application source ZIP, FFmpeg source ZIP, Qt source ZIP and SHA256SUMS. **Never create or upload the stable Qingkuai-Setup-x64.exe alias.** Packaging checks the preview executable identity. Setup has a 128 MiB size budget. Disclose unsigned packages when signing is not configured.
 
-## Subsequent releases
+Keep Qt's replaceable DLL notices, LGPL FFmpeg 7.1 decoding sources, and the independent GPL FFmpeg 8.1.3 recording CLI sources distinct. The application's MIT license does not replace dependency licenses.
 
-Update `CHANGES.md` and increment `VERSION`. Push the commit to `main`, or merge the release PR into `main`. GitHub Actions runs the Windows tests, builds the assets and checks Setup. It then tags the triggering commit and publishes the release. Existing version tags skip publication.
+## Manual prerelease publication
 
-If a run stops during publication, check the Actions log and Releases for a partial draft. Keep existing tags and assets. The maintainer can complete the draft for the same commit or increment the version for a fresh release.
+Checks target cpp-preview. Branch/tag pushes build artifacts only. A maintainer must manually run **C++ preview prerelease** with publish=true to publish, always using `--prerelease --latest=false`. Never replace a published asset silently; increment the preview version for fixes.
 
-The [product site](website.md) deploys separately through Vercel's GitHub integration. Its download link tracks the latest GitHub Release.
+The website's default download and stable update API must continue to serve the stable product. Add a separate preview entry with a clear instability notice. Verify the prerelease flag, commit, checksums and source assets, and confirm that GitHub's stable latest release and stable update API remain unchanged. A successful push alone is not a completed release.

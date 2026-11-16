@@ -1,5 +1,19 @@
 # 在线壁纸：精选直链目录与维护
 
+> **范围说明。** 下文“当前行为”和远程目录刷新机制记录的是 Python v1.0.0 的实现与维护约定，现作为历史保留；旧源代码和命令见 [`python-v1.0.0`](https://github.com/GalokPeng/light-block-desktop/tree/python-v1.0.0)。不要把旧实现描述当作新版已验收能力。
+
+## v1.1.0 维护入口
+
+- 目录仍为 `assets/online-wallpapers.json`，只提交 URL、元数据和授权，不提交在线媒体原文件。
+- 当前后端为 `src/online.cpp`，页内预览与卡片为 `ui/online.hpp`。预览和下载核验来源文件摘要；**刷新按钮目前刷新封面，不获取远端新目录**。目录变化随软件发布。
+- 运行 `python tools/check_wallpaper_catalog.py` 做不联网的结构、类型、像素、体积、HTTPS 来源和摘要格式检查。当前工具不支持下文旧版的 `--verify-downloads` 参数。
+- 新增／更换作品仍需人工核对原文件、授权、作者、热度证据，并同步 `docs/wallpaper-sources.md`、`docs/wallpaper-evaluation.md`、README 双语友链和第三方声明。主线没有旧的 `build_wallpaper_catalog.py --credits-only` 命令。
+- 用 `./tools/test.ps1 -SkipBuild` 验证已构建程序的隔离夹具。真实来源访问、播放和取消需要单独抽查；夹具通过不能证明用户网络可达。当前保存路径及已知限制见[使用指南](usage.zh-CN.md#在线壁纸)。
+
+---
+
+## 以下为归档内容
+
 在线图库从 v0.9.0 起随软件提供。当前目录为静态 20 张、GIF 10 款、视频 20 段。
 
 ## 当前行为

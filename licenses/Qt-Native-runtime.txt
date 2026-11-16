@@ -1,0 +1,39 @@
+Qt runtime — Light Block Desktop
+================================
+
+The application dynamically links the unmodified Qt 6.8.3 Core, Gui, Widgets,
+Concurrent and Network libraries. Video compatibility workers additionally load
+Qt Multimedia, Multimedia Widgets and OpenGL. Qt Image Formats and the Windows,
+image-format, style and TLS plugins are included where required.
+
+Copyright The Qt Company Ltd. and other contributors. These Qt modules are used
+under the GNU Lesser General Public License version 3 and their applicable
+third-party licenses. The application's MIT license does not replace them.
+
+Qt Multimedia includes separate FFmpeg 7.1 shared libraries built without GPL
+components, under LGPL-2.1-or-later and their included notices. They are distinct
+from the GPL FFmpeg 8.1.3 recording command-line executable, which is launched
+in a separate process. See FFmpeg-Native-runtime.txt for that component.
+
+Qt DLLs and plugins remain separate and replaceable. Reverse engineering for
+debugging modifications to the LGPL libraries is permitted. Rebuild with
+build.ps1 or tools/build_ui.ps1 using compatible Qt 6.8.3 and MinGW GCC 13.1.0.
+The plain C interface to the application does not transfer C++/Qt ownership
+between compiler runtimes. No Qt source is modified.
+
+The matching GitHub release provides Qingkuai-Preview-v<VERSION>-qt-source.zip with
+Qt Base, Image Formats and Multimedia corresponding source archives; the FFmpeg
+7.1 source and its Qt-compatible build recipe are included. Exact source URLs,
+checksums and toolchain provenance are in licenses/qt/sdk-sources.json. Full
+license texts, third-party notices and SBOMs are in licenses/qt/,
+licenses/qtimageformats/ and licenses/qtmultimedia/ in the distribution.
+
+The replaceable libstdc++-6.dll, libgcc_s_seh-1.dll and libwinpthread-1.dll carry
+GCC Runtime Library Exception, MinGW-w64 and winpthreads notices under
+licenses/qt/mingw/. Compiler tools are build dependencies, not bundled apps.
+
+Official documentation:
+https://doc.qt.io/qt-6.8/licensing.html
+https://doc.qt.io/qt-6.8/qtmultimedia-index.html
+Release sources:
+https://github.com/GalokPeng/light-block-desktop/releases

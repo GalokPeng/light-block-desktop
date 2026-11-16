@@ -1,81 +1,100 @@
-# Light Block Desktop user guide
+# Light Block Desktop preview guide
 
-[简体中文](usage.zh-CN.md) · [README](../README.en.md)
+[简体中文](usage.zh-CN.md) · [Preview README](../README.en.md)
 
-## Install and get started
+> **Preview (Extensive optimization) / 测试版（极度优化）· Unstable.** This guide describes the independent `1.1.0-beta.1` preview. Stable Python 1.0.0, `main`, the production website and its update feed remain unchanged.
 
-Download Setup or the portable ZIP from [GitHub Releases](https://github.com/GalokPeng/light-block-desktop/releases/latest). Extract the complete ZIP before running the portable app. Both distributions require Windows 10 or 11 x64. The installer follows the Windows display language. The application uses Simplified Chinese for Chinese display languages and English otherwise.
+Light Block Desktop supports Windows 10 / 11 x64 and combines wallpapers, screen capture, recording, desktop organization, native taskbar styling and local tools. Settings, notes and downloaded wallpapers stay on your computer; online wallpapers and updates use network access when requested.
 
-Exit the previous version before upgrading. The app copies the legacy profile from `%LOCALAPPDATA%\StillWallpaper` into `data` beside the executable. A read-only app folder keeps using the legacy location. Open the current folder from **About**. If you move from portable to installed, toggle **Start with Windows** in the new copy to update its path. The sun or moon changes the app theme and the Windows frame. The language button beside it offers Follow system, Simplified Chinese, and English. Settings and the tray menu switch immediately. Reopen other tools to use the selected language.
+## Installation and everyday use
 
-When a release is available, click **Update now**. The button shows download progress; click again to cancel. After verifying the complete installer against the official SHA-256, the app exits normally and starts Setup. Installed copies update in the existing directory and restart with the same configuration. Portable and source copies open the installation wizard. Downloads start with GitHub for English and `gh-proxy.com` for Chinese, with `ghfast.top` and official-source fallback. Failed, stalled or persistently slow initial downloads switch sources. Closing Settings does not interrupt an active download.
+Choose a **Pre-release** on [GitHub Releases](https://github.com/GalokPeng/light-block-desktop/releases), or extract its complete portable ZIP and run `轻块桌面测试版.exe`. Keep its DLLs, plugins, assets and runtime folders together. Users do not need to install Python, Qt or FFmpeg separately.
 
-## Wallpaper
+Setup follows the Windows display language and supports Simplified Chinese, Traditional Chinese and English. At first launch, the app selects Simplified Chinese for Chinese systems and English otherwise. The language button switches Chinese and English; the sun/moon button switches the theme. Version information is shown in About.
 
-Import a local picture, GIF or video to save a full-quality copy in `data/wallpapers`. Select a fit mode and click **Apply to Desktop**. Static wallpaper is managed by Windows. GIF and video play from the copy using Qt's native video output in a supervised media process. Switching retires the old process before starting another, and commits the selection only after a valid frame. Online motion previews and video thumbnails also decode outside the settings thread. Video wallpaper starts muted each session. Enabling sound requires confirmation; changing the sound setting reloads the video. Use **Light Block Desktop Sound** in **Settings → Wallpaper and Performance** or the desktop context menu to switch it. Video covers are extracted from video frames and cached in `data/thumbnails`. Each session plays one live file on a selected display. Full-screen pause, battery pause, and restoring the wallpaper at startup are enabled by default. Locking Windows or turning off the display also pauses playback.
+Changes save and apply automatically; slider updates are briefly combined. Closing Settings leaves enabled desktop services and the tray running. Use the tray Quit command to exit completely. Start with Windows is available in Settings.
 
-Enable **Start with Windows** to start quietly after sign-in. With live wallpaper or other background tools enabled, closing Settings leaves the app in the tray. Choose **Quit Light Block Desktop** to stop it.
+The lower-left Preview information action opens preview documentation. It does not check or install stable updates. This branch ships independent prerelease assets and does not push them to stable users.
 
-Right-click an imported wallpaper and choose **Delete wallpaper**, or use the matching button in the inspector. This removes the library copy and keeps the original imported file. Deleting the active wallpaper first restores the original Windows wallpaper. Built-in samples cannot be deleted.
+## Upgrades and data
 
-For static wallpaper, the button shows **Switching wallpaper…** until Windows completes the change. Image preparation and system calls run in a separate bounded task, keeping Settings responsive. Retry after a failure or timeout. Closing Settings lets the task finish; quitting the app ends it.
+The preview has separate installation, executable and autorun identities. Its default profile is `data-preview` beside the test executable, falling back to `%LOCALAPPDATA%\LightBlockDesktopPreview` if needed. **About → Open settings and logs** opens the active folder.
+
+Startup does not read, migrate, delete or stop the stable app or its profile. Even an explicit `--data-dir` containing Python `settings.json` is rejected and requires an independent folder. Do not copy the preview manually over a stable installation.
+
+Future preview updates retain the preview's own data. The legacy migration module in source is retained for isolated fixtures and future compatibility research, not as a user upgrade path for this preview. Stable notes, clipboard history and undo journals are not automatically imported. Keep the stable profile and its real `organizer_files` intact.
+
+Organizer, taskbar and system cursors are global resources. Disable another version's corresponding styling before testing them; merely opening preview Settings should not acquire them. Developers should always use a fresh `--data-dir <folder>` for validation.
+
+
+## Wallpapers
+
+Importing a local image, GIF or video preserves a full-quality copy under the active profile's `media` folder. Select it to preview within the page; click Play for video. Choose a display and fit mode, then Apply to desktop. Preview and desktop playback are separate channels, so leaving a preview does not stop the desktop wallpaper. Applying a wallpaper stops its preview first to avoid duplicate decoding; Play preview starts it again when needed.
+
+Static wallpapers use the Windows wallpaper interface, with preparation and system calls outside the settings thread. GIF and video playback run in supervised child processes, and switching cleans up the previous player. Hardware decoding depends on the format, driver and installed Windows components; not every format is guaranteed to use it.
+
+Video sound is off by default. Change Wallpaper sound in Settings → Playback and system, Toggle audio, or the installed desktop context-menu entry. Enabling requires confirmation; the confirmed preference is saved for desktop playback without changing the independent preview channel. Full-screen pause, battery pause and restoration at startup are enabled by default. Stop, pause and original-wallpaper restoration are available in the inspector.
+
+Right-click an imported item to delete its library copy while keeping the file you originally imported. A file in use must first be released; failures show a message. Hiding a bundled sample only removes its library entry, not the packaged asset.
 
 ### Online wallpapers
 
-Choose Online wallpapers in the library: 20 images, 10 GIFs and 20 videos, with Static selected by default and no content categories. Search bilingual titles, original filenames or tags within the current type. Every source file is at least 1920 × 1080 and no larger than 20 MB. The maintainer approved retaining the ten GIFs from the local review build; native 1080p, 16:9, 20 MB and explicit licensing remain required, without a likes/favorites threshold. Select a card to see its author, license and available dated support votes, views or favorites. Popularity evidence opens the source statistics; GIF views sum reported dates only, with the period and available-day count in the tooltip. Unpublished metrics are not inferred. Start preview opens an image or muted animation inside the page; Stop preview returns to the cards. Downloads preserve the publisher-provided bytes. GIF, WMV, WebM and OGV files play without additional components.
+The online page has Images, GIF and Videos filters. The bundled selection contains 20 images, 10 GIFs and 20 videos, each originally at least 1920 × 1080 and no larger than 20 MB. Search bilingual titles and catalog tags, and inspect authorship, licensing, source links and publicly available popularity evidence. Each asset retains its own license conditions.
 
-Download original shows progress and supports cancellation. After verification, Apply to Desktop uses the downloaded original without recompression. Downloads continue when settings close; quitting cancels them. Deleting a local download makes it available again. A cached or bundled catalog remains visible when updates fail; uncached media still requires a connection to its source. [Source credits](wallpaper-sources.md)
+Select a card and Start preview to watch within the page; Stop preview returns to the grid. Covers are loaded on demand with bounded concurrency and caches. Motion preview first downloads and verifies the source, so it can depend on source-network availability. A regular download preserves original bytes and shows progress and downloaded status; verified preview data can be reused. Downloaded content can be imported or applied to the desktop.
 
-## Desktop organizer and notes
+**Refresh retrieves the official public URL catalog and reloads covers.** The manifest is limited to 2 MB and validated for schema, source, size, dimensions and digest fields. A failed refresh preserves the old catalog; a running download prevents replacement. Downloaded originals work offline; uncached media still need access to their source. Local network policies may block a source: the app reports the failure and does not bypass the block. See [asset credits](wallpaper-sources.md) and [selection evidence](wallpaper-evaluation.md).
 
-Enable **Desktop Organizer** to show folder groups and hide native desktop icons. Items are grouped by type. Use **Sync Categories** to add new shortcuts. Click a folder to expand it. Click outside it or open an item to return to the overview.
+## Appearance
 
-Click the organizer or group title to edit it. Enter or click away to save, and Esc to cancel. Empty titles are supported. Right-click to create a group, add shortcuts or manage a group. You can change icon size and opacity in Settings. Scrolling works inside the group grid. Disabling the organizer or quitting normally restores the previous Windows icon visibility.
+Desktop organizer, native taskbar and pointer options are separate collapsible sections and can be enabled independently.
 
-The panel starts centered. Right-click and choose **Move panel**, then drag it to a new position. The panel locks again when you release it. Choose **Center panel** to reset. Drag one folder tile onto another to change the order.
+- **Organizer:** bottom by default, with top/center alternatives; sort by name, modification time or group. Search items, rename/recolor groups, and adjust shelf/icon backgrounds, opacity and icon size. New desktop items remain visible initially and are collected after one minute by default; disable this or choose a group from their context menu. Disabling organization restores the original icon visibility state.
+- **Taskbar:** on supported Windows 11 builds, adjacent centered sections contain shortcuts/native search, apps and the system tray. Windows search and tray interactions remain available. Adjust corner radius, color and opacity. The bar hides when foreground windows occupy its area and returns at the screen edge. Explorer versions and other customization tools affect compatibility; unsupported layouts are not forcibly taken over.
+- **Pointer:** System, Stream, Outline and Pixel styles, with independent size and color. Dots, Fall and Contour glow have separate colors. Disabling stops the effects, and exiting restores the system cursor scheme.
 
-New files created or pasted onto the desktop appear as separate, draggable icons first. **Automatically Collect New Items** is on by default: after one minute they enter the organizer. Collection waits while hovering, dragging or using a menu. Turn it off under **Desktop Organizer → Organizer Settings** to collect manually from the context menu, including a destination group in grouped mode. Original files stay in place. Pending items start a fresh one-minute deadline after restart or re-enabling. A filesystem notification watcher discovers changes; one deadline timer handles collection without additional desktop polling.
+Settings also links to Windows Night light. This opens the system control rather than pretending to control its color-temperature state; the entry is unavailable on unsupported systems.
 
-The organizer page has collapsible **Organizer Settings**, **Taskbar Settings** and **Manage Groups** sections. Group colors tint both folder tiles and expanded panels. Compatible native Windows 11 taskbars support a background color picker and a 0–100% background opacity slider. At zero, custom backgrounds disappear while icons, text and tray remain fully visible. Windows 10 and incompatible layouts retain system colors and disable these controls. Disabling styling restores the native appearance.
+Enable tool shortcuts separately in Settings → Tool preferences; they are off by default in this preview. `Ctrl+Alt+Space` opens the launcher, `Ctrl+Alt+V` opens clipboard history, and `Ctrl+Alt+R` starts/stops recording. Capture has its own shortcut setting; an active recording retains its stop shortcut. Registration conflicts report an error and preserve the previous settings.
 
-The taskbar's left section contains Power, Taskbar settings, Task Manager, and native Windows Search in that order. The three command icons use equal compact dimensions and hover labels, with no large blank gutters. Application icon spacing stays native.
+## Capture and recording
 
-Right-click the desktop background and choose **Light Block Desktop · New Note** to add a pinned note. On Windows 11, select **Show more options** first. The organizer panel's context menu also offers **New Note** and a sound switch. You can also pin an existing note in **Notes & Tasks**. Drag a desktop note to move it and double-click to edit.
+`Ctrl+Alt+A` opens capture by default; customize it in Capture settings. Drag selection edges to resize. Right-click resets an existing selection; before a selection exists it exits capture.
 
-Drag a pinned note's title to move it, or drag any edge or corner to resize. Position and size persist. Scroll long content with the mouse wheel; scrollbars remain hidden. Right-click **Note Color…**, or use **Palette** in the editor, to choose a custom color. Double-click the title to edit.
+The compact toolbar exposes the current tool's parameters: rectangle/ellipse, fill, solid/dashed outlines, width, radius, arrows, lines, pen, highlighter, text, numbering and mosaic. Option fields are selection-only. Text is entered on the canvas, can be dragged and re-edited by double-clicking, with font, size and color in the subtoolbar. Wheel adjustments affect annotations, not the capture rectangle.
 
-## Mouse and system appearance
+Copy, save or pin the finished image at its original position. Use `Ctrl+wheel` to zoom a pin, right-click to edit with the same controls, and double-click to close it. Scroll capture samples the selected area and matches overlap, with an accumulated thumbnail beside it. Fixed headers, animation and large jumps can prevent a reliable match; undo or retry such a sample.
 
-**Appearance → Mouse and Cursors** offers three original silhouettes: Stream (soft and solid), Prism (open geometry) and Pixel (retro steps). They cover text, links, resizing, location/person selection and animated busy states, with a handwriting cursor where Windows supports it. Native cursor files include multiple DPI sizes. A small C++ helper waits for pipe commands while a theme is enabled; it restores the registered Windows cursor scheme on quit or parent pipe closure without registry changes. It avoids replacing a scheme taken over by another application. Source users first build `tools/build_pointer_host.ps1`; release packages include it.
+Record from a selected region. Its boundary stays visible while recording; stop through the toolbar or the recording-session `Ctrl+Alt+R` shortcut. The result first appears as a pinned preview for trimming, cropping, annotation and export. Drag timeline endpoints, or use `Tab`/`Shift+Tab` to select either endpoint and the playhead. Arrow keys move one frame and `Shift+arrow` moves ten frames.
 
-Cursor colors and size (75%–200%) are independent of particles. Native loading follows system DPI and scales the hotspots with each role. With the system scheme, color and size are saved for the next custom theme. Custom colors are generated in a background worker and cached, with at most eight generated combinations.
+Export MP4, GIF or lossless MKV at original/1080p/720p/480p resolution and the original or a fixed frame rate. Fast GIF mode reduces palette-analysis sampling, not the chosen output dimensions. Before recording, enable system audio, microphone, or both in the preparation bar. Both are off by default, and devices open only after Start. After Stop, audio is finalized in the background before preview. Missing permission, disconnection, or a default-device change produces an explicit error rather than silently claiming a successful audio recording. GIF has no audio. Media studio can preserve existing audio for supported export formats.
 
-Particle effects are off by default. Mix any cursor with independently colored Dots (up to 20 points / 0.42 s), Falling (inertia, drag and gravity, up to 64 fine specks / 1.25 s), or Glow (the actual native cursor’s outer edge / 1.05 s, with at most 16 cached silhouettes). All modes use at most 30 fps, settle when idle and stop the drawing timer. Disabling releases the window and mouse listener. Enabled themes or effects keep the app running when Settings close. Quit to restore the system scheme and stop effects.
+**Recording and export use the packaged FFmpeg runtime with fixed-hash verification; the app does not search PATH for an alternative.** If files are missing or fail verification, reinstall or extract the matching complete preview package. Developers should rebuild/stage the runtime. Do not follow old instructions to install arbitrary FFmpeg binaries.
 
-**Settings → Eye Comfort · Windows Night Light** opens the native Windows settings page. Windows controls its switch, warmth and schedule. The app does not simulate a system toggle using private registry data or a color overlay. Unsupported Windows versions, known incompatible drivers, remote sessions and disabled system policies gray out the entry. Windows Settings makes the final driver capability check.
+The preparation bar remembers audio choices for the next recording; no input is captured before Start. Listen/Mute in the recording preview affects playback only; exported audio remains intact. System audio and microphone capture use Windows WASAPI without a virtual audio driver. Combining audio copies the video stream without another video encode. Original resolution, higher frame rates and lossless recording still increase CPU, disk and memory use; hardware encoding is not guaranteed.
 
-## Screen capture
+An unresponsive audio driver times out the task while preserving recorded files. If the device remains occupied, exit the preview normally to release it. Abandoned audio cache is cleaned only on a later launch after the original process exits. Synthetic tests cover mixed audio and stalled-worker lifetimes; actual devices, privacy permissions and startup synchronization still require testing on the target PC.
 
-- **Select**. Press `Ctrl+Alt+A` by default, or set a different global shortcut under **Screen Capture**. Hover to detect a window or drag a region. Use Alt for the whole window. Drag a blue handle to resize, or use the move control to reposition. Right-click to clear the selection. Right-click again to exit.
-- **Annotate**. Select a tool to show its options below the icon row. Rectangles and ellipses support fill, solid and dashed outlines, and adjustable width. Rectangles also support rounded corners. Hold Shift for a square or circle. Mosaic has a rounded selection mode and a brush mode. Enter text directly on the canvas, then drag to move it or double-click to edit again. Scroll over a supported annotation to resize it.
-- **Save or pin**. Save PNG, copy to the clipboard, or pin the result above windows. Use Ctrl + scroll to zoom a pin. Right-click and choose **Edit pinned image** to annotate in place, then click **Finish editing**. Double-click outside edit mode to close the pin and copy its image.
-- **Scrolling capture**. Choose **Scrolling Capture** and scroll within the frame. The preview shows the stitched image. If overlap is lost, scroll back or set it manually. The image limit is 40 megapixels.
-- **Recording**. Choose **Start Recording**. The frame stays on screen. Use the stop control or `Ctrl+Alt+R` to finish. The preview starts with the quality and frame rate selected in **Screen Capture** settings. Both offer original resolution, 1080p, 720p, or 480p, and original frame rate or 12, 15, 24, 30, or 60 fps. The original frame rate setting captures at 24 fps. Save or copy MP4, GIF, or MKV. Recording is silent.
+## Tools
 
-The installer and portable package include FFmpeg for recording and media export. When running from source, put a compatible FFmpeg executable in `runtime` or on PATH. Wallpaper playback uses the bundled Qt runtime. The media editor can trim or crop clips and export to MP4, GIF or MKV.
+- **Notes:** create from Tools or the installed desktop context menu (Windows 11 may require Show more options). Notes live on the desktop layer. Drag their title to move, or their edges/corners to resize. Long content scrolls without a visible scrollbar. Colors, full-text search, completion, archiving and reminders are available.
+- **Clipboard history:** automatic capture is off by default. Enable it for local history, or explicitly use Record current content. Search, pin, copy and delete entries, with inline text/image previews. Automated fixtures use synthetic history and do not read the real clipboard.
+- **Quick launch:** searches desktop and Start menu entries and supports limited arithmetic; an item opens only when selected for execution.
+- **File workbench:** inline browsing, previews, digests and batch-rename plans. Inspect the plan before applying changes. Undo/recovery records generated by this version use the new format and do not execute legacy journals.
+- **Focus workspaces:** focus/rest timers, history and workspace switching. Preview history is independent; stable history and timers are not imported automatically.
 
-Drag the two recording timeline handles to trim. Click either handle, then use Left / Right to move one source frame, or Shift + Left / Right for ten frames. Times show milliseconds; at 24 fps one frame is approximately 41.667 ms. Click the track to seek and use Reset to restore the full recording. GIF export defaults to **Fast palette**; **Fine palette** suits rich gradients. Both retain the chosen resolution and frame rate, with different color analysis and dithering.
+## Troubleshooting and development
 
-## Productivity tools
+Open the active profile from About. The current log is `native.log`; preview records are separate from stable configuration. Review file paths before sharing logs. A missing old wallpaper or a blocked network source is separate from losing configuration data.
 
-| Tool | Use |
-| --- | --- |
-| Launcher | Search Start menu apps, organizer items and built-in tools. Type arithmetic to calculate and copy the result |
-| Clipboard history | Enable local text and image history, then search, pin, copy or clear it. History is off by default |
-| Notes & Tasks | Write and search notes, mark tasks done, archive, set reminders or pin notes to the desktop |
-| File Workbench | Preview images or text, inspect properties, calculate SHA-256 and preview batch renames with recovery and undo |
-| Focus Workspaces | Save wallpaper and existing group positions. Apply the workspace and run focus or break timers |
+There is no universal memory-use figure: resolution, frame rate, decoding backend and display count all matter. Old Python measurements do not describe the current runtime; measure a specific workload on the target machine.
 
-Appearance groups organizer, taskbar, mouse and group settings. New profiles start with the organizer at the bottom; existing alignment choices are preserved. The taskbar radius stays visible and can be configured before styling is enabled. It updates all three native backgrounds, including with auto-hide enabled. Custom note colors show a short label and swatch; hover for the full hex value.
+The preview runtime is C++23, Qt Widgets and Win32. Python is used only by development/build tools. Use an isolated development profile:
 
-In **Appearance → Organizer Settings**, choose **Icon background color** and **Organizer background color** independently. They apply to top, center and bottom layouts, including icons inside groups. Group folders retain their own colors. Light panels adjust titles, captions, Back and Search for contrast. **Reset organizer colors** clears just these two choices; groups, opacity and layout stay unchanged. Recoloring repaints without reloading icons or rebuilding the layout.
+```powershell
+./build.ps1
+& ".\dist\LightBlockDesktopPreview\轻块桌面测试版.exe" --data-dir "$PWD\.local\dev-profile"
+./tools/test.ps1 -SkipBuild
+```
+
+The complete previous implementation remains on [`python-v1.0.0`](https://github.com/GalokPeng/light-block-desktop/tree/python-v1.0.0) and [`v1.0.0`](https://github.com/GalokPeng/light-block-desktop/tree/v1.0.0). See [contributing](../CONTRIBUTING.en.md) and [releases](release.en.md). Application source is MIT; packaged dependencies and wallpapers retain their [own licenses](../THIRD_PARTY_NOTICES.md).

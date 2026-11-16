@@ -3,8 +3,10 @@
 /build/
 /dist/
 /release/
+/preview-release/
 /runtime/
 /data/
+/data-preview/
 /settings.json
 /collections.json
 /collections.backup.json

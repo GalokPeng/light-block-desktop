@@ -1,28 +1,24 @@
-name: Windows release
-
+name: C++ preview prerelease
 on:
   push:
-    branches: [main]
+    branches: [cpp-preview]
+    tags: ['preview-v*']
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish this version if the repository release switch is enabled
+        description: Publish this unstable preview as a prerelease (never the stable latest release)
         type: boolean
         default: false
-
 permissions:
   contents: read
-
 concurrency:
-  group: windows-release-${{ github.repository }}
+  group: cpp-preview-release-${{ github.repository }}
   cancel-in-progress: false
-
 env:
   PYTHONUTF8: '1'
-
 jobs:
   plan:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.PUBLISH_RELEASES == 'true')
+    if: github.ref == 'refs/heads/cpp-preview' || startsWith(github.ref, 'refs/tags/preview-v')
     runs-on: windows-2022
     outputs:
       version: ${{ steps.plan.outputs.version }}
@@ -33,62 +29,86 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ github.sha }}
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11.9'
-          architecture: x64
       - id: plan
         shell: pwsh
         env:
-          ALLOW_RELEASE: ${{ vars.PUBLISH_RELEASES }}
-          REQUEST_PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+          REQUEST_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish }}
         run: |
           $version = python tools/release.py version
           if ($LASTEXITCODE -ne 0) { throw 'Invalid app version.' }
           $eligible = python tools/release.py plan
           if ($LASTEXITCODE -ne 0) { throw 'Invalid version progression.' }
-          $publish = $eligible -eq 'true' -and $env:ALLOW_RELEASE -eq 'true' -and $env:REQUEST_PUBLISH -eq 'true'
-          $build = $publish -or $env:GITHUB_EVENT_NAME -eq 'workflow_dispatch'
+          $expectedTag = python tools/release.py tag
+          if ($LASTEXITCODE -ne 0) { throw 'Invalid preview tag.' }
+          if ($env:GITHUB_REF.StartsWith('refs/tags/') -and $env:GITHUB_REF_NAME -ne $expectedTag) { throw 'Tag and preview version disagree.' }
+          $publish = $eligible -eq 'true' -and $env:REQUEST_PUBLISH -eq 'true'
+          $build = $true
           "version=$version" >> $env:GITHUB_OUTPUT
           "build=$($build.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           "publish=$($publish.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
-
   package:
     needs: plan
     if: needs.plan.outputs.build == 'true'
     runs-on: windows-2022
-    timeout-minutes: 45
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11.9'
           architecture: x64
-          cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-build.txt
-      - run: python -m pip install -r requirements.txt -r requirements-build.txt
-      - run: python tools/run_tests.py
-      - run: node --test tests/test_website_downloads.mjs tests/test_website_theme.mjs
-      - shell: pwsh
-        run: ./tools/release.ps1 -PythonPath (Get-Command python).Source -SkipInstall
-      - run: python tools/test_setup.py
-      - shell: pwsh
+      - name: Build C++ and pinned dependencies from clean checkout
+        shell: pwsh
+        run: |
+          python tools/test_release_protocol.py
+          if ($LASTEXITCODE -ne 0) { throw 'Preview release isolation contract failed.' }
+          ./build.ps1
+      - name: Native, media and Qt regression gate
+        shell: pwsh
+        run: ./tools/test.ps1 -SkipBuild
+      - run: node --test tests/test_website_downloads.mjs tests/test_website_theme.mjs tests/test_preview_download.mjs
+      - name: Verify curated wallpaper metadata
+        run: python tools/check_wallpaper_catalog.py
+      - name: Build isolated preview Setup and corresponding source assets
+        shell: pwsh
+        run: ./tools/release.ps1 -SkipBuild -SkipTests
+      - name: Isolated localized install, upgrade and uninstall
+        shell: pwsh
         run: |
           $compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue
-          $isccPath = if ($compiler) { $compiler.Source } else { "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe" }
-          python tools/test_update_flow.py --iscc $isccPath
-          if ($LASTEXITCODE -ne 0) { throw 'In-app update verification failed.' }
+          $iscc = if ($compiler) { $compiler.Source } else { "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe" }
+          python tools/test_setup.py --iscc $iscc
+          if ($LASTEXITCODE -ne 0) { throw 'Setup regression failed.' }
+          python tools/test_update_flow.py --iscc $iscc
+          if ($LASTEXITCODE -ne 0) { throw 'In-app update regression failed.' }
+          python tools/release.py verify
+          if ($LASTEXITCODE -ne 0) { throw 'Release checksum verification failed.' }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: windows-${{ needs.plan.outputs.version }}
-          path: release/*
+          name: cpp-preview-${{ needs.plan.outputs.version }}
+          path: preview-release/*
           if-no-files-found: error
           compression-level: 0
-
+      - name: Preserve build and installation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: preview-release-test-evidence
+          path: |
+            .local/test-*/
+            build/setup-checks.json
+            build/update-flow-qa/
+            build/package-smoke-evidence/
+            build/recording-runtime/configure.log
+          if-no-files-found: warn
+          retention-days: 14
   publish:
     needs: [plan, package]
     if: needs.plan.outputs.publish == 'true'
@@ -100,44 +120,35 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11.9'
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: windows-${{ needs.plan.outputs.version }}
-          path: release
+          name: cpp-preview-${{ needs.plan.outputs.version }}
+          path: preview-release
       - shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           APP_VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          $tag = "v$env:APP_VERSION"
-          $base = "Qingkuai-$tag"
-          $setupName = "$base-Setup-x64.exe"
-          $names = @($setupName, "$base-Windows-x64.zip", "$base-source.zip", "$base-ffmpeg-source.zip")
-          $sumFile = Join-Path release "$base-SHA256SUMS.txt"
-          $expected = @{}
-          foreach ($line in Get-Content -LiteralPath $sumFile) {
-            $hash, $name = $line -split '  ', 2
-            $expected[$name] = $hash
-          }
-          $assets = foreach ($name in $names) {
-            $asset = Join-Path release $name
-            if ((Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash -ine $expected[$name]) {
-              throw "Checksum mismatch for $name"
-            }
-            $asset
-          }
-          $downloadName = 'Qingkuai-Setup-x64.exe'
-          $downloadSetup = Join-Path release $downloadName
-          Copy-Item -LiteralPath (Join-Path release $setupName) -Destination $downloadSetup -ErrorAction Stop
-          if ((Get-FileHash -LiteralPath $downloadSetup -Algorithm SHA256).Hash -ine $expected[$setupName]) {
-            throw "Checksum mismatch for $downloadName"
-          }
-          Add-Content -LiteralPath $sumFile -Value "$($expected[$setupName])  $downloadName" -Encoding ascii -ErrorAction Stop
+          python tools/release.py verify
+          if ($LASTEXITCODE -ne 0) { throw 'Published artifact validation failed.' }
+          $tag = "preview-v$env:APP_VERSION"
+          $sumFile = Join-Path preview-release "Qingkuai-Preview-v$env:APP_VERSION-SHA256SUMS.txt"
+          $assets = foreach ($line in Get-Content -LiteralPath $sumFile) { $hash, $name = $line -split '  ',2; Join-Path preview-release $name }
           $changes = Get-Content -LiteralPath CHANGES.md -Raw
           $pattern = '(?ms)^# v' + [regex]::Escape($env:APP_VERSION) + '\b.*?(?=^# v|\z)'
-          $notes = [regex]::Match($changes, $pattern)
-          if (-not $notes.Success) { throw 'Missing release notes for this version.' }
-          $notesFile = Join-Path release 'RELEASE_NOTES.md'
-          [IO.File]::WriteAllText($notesFile, $notes.Value.Trim() + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
-          gh release create $tag @assets $downloadSetup $sumFile --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "轻块桌面 $tag" --notes-file $notesFile --latest
-          if ($LASTEXITCODE -ne 0) { throw "Release publication failed. Check whether $tag has a partial draft." }
+          $notes = [regex]::Match($changes,$pattern)
+          if (-not $notes.Success) { throw 'Missing release notes.' }
+          $notesFile = Join-Path preview-release 'RELEASE_NOTES.md'
+          [IO.File]::WriteAllText($notesFile,$notes.Value.Trim()+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))
+          $stableBefore = gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" --jq '.tag_name'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the existing stable release.' }
+          gh release create $tag @assets $sumFile --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "轻块桌面测试版（极度优化） v$env:APP_VERSION · 不稳定" --notes-file $notesFile --prerelease --latest=false
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed; inspect existing draft/tag before retry.' }
+          $preview = gh release view $tag --repo $env:GITHUB_REPOSITORY --json isPrerelease --jq '.isPrerelease'
+          if ($LASTEXITCODE -ne 0 -or $preview -ne 'true') { throw 'Published release is not marked as a prerelease.' }
+          $stableAfter = gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" --jq '.tag_name'
+          if ($LASTEXITCODE -ne 0 -or $stableAfter -ne $stableBefore) { throw 'Stable release identity changed; investigate before distributing links.' }

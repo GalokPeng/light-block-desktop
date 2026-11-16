@@ -1,6 +1,7 @@
 """Build the pinned Windows FFmpeg CLI and its corresponding source archive."""
 from hashlib import file_digest, sha256
 import os
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -46,6 +47,8 @@ def digest(path):
 
 
 def fetch_file(url, target):
+    if os.environ.get("QINGKUAI_BUILD_OFFLINE") == "1":
+        raise FileNotFoundError(f"Offline build is missing {target.name}")
     subprocess.run(("curl.exe", "-fsSL", "--retry", "2", "--connect-timeout", "15",
                     "--max-time", "240", url, "-o", str(target)), check=True)
 
@@ -111,8 +114,12 @@ def build():
     output = CACHE / fingerprint
     executable = output / "ffmpeg.exe"
     source_zip = output / "ffmpeg-source.zip"
-    if executable.is_file() and source_zip.is_file():
-        return executable
+    manifest = output / "build-manifest.json"
+    if executable.is_file() and source_zip.is_file() and manifest.is_file():
+        recorded = json.loads(manifest.read_text(encoding="utf-8"))
+        if recorded.get("recipe") == fingerprint and recorded.get("binary_sha256") == digest(executable) and recorded.get("source_sha256") == digest(source_zip):
+            return executable
+        raise ValueError("Cached recording build no longer matches its manifest")
 
     sources = [download(asset) for asset in SOURCES]
     devkit, nasm = download(DEVKIT), download(NASM)
@@ -161,6 +168,9 @@ def build():
         output.mkdir(exist_ok=True)
         (work / executable.name).replace(executable)
         (work / source_zip.name).replace(source_zip)
+        manifest.write_text(json.dumps(dict(schema=1, recipe=fingerprint,
+            binary_sha256=digest(executable), source_sha256=digest(source_zip),
+            sources=[dict(name=name, url=base+name, sha256=expected) for name,base,expected in SOURCES]), indent=2), encoding="utf-8")
     return executable
 
 

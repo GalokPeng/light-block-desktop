@@ -1,5 +1,6 @@
-* text=auto
-*.bat text eol=crlf
-*.sh text eol=lf
-*.iss text eol=crlf
-licenses/** whitespace=-blank-at-eol,-blank-at-eof
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.jpg -text
+*.gif -text
+*.mp4 -text
+*.ico -text

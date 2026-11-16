@@ -151,3 +151,14 @@ a:focus-visible, button:focus-visible, select:focus-visible { outline: 2px solid
 @media (max-width:440px) { .nav nav > a[href*="github.com"] { display: none; } .nav .lang { padding: 3px 6px; font-size: .8rem; } }
 @media (max-width:360px) { .wallpaper-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion:reduce) { .theme-control, .button, .wallpaper-card img { transition: none; } .wallpaper-card a:hover img { transform: none; } }
+
+/* Separate experimental channel; stable download widgets remain unchanged. */
+.preview-entry { display:flex; flex-wrap:wrap; gap:6px 12px; font-size:.84rem; margin-top:18px; }
+.preview-entry a { color:var(--accent); text-decoration:underline; text-underline-offset:3px; }
+.preview-entry span { color:var(--muted); }
+.preview-page { max-width:940px; padding-block:64px 76px; }
+.preview-page h1 { font-size:clamp(2rem,4vw,3.5rem); }
+.preview-lead { margin-top:20px; font-size:1.25rem; }
+.preview-warning { margin:26px 0; padding:20px 24px; border:1px solid var(--line); border-left:4px solid #c78b38; border-radius:14px; background:var(--panel); line-height:1.8; }
+.preview-notes { padding-left:1.4em; }
+.preview-notes li { margin-block:12px; line-height:1.8; }

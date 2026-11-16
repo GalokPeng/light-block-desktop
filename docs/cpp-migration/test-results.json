@@ -1,0 +1,410 @@
+{
+  "created_at": "2026-11-13T13:59:09.0453286Z",
+  "executable_sha256": "310f00d7dcd3b9a2e6f1b65a7c11fc59c6c02d1352e3438616011f3a9a05adf1",
+  "executable_bytes": 2204672,
+  "native_unit": {
+    "passed": 68,
+    "failed": 0,
+    "checks": [
+      {
+        "name": "unicode-path",
+        "passed": true
+      },
+      {
+        "name": "path-overflow-rejected",
+        "passed": true
+      },
+      {
+        "name": "windows-argument-roundtrip",
+        "passed": true
+      },
+      {
+        "name": "windows-argument-roundtrip",
+        "passed": true
+      },
+      {
+        "name": "windows-argument-roundtrip",
+        "passed": true
+      },
+      {
+        "name": "windows-argument-roundtrip",
+        "passed": true
+      },
+      {
+        "name": "windows-argument-roundtrip",
+        "passed": true
+      },
+      {
+        "name": "argument-overflow-rejected",
+        "passed": true
+      },
+      {
+        "name": "aspect-fit",
+        "passed": true
+      },
+      {
+        "name": "media-filter",
+        "passed": true
+      },
+      {
+        "name": "json-unicode-surrogate-pair",
+        "passed": true
+      },
+      {
+        "name": "json-integer",
+        "passed": true
+      },
+      {
+        "name": "json-invalid-rejected",
+        "passed": true
+      },
+      {
+        "name": "json-invalid-rejected",
+        "passed": true
+      },
+      {
+        "name": "json-invalid-rejected",
+        "passed": true
+      },
+      {
+        "name": "json-invalid-rejected",
+        "passed": true
+      },
+      {
+        "name": "json-invalid-rejected",
+        "passed": true
+      },
+      {
+        "name": "json-invalid-rejected",
+        "passed": true
+      },
+      {
+        "name": "download-filename-boundary",
+        "passed": true
+      },
+      {
+        "name": "https-url-boundary",
+        "passed": true
+      },
+      {
+        "name": "licensed-catalog-50-entries",
+        "passed": true
+      },
+      {
+        "name": "organizer-model-group-sort-auto-collect",
+        "passed": true
+      },
+      {
+        "name": "organizer-retiring-lease-keeps-new-intent",
+        "passed": true
+      },
+      {
+        "name": "group-settings-empty-name-color-roundtrip-remove-preserves-files",
+        "passed": true
+      },
+      {
+        "name": "taskbar-reenable-waits-for-restoration",
+        "passed": true
+      },
+      {
+        "name": "pointer-retiring-result-keeps-new-intent",
+        "passed": true
+      },
+      {
+        "name": "annotation-render-hit-move-undo",
+        "passed": true
+      },
+      {
+        "name": "capture-empty-text-style-keeps-editor-caret-and-number-counter",
+        "passed": true
+      },
+      {
+        "name": "timeline-frame-accurate-bounded-trim",
+        "passed": true
+      },
+      {
+        "name": "scroll-match-sticky-header-bidirectional-deduplicate",
+        "passed": true
+      },
+      {
+        "name": "three-cursor-styles-tint-all-roles-animated-load",
+        "passed": true
+      },
+      {
+        "name": "system-sqlite-unicode-binary-bind-rollback",
+        "passed": true
+      },
+      {
+        "name": "clipboard-store-deduplicate-pin-retention",
+        "passed": true
+      },
+      {
+        "name": "safe-calculator-precedence-floor-power-input-boundary",
+        "passed": true
+      },
+      {
+        "name": "file-rename-preview-cycle-undo-crash-recovery-collision",
+        "passed": true
+      },
+      {
+        "name": "file-view-destroy-reopen-drops-stale-worker-results",
+        "passed": true
+      },
+      {
+        "name": "file-service-preview-rename-cancel-stale-results-and-source-preservation",
+        "passed": true
+      },
+      {
+        "name": "focus-timer-work-break-deadlines",
+        "passed": true
+      },
+      {
+        "name": "focus-history-workspace-preview-persistence-without-desktop-activation",
+        "passed": true
+      },
+      {
+        "name": "particle-bounds-gravity-decay-idle-expiry",
+        "passed": true
+      },
+      {
+        "name": "432-python-1.0.0-particle-reference-frames",
+        "passed": true
+      },
+      {
+        "name": "single-setting-commit-retains-unrelated-state-and-rolls-back-save-failure",
+        "passed": true
+      },
+      {
+        "name": "bundled-video-trim-and-two-gif-export-modes",
+        "passed": true
+      },
+      {
+        "name": "wic-original-decode",
+        "passed": true
+      },
+      {
+        "name": "original-resolution-preserved",
+        "passed": true
+      },
+      {
+        "name": "wic-original-decode",
+        "passed": true
+      },
+      {
+        "name": "original-resolution-preserved",
+        "passed": true
+      },
+      {
+        "name": "wic-original-decode",
+        "passed": true
+      },
+      {
+        "name": "original-resolution-preserved",
+        "passed": true
+      },
+      {
+        "name": "wic-original-decode",
+        "passed": true
+      },
+      {
+        "name": "original-resolution-preserved",
+        "passed": true
+      },
+      {
+        "name": "wic-original-decode",
+        "passed": true
+      },
+      {
+        "name": "gif-frames-advance",
+        "passed": true
+      },
+      {
+        "name": "gif-frame-timing",
+        "passed": true
+      },
+      {
+        "name": "corrupt-image-rejected",
+        "passed": true
+      },
+      {
+        "name": "gif-fixture-decode",
+        "passed": true
+      },
+      {
+        "name": "gif-first-frame",
+        "passed": true
+      },
+      {
+        "name": "gif-transparent-composition",
+        "passed": true
+      },
+      {
+        "name": "gif-disposal-restore-previous",
+        "passed": true
+      },
+      {
+        "name": "gif-disposal-restore-background",
+        "passed": true
+      },
+      {
+        "name": "gif-loop-reset",
+        "passed": true
+      },
+      {
+        "name": "thumbnail-bounded",
+        "passed": true
+      },
+      {
+        "name": "png-roundtrip",
+        "passed": true
+      },
+      {
+        "name": "atomic-utf8-write",
+        "passed": true
+      },
+      {
+        "name": "sha256-known-vector",
+        "passed": true
+      },
+      {
+        "name": "catalog-sha1-known-vector",
+        "passed": true
+      },
+      {
+        "name": "unicode-settings-roundtrip",
+        "passed": true
+      },
+      {
+        "name": "settings-range-validation",
+        "passed": true
+      }
+    ]
+  },
+  "actual_playback": [
+    {
+      "file": "night-drive.jpg",
+      "result": {
+        "ready": true,
+        "kind": 0,
+        "error": 0,
+        "image_frames": 1,
+        "image_changes": 1,
+        "video_frames": 0,
+        "video_dropped": 0,
+        "working_set": 28090368,
+        "private_bytes": 12566528,
+        "elapsed_ms": 4234
+      }
+    },
+    {
+      "file": "startrail.gif",
+      "result": {
+        "ready": true,
+        "kind": 1,
+        "error": 0,
+        "image_frames": 90,
+        "image_changes": 90,
+        "video_frames": 0,
+        "video_dropped": 0,
+        "working_set": 19955712,
+        "private_bytes": 5586944,
+        "elapsed_ms": 4250
+      }
+    },
+    {
+      "file": "motion.mp4",
+      "result": {
+        "ready": true,
+        "kind": 2,
+        "error": 0,
+        "image_frames": 0,
+        "image_changes": 0,
+        "video_frames": 83,
+        "video_dropped": 2,
+        "working_set": 119250944,
+        "private_bytes": 94867456,
+        "elapsed_ms": 4297
+      }
+    }
+  ],
+  "switching": {
+    "confirmed_switches": 12,
+    "failures": 0,
+    "max_children": 2,
+    "remaining_children": 0,
+    "independent_channels": true,
+    "thumbnails_rendered": 6,
+    "max_heartbeat_gap_ms": 172,
+    "max_first_frame_ms": 875,
+    "wallpaper_unchanged": true,
+    "working_set": 21323776,
+    "private_bytes": 6344704,
+    "elapsed_ms": 10438
+  },
+  "parent_exit_child_cleanup": true,
+  "cpp_ui": {
+    "capture_ui": true,
+    "clipboard_previews": true,
+    "file_previews": true,
+    "focus_ui": true,
+    "height": 850,
+    "hidden_local_selection_does_not_stop_other_preview": true,
+    "hidden_preview_restores_play_action": true,
+    "immediate_setting_signal": true,
+    "launcher_ui": true,
+    "no_save_apply_button": true,
+    "note_ui": true,
+    "online_empty_selection_disabled": true,
+    "online_previews": true,
+    "passed": true,
+    "pointer_previews": true,
+    "python_runtime": false,
+    "recording_ui": true,
+    "scroll_frames": 16,
+    "shortcut_roundtrip": true,
+    "width": 1250
+  },
+  "desktop_note_ui": {
+    "eight_resize_edges": true,
+    "failed_metadata_save_retains_note": true,
+    "hidden_scrollbar_long_content": true,
+    "manager_archive_restore": true,
+    "manager_completed_toggle": true,
+    "manager_editor_atomic_save": true,
+    "manager_fixture_does_not_create_desktop_windows": true,
+    "manager_fulltext_search": true,
+    "manager_live_theme_updates": true,
+    "manager_original_filter_semantics": true,
+    "manager_pin_unpin_without_desktop_side_effects": true,
+    "manager_preset_and_custom_colors": true,
+    "manager_reminder_immediate_save": true,
+    "manager_rendered": true,
+    "oversized_existing_file_not_truncated": true,
+    "passed": true,
+    "rendered": true,
+    "resize_persistence": true,
+    "shared_document": true,
+    "unicode_body_roundtrip": true,
+    "utf8_byte_limit_keeps_prior_file": true
+  },
+  "ui_dll": "LightBlockUi-37a2b5d8e728.dll",
+  "original_jpeg_hashes": [
+    {
+      "file": "night-drive.jpg",
+      "sha256": "e4c92cddb84870768107b3a456f4e86b4356706103161ac41c10627b8faaae31"
+    },
+    {
+      "file": "milky-way.jpg",
+      "sha256": "8d728e05f3e4ffcd226c13dc6bd98e9b78b4d5ee20f266cd0d5e0b981c4f02dc"
+    },
+    {
+      "file": "mountain-bay.jpg",
+      "sha256": "a14ded031019b7ba1ecde862a4582449b6bdabbd4c937de0a8b28e36861d2e21"
+    },
+    {
+      "file": "rain-coast.jpg",
+      "sha256": "706b1d0d40e577365dc43d263c155fa5547d25342bbbaa270099095c809cbf3f"
+    }
+  ],
+  "scope": "Local-only; no install, no real desktop takeover, no original profile access."
+}

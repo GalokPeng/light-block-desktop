@@ -1,0 +1,22 @@
+{
+    "capture_ui": true,
+    "clipboard_previews": true,
+    "file_previews": true,
+    "focus_ui": true,
+    "height": 850,
+    "hidden_local_selection_does_not_stop_other_preview": true,
+    "hidden_preview_restores_play_action": true,
+    "immediate_setting_signal": true,
+    "launcher_ui": true,
+    "no_save_apply_button": true,
+    "note_ui": true,
+    "online_empty_selection_disabled": true,
+    "online_previews": true,
+    "passed": true,
+    "pointer_previews": true,
+    "python_runtime": false,
+    "recording_ui": true,
+    "scroll_frames": 16,
+    "shortcut_roundtrip": true,
+    "width": 1250
+}

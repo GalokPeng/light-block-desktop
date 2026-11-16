@@ -1,5 +1,7 @@
 # 壁纸播放与切换：排查记录和技术方向
 
+> **历史记录 · Python v0.9.3～v1.0.0。** 下文保留当时的故障、复现命令与技术取舍；涉及的 Python 文件和测试命令不属于当前主线。请在 [`python-v1.0.0` 归档](https://github.com/GalokPeng/light-block-desktop/tree/python-v1.0.0)中查阅旧实现，不在当前工作区执行旧命令。当前实现见[架构说明](cpp-migration/architecture.md)，当前构建和验证入口见[发布手册](release.md)。旧测试通过不代表 v1.1.0 已完成发行验收。
+
 本轮修复与验证纳入 v0.9.3。下文记录开发期的复现结果、技术取舍和后续方向。
 
 ## 已复现的问题

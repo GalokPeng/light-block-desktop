@@ -1,0 +1,31 @@
+FFmpeg 8.1.3 independent command-line runtime (Windows x64)
+
+This executable is distributed separately from the MIT-licensed C++ application.
+It includes FFmpeg, libx264 and zlib; GPL version 3 applies to this runtime.
+It is not linked into the application and does not need to be installed or added to PATH.
+The exact corresponding upstream source archives and build recipe are distributed
+with the matching release in the corresponding-source ZIP, including the small Windows make response-file patch.
+License texts for x264, zlib and FFmpeg are present in the source archives.
+
+The exact executable and corresponding-source SHA-256 digests are recorded in
+runtime/recording/build-manifest.json. The matching release supplies
+Qingkuai-Preview-v<VERSION>-ffmpeg-source.zip alongside the installer and portable ZIP.
+
+FFmpeg source: https://www.ffmpeg.org/releases/ffmpeg-8.1.3.tar.xz
+x264 revision: b35605ace3ddf7c1a5d67a2eb553f034aef41d55
+zlib version: 1.3.2
+
+Configuration:
+--arch=x86_64 --target-os=mingw32 --enable-cross-compile
+--enable-static --disable-shared --disable-autodetect --disable-network
+--disable-debug --disable-doc --disable-ffplay --disable-ffprobe --disable-pthreads
+--disable-indevs --enable-indev=gdigrab,lavfi --disable-outdevs
+--disable-encoders --enable-encoder=libx264,ffv1,gif,png,aac,flac,pcm_s16le,rawvideo,wrapped_avframe
+--disable-muxers --enable-muxer=mp4,matroska,gif,image2,image2pipe,null,rawvideo,h264,pcm_s16le
+--disable-filters
+--enable-filter=abuffer,abuffersink,aformat,amix,anull,apad,aresample,asetpts,buffer,buffersink,color,crop,format,fps,hflip,null,overlay,pad,palettegen,paletteuse,rotate,scale,testsrc2,transpose,vflip
+--enable-gpl --enable-version3 --enable-libx264 --enable-zlib
+--pkg-config-flags=--static
+
+Only this pinned bundled executable is invoked by Light Block Desktop.
+No system PATH lookup or runtime download is performed.

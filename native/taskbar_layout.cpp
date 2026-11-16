@@ -1,4 +1,4 @@
-// Windows 11 Explorer taskbar layout for Light Block Desktop.
+// Windows 11 Explorer taskbar layout for Light Block Desktop Native. Original layout adapted from the MIT v1.0.0 source.
 #include <windows.h>
 #include <shellapi.h>
 #include <ocidl.h>
@@ -32,18 +32,18 @@ using Windows::UI::Core::CoreDispatcher;
 using Windows::UI::Core::CoreDispatcherPriority;
 
 namespace {
-constexpr CLSID layoutId{0x1024237c, 0xb66a, 0x4f25, {0xba,0x99,0xfb,0x65,0xe9,0x4e,0x76,0x03}};
+constexpr CLSID layoutId{0x8a34b1e2, 0xc95d, 0x49e6, {0x91,0xe7,0x0f,0x38,0x21,0xbe,0xb5,0x6d}};
 constexpr double sectionGap = 5;
 constexpr double commandSize = 28;
 constexpr double commandGap = 2;
 constexpr double commandInset = 3;
 constexpr double commandContentWidth = 3*commandSize+2*commandGap;
 constexpr double commandSlotWidth = commandContentWidth+2*commandInset;
-#ifndef QINGKUAI_LAYOUT_BUILD
-#define QINGKUAI_LAYOUT_BUILD 0ULL
+#ifndef LB_NATIVE_LAYOUT_BUILD
+#define LB_NATIVE_LAYOUT_BUILD 0ULL
 #endif
 std::wstring component_channel() {
-    return L"Local\\Qingkuai.TaskbarLayout.v3." + std::to_wstring(QINGKUAI_LAYOUT_BUILD) + L".";
+    return L"Local\\LightBlockNative.TaskbarLayout.v1." + std::to_wstring(LB_NATIVE_LAYOUT_BUILD) + L".";
 }
 
 // Geometry, counters and appearance only. No application names, paths or icons.
@@ -443,9 +443,9 @@ struct Layout {
         trayBack.Margin({0,3,0,3});
         add(host, trayBack, true);
 
-        power=command_button(L"QingkuaiPowerButton",chinese()?L"电源":L"Power",command_glyph(L"\uE7E8"));
-        settingsButton=command_button(L"QingkuaiTaskbarSettingsButton",chinese()?L"任务栏设置":L"Taskbar settings",command_glyph(L"\uE713"));
-        taskManagerButton=command_button(L"QingkuaiTaskManagerButton",chinese()?L"任务管理器":L"Task Manager",task_manager_icon());
+        power=command_button(L"LightBlockNativePowerButton",chinese()?L"电源":L"Power",command_glyph(L"\uE7E8"));
+        settingsButton=command_button(L"LightBlockNativeTaskbarSettingsButton",chinese()?L"任务栏设置":L"Taskbar settings",command_glyph(L"\uE713"));
+        taskManagerButton=command_button(L"LightBlockNativeTaskManagerButton",chinese()?L"任务管理器":L"Task Manager",task_manager_icon());
         settingsButton.Click([action=launchTool](auto const&,auto const&) { action(0); });
         taskManagerButton.Click([action=launchTool](auto const&,auto const&) { action(1); });
         power.Click([](Windows::Foundation::IInspectable const& sender, RoutedEventArgs const&) {
@@ -752,9 +752,19 @@ struct Watcher : implements<Watcher,IVisualTreeServiceCallback2> {
             SetEvent(self->resident.value);
             // Keep a single diagnostics subscription per Explorer lifetime.
             // Toggling only changes our own XAML properties on its UI thread.
-            HANDLE commands[]{self->stop.value,self->start.value};
+            Handle owner;
+            DWORD ownerId{};
             for (;;) {
-                DWORD command = WaitForMultipleObjects(2,commands,FALSE,self->active ? 2000 : INFINITE);
+                DWORD wanted = self->active && self->status ? static_cast<DWORD>(self->status->appearanceReserved) : 0;
+                if (wanted!=ownerId) {
+                    if (owner.value) CloseHandle(owner.value);
+                    owner.value = wanted ? OpenProcess(SYNCHRONIZE,FALSE,wanted) : nullptr;
+                    ownerId = wanted;
+                }
+                HANDLE commands[]{self->stop.value,self->start.value,owner.value};
+                DWORD count=owner.value ? 3 : 2;
+                DWORD command = wanted && !owner.value ? WAIT_OBJECT_0 : WaitForMultipleObjects(count,commands,FALSE,self->active ? 2000 : INFINITE);
+                if (command==WAIT_OBJECT_0+2) command=WAIT_OBJECT_0;
                 bool tick=command==WAIT_TIMEOUT;
                 if (!tick && command != WAIT_OBJECT_0 && command != WAIT_OBJECT_0+1) break;
                 if (!tick) self->active = command == WAIT_OBJECT_0+1;
@@ -829,4 +839,4 @@ extern "C" __declspec(dllexport) HRESULT WINAPI DllGetClassObject(REFCLSID id, R
 }
 
 extern "C" __declspec(dllexport) HRESULT WINAPI DllCanUnloadNow() { return S_FALSE; }
-extern "C" __declspec(dllexport) unsigned long long WINAPI QingkuaiLayoutBuild() { return QINGKUAI_LAYOUT_BUILD; }
+extern "C" __declspec(dllexport) unsigned long long WINAPI LightBlockNativeLayoutBuild() { return LB_NATIVE_LAYOUT_BUILD; }
