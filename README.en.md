@@ -4,7 +4,7 @@
 <p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases"><strong>View preview releases</strong></a> · <a href="#feature-preview">Feature preview</a> · <a href="https://light-block-desktop.vercel.app/en/">Website</a> · <a href="README.md">简体中文</a> · <a href="CHANGES.md">Changelog</a></p>
 
 
-**1.1.0-beta.1 · Preview (Extensive optimization) / 测试版（极度优化）**: this independent C++ migration branch is unstable and aims to match the Python 1.0.0 features and interactions. Python 1.0.0 remains stable; this preview does not replace `main`, the production website or its update channel.
+**1.1.0-beta.2 · Preview (Extensive optimization) / 测试版（极度优化）**: this independent C++ migration branch is unstable and aims to match the Python 1.0.0 features and interactions. Python 1.0.0 remains stable; this preview does not replace `main`, the production website or its update channel.
 
 ## Download and install
 
@@ -64,7 +64,7 @@ Right-click the desktop background to create and pin a note. On Windows 11, star
 
 Settings and downloaded wallpapers stay on your device. The online gallery contacts media sources on demand. No account, ads or telemetry. Appearance offers three original silhouettes—Stream, Prism and Pixel—with custom colors and 75%–200% sizing. Mix them with independently colored Dots, Falling or Glow effects, which stop painting when idle. Settings retains the native Windows Night light entry. The app also includes a launcher, clipboard history, a file workbench and focus timers. [User guide](docs/usage.en.md)
 
-The online gallery has 20 images, 10 GIFs and 20 videos, with media-type filters and bilingual search. The maintainer approved retaining the ten GIFs from the local review build. Every source file is at least 1920 × 1080 and no larger than 20 MB, without app-side recompression, trimming or upscaling. GIF candidates must be original 1080p, 16:9 complete looping scenes. GIFs have no likes/favorites threshold; available metrics are recorded as reported. Images and videos retain their public-vote or favorite-based selection. It supports on-demand previews, byte-preserving downloads, progress/cancellation, downloaded status and Apply. GitHub stores URL and attribution metadata only. Downloads continue when settings close; quitting cancels unfinished downloads. [Evaluation and selection](docs/wallpaper-evaluation.md)
+The preview branch online gallery has 52 images, 10 GIFs and 20 videos, with media-type filters and bilingual search. The maintainer approved retaining the ten GIFs from the local review build. Every source file is at least 1920 × 1080 and no larger than 20 MB, without app-side recompression, trimming or upscaling. GIF candidates must be original 1080p, 16:9 complete looping scenes. GIFs have no likes/favorites threshold; available metrics are recorded as reported. Images and videos retain their public-vote or favorite-based selection. It supports on-demand previews, byte-preserving downloads, progress/cancellation, downloaded status and Apply. GitHub stores URL and attribution metadata only. Downloads continue when settings close; quitting cancels unfinished downloads. [Evaluation and selection](docs/wallpaper-evaluation.md)
 
 ![Online wallpaper gallery and source information](site/public/media/online-wallpaper-en.webp)
 

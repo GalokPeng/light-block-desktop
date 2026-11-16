@@ -9,7 +9,7 @@
 #define WM_ONLINE_DONE (WM_APP+75)
 #define WM_ONLINE_PROGRESS (WM_APP+76)
 struct OnlineItem { wchar_t id[100],title[180],url[4096],thumbnail[4096],filename[180],license[100],author[300],source[4096],sha1[41],local[LB_PATH];MediaKind kind;uint64_t bytes; };
-static struct { HWND window,list,filter,search,details,progress,download,preview;HBRUSH brush;OnlineItem *items;UINT count;HANDLE thread;volatile LONG cancel;UINT job;BOOL preview_job;wchar_t job_path[LB_PATH];HRESULT result;int percent;uint32_t serial; } online;
+static struct { HWND window,list,filter,search,details,progress,download,preview;HBRUSH brush;OnlineItem *items;UINT count,capacity;HANDLE thread;volatile LONG cancel;UINT job;BOOL preview_job;wchar_t job_path[LB_PATH];HRESULT result;int percent;uint32_t serial;std::atomic<uint64_t> received{},total{},activity{};std::atomic<int> stage{};uint64_t started{}; } online;
 static void prune_previews(uintmax_t budget=128*1024*1024){
     try{
         auto root=std::filesystem::path(g_app.data)/L"previews";auto attrs=GetFileAttributesW(root.c_str());if(attrs==INVALID_FILE_ATTRIBUTES||(attrs&FILE_ATTRIBUTE_REPARSE_POINT))return;
@@ -54,12 +54,12 @@ static BOOL parse_catalog(wchar_t const* path,std::vector<OnlineItem>& items) {
     items.clear();std::set<std::wstring> ids,filenames;Json json;if(!json_file(&json,path,2*1024*1024)) return FALSE;
     int entries=json_property(&json,0,"entries");int counts[3]={};BOOL ok=entries>=0 && json.tokens[entries].type==JSON_ARRAY && json_integer(&json,json_property(&json,0,"schema_version"),0)==4;
     if(ok) for(int object=entries+1;object<json.tokens[entries].next;object=json.tokens[object].next) {
-        if(items.size()>=60 || json.tokens[object].type!=JSON_OBJECT) { ok=FALSE;break; }
+        if(items.size()>=120 || json.tokens[object].type!=JSON_OBJECT) { ok=FALSE;break; }
         OnlineItem item={};wchar_t kind[20];get_string(&json,object,"kind",kind,20);item.kind=!wcscmp(kind,L"image")?MEDIA_IMAGE:!wcscmp(kind,L"gif")?MEDIA_GIF:!wcscmp(kind,L"video")?MEDIA_VIDEO:MEDIA_UNKNOWN;
         int title=json_property(&json,object,"title");get_string(&json,title,g_app.english?"en":"zh",item.title,180);
         get_string(&json,object,"id",item.id,100);get_string(&json,object,"filename",item.filename,180);get_string(&json,object,"download_url",item.url,4096);get_string(&json,object,"thumbnail_url",item.thumbnail,4096);get_string(&json,object,"license",item.license,100);get_string(&json,object,"author",item.author,300);get_string(&json,object,"source_url",item.source,4096);get_string(&json,object,"sha1",item.sha1,41);item.bytes=(uint64_t)json_integer(&json,json_property(&json,object,"bytes"),0);
         BOOL hash=wcslen(item.sha1)==40;for(UINT k=0;k<wcslen(item.sha1);++k) if(!iswxdigit(item.sha1[k])) hash=FALSE;
-        if(item.kind==MEDIA_UNKNOWN || ++counts[item.kind]>20 || !*item.title || !safe_filename(item.id) || !safe_filename(item.filename) || !catalog_host(item.url) || !catalog_host(item.thumbnail) || !safe_https_url(item.source) || !*item.license || !hash || item.bytes<1 || item.bytes>20000000 || json_integer(&json,json_property(&json,object,"width"),0)<1920 || json_integer(&json,json_property(&json,object,"height"),0)<1080) { ok=FALSE;break; }
+        if(item.kind==MEDIA_UNKNOWN || ++counts[item.kind]>80 || !*item.title || !safe_filename(item.id) || !safe_filename(item.filename) || !catalog_host(item.url) || !catalog_host(item.thumbnail) || !safe_https_url(item.source) || !*item.license || !hash || item.bytes<1 || item.bytes>20000000 || json_integer(&json,json_property(&json,object,"width"),0)<1920 || json_integer(&json,json_property(&json,object,"height"),0)<1080) { ok=FALSE;break; }
         auto width=json_integer(&json,json_property(&json,object,"width"),0),height=json_integer(&json,json_property(&json,object,"height"),0);if(width>32768||height>32768||(item.kind==MEDIA_GIF&&width*9!=height*16)){ok=FALSE;break;}
         wchar_t directory[LB_PATH];path_join(directory,LB_PATH,g_app.data,L"online");path_join(item.local,LB_PATH,directory,item.filename);if(!ids.insert(item.id).second||!filenames.insert(item.filename).second){ok=FALSE;break;}items.push_back(item);
     }
@@ -67,22 +67,33 @@ static BOOL parse_catalog(wchar_t const* path,std::vector<OnlineItem>& items) {
 }
 
 static std::wstring catalog_loaded_path;
+static bool reserve_items(size_t count){
+    if(count<=online.capacity)return true;if(count>120)return false;
+    auto memory=static_cast<OnlineItem*>(realloc(online.items,count*sizeof(OnlineItem)));if(!memory)return false;
+    online.items=memory;online.capacity=UINT(count);return true;
+}
+static int catalog_revision(std::filesystem::path const& path){
+    Json json;if(!json_file(&json,path.c_str(),2*1024*1024))return 0;
+    int revision=int(json_integer(&json,json_property(&json,0,"catalog_revision"),0));json_free(&json);return revision;
+}
 static bool set_catalog(std::vector<OnlineItem> const& items,std::filesystem::path const& path){
-    if(!online.items)online.items=static_cast<OnlineItem*>(calloc(60,sizeof(OnlineItem)));if(!online.items)return false;
+    if(!reserve_items(items.size()))return false;
     std::copy(items.begin(),items.end(),online.items);online.count=UINT(items.size());catalog_loaded_path=path.wstring();return true;
 }
 static BOOL load_catalog(void){
     if(online.thread)return online.items&&online.count;std::vector<OnlineItem> items;auto cached=std::filesystem::path(g_app.data)/L"online"/L"catalog-v4.json";
-    if(parse_catalog(cached.c_str(),items))return set_catalog(items,cached);
-    auto seed=std::filesystem::path(g_app.directory)/L"assets"/L"online-wallpapers.json";return parse_catalog(seed.c_str(),items)&&set_catalog(items,seed);
+    auto seed=std::filesystem::path(g_app.directory)/L"assets"/L"online-wallpapers.json";
+    if(catalog_revision(cached)>=catalog_revision(seed)&&parse_catalog(cached.c_str(),items))return set_catalog(items,cached);
+    return parse_catalog(seed.c_str(),items)&&set_catalog(items,seed);
 }
 static wchar_t const* active_catalog_path(){if(catalog_loaded_path.empty())load_catalog();return catalog_loaded_path.c_str();}
 static int install_catalog(wchar_t const* file){
     if(!file||online.thread)return 0;
     try{
         std::vector<OnlineItem> items;if(!parse_catalog(file,items))return 0;
+        auto seed=std::filesystem::path(g_app.directory)/L"assets"/L"online-wallpapers.json";if(catalog_revision(file)<std::max(catalog_revision(seed),catalog_revision(catalog_loaded_path)))return 0;
         // Allocate before committing; a memory failure must not replace a usable catalog.
-        if(!online.items)online.items=static_cast<OnlineItem*>(calloc(60,sizeof(OnlineItem)));if(!online.items)return 0;
+        if(!reserve_items(items.size()))return 0;
         auto directory=std::filesystem::path(g_app.data)/L"online";if(!ensure_directory(directory.c_str()))return 0;auto target=directory/L"catalog-v4.json",part=directory/(L"catalog-"+std::to_wstring(GetTickCount64())+L".partial");lb::scope_exit cleanup([&]{DeleteFileW(part.c_str());});
         if(!CopyFileW(file,part.c_str(),TRUE)||!MoveFileExW(part.c_str(),target.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))return 0;
         return set_catalog(items,target);
@@ -92,7 +103,7 @@ UiCatalogApi const* online_catalog_api(){static UiCatalogApi api{LB_ONLINE_CATAL
 bool online_catalog_refresh_tests(wchar_t const* directory){
     try{
         std::filesystem::path root(directory);if(!ensure_directory(root.c_str()))return false;auto seed=std::filesystem::path(g_app.directory)/L"assets"/L"online-wallpapers.json";auto valid=root/L"valid.json";if(!CopyFileW(seed.c_str(),valid.c_str(),TRUE))return false;
-        if(!install_catalog(valid.c_str())||online.count!=50)return false;auto before=catalog_loaded_path;auto count=online.count;wchar_t digest[65]{},after[65]{};if(!hash_file(before.c_str(),L"SHA256",digest,65))return false;
+        std::vector<OnlineItem> expected;if(!parse_catalog(seed.c_str(),expected)||!install_catalog(valid.c_str())||online.count!=expected.size())return false;auto before=catalog_loaded_path;auto count=online.count;wchar_t digest[65]{},after[65]{};if(!hash_file(before.c_str(),L"SHA256",digest,65))return false;
         auto bad=root/L"invalid.json";if(!write_utf8_atomic(bad.c_str(),L"{\"schema_version\":4,\"entries\":[]}")||install_catalog(bad.c_str())||online.count!=count||before!=catalog_loaded_path)return false;
         if(!hash_file(before.c_str(),L"SHA256",after,65)||wcscmp(digest,after))return false;
         auto saved=online.thread;online.thread=reinterpret_cast<HANDLE>(1);bool refused=install_catalog(valid.c_str())==0;online.thread=saved;if(!refused)return false;
@@ -103,7 +114,7 @@ bool online_catalog_refresh_tests(wchar_t const* directory){
         return write_utf8_atomic((root/L"result.json").c_str(),L"{\"valid_catalog_committed\":true,\"empty_rejected\":true,\"prior_catalog_preserved\":true,\"active_download_blocks_replacement\":true,\"preview_cache_budget_and_ownership\":true,\"network_requests\":0}");
     }catch(...){return false;}
 }
-UINT online_catalog_test(void) { BOOL valid=load_catalog();UINT count=valid?online.count:0;if(!online.window) { free(online.items);online.items=NULL;online.count=0; }return count; }
+UINT online_catalog_test(void) { BOOL valid=load_catalog();UINT count=valid?online.count:0;if(!online.window) { free(online.items);online.items=NULL;online.count=online.capacity=0; }return count; }
 static void refresh(void) {
     wchar_t query[260];GetWindowTextW(online.search,query,260);int filter=(int)SendMessageW(online.filter,CB_GETCURSEL,0,0);
     SendMessageW(online.list,WM_SETREDRAW,FALSE,0);ListView_DeleteAllItems(online.list);
@@ -112,7 +123,12 @@ static void refresh(void) {
     }SendMessageW(online.list,WM_SETREDRAW,TRUE,0);InvalidateRect(online.list,NULL,TRUE);
 }
 static int selection(void) { int index=ListView_GetNextItem(online.list,-1,LVNI_SELECTED);if(index<0) return -1;LVITEMW row={};row.mask=LVIF_PARAM;row.iItem=index;if(!ListView_GetItem(online.list,&row) || (UINT)row.lParam>=online.count) return -1;return (int)row.lParam; }
-static void progress(uint64_t received,uint64_t total,void *context) { (void)context;PostMessageW(online.window?online.window:g_app.window,WM_ONLINE_PROGRESS,total?(WPARAM)(received*100/total):0,0); }
+static void progress(uint64_t received,uint64_t total,void*) {
+    online.received=received;online.total=total;online.activity=GetTickCount64();
+    PostMessageW(online.window?online.window:g_app.window,WM_ONLINE_PROGRESS,total?WPARAM(std::min<uint64_t>(99,received*100/total)):0,0);
+}
+static void stage_changed(DownloadStage stage,void*){online.stage=int(stage);online.activity=GetTickCount64();}
+static void reset_progress(uint64_t total){online.received=0;online.total=total;online.started=online.activity=GetTickCount64();online.stage=int(DownloadStage::connecting);online.percent=0;}
 static DWORD WINAPI download_thread(void *unused) {
     (void)unused;OnlineItem *item=&online.items[online.job];
     auto cached=std::filesystem::path(g_app.data)/L"previews"/item->filename;bool reused=false;
@@ -121,7 +137,7 @@ static DWORD WINAPI download_thread(void *unused) {
         if(CopyFileW(cached.c_str(),temporary.c_str(),FALSE)&&hash_file(temporary.c_str(),L"SHA1",actual,41)&&!_wcsicmp(actual,item->sha1)&&!InterlockedCompareExchange(&online.cancel,0,0))reused=MoveFileExW(temporary.c_str(),online.job_path,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)!=0;
         if(!reused)DeleteFileW(temporary.c_str());
     }
-    online.result=reused?S_OK:download_https(item->url,online.job_path,20000000,item->bytes,L"SHA1",item->sha1,&online.cancel,progress,NULL);
+    online.result=reused?S_OK:download_https(item->url,online.job_path,20000000,item->bytes,L"SHA1",item->sha1,&online.cancel,progress,NULL,stage_changed);
     if(SUCCEEDED(online.result)) { auto metadata=receipt(*item,online.job_path);if(!metadata.empty()) write_utf8_atomic((std::wstring(online.job_path)+L".verified").c_str(),metadata.c_str()); }
     PostMessageW(online.window?online.window:g_app.window,WM_ONLINE_DONE,0,0);return 0;
 }
@@ -129,7 +145,7 @@ static void start_download(BOOL preview) {
     int selected=selection();if(selected<0 || online.thread) return;OnlineItem *item=&online.items[selected];online.job=(UINT)selected;online.preview_job=preview;
     if(preview) { if(downloaded(*item)) { online.result=S_OK;report_download_result();player_request(item->local,FALSE);return; }wchar_t directory[LB_PATH];path_join(directory,LB_PATH,g_app.data,L"previews");ensure_directory(directory);path_join(online.job_path,LB_PATH,directory,item->filename); }
     else StringCchCopyW(online.job_path,LB_PATH,item->local);
-    InterlockedExchange(&online.cancel,0);EnableWindow(online.download,FALSE);EnableWindow(online.preview,FALSE);SendMessageW(online.progress,PBM_SETPOS,0,0);online.thread=CreateThread(NULL,0,download_thread,NULL,0,NULL);
+    reset_progress(item->bytes);InterlockedExchange(&online.cancel,0);EnableWindow(online.download,FALSE);EnableWindow(online.preview,FALSE);SendMessageW(online.progress,PBM_SETPOS,0,0);online.thread=CreateThread(NULL,0,download_thread,NULL,0,NULL);
     if(!online.thread) { EnableWindow(online.download,TRUE);EnableWindow(online.preview,TRUE);error_box(online.window,tr(L"无法创建下载任务",L"Could not start download"),E_FAIL); }
 }
 static LRESULT CALLBACK online_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
@@ -153,10 +169,10 @@ static LRESULT CALLBACK online_proc(HWND window,UINT message,WPARAM wp,LPARAM lp
         else { int n=selection();if(n<0) return 0;OnlineItem *item=&online.items[n];if(LOWORD(wp)==12) { if(downloaded(*item)) library_import_checked(item->local,item->sha1);else error_box(window,tr(L"请先完整下载并校验原文件",L"Download and verify the original first"),HRESULT_FROM_WIN32(ERROR_CRC)); }else if(LOWORD(wp)==13) ShellExecuteW(window,L"open",item->source,NULL,NULL,SW_SHOWNORMAL); }return 0;
     case WM_NOTIFY:if(((NMHDR*)lp)->hwndFrom==online.list && ((NMHDR*)lp)->code==LVN_ITEMCHANGED) { int n=selection();if(n>=0) { wchar_t text[800];OnlineItem *item=&online.items[n];StringCchPrintfW(text,800,L"%s  ·  %s\n%s",item->title,item->license,item->author);SetWindowTextW(online.details,text); } }return 0;
     case WM_TIMER:KillTimer(window,1);refresh();return 0;
-    case WM_ONLINE_PROGRESS:SendMessageW(online.progress,PBM_SETPOS,wp,0);return 0;
+    case WM_ONLINE_PROGRESS:online.percent=int(wp);SendMessageW(online.progress,PBM_SETPOS,wp,0);return 0;
     case WM_ONLINE_DONE:
         if(online.thread) { CloseHandle(online.thread);online.thread=NULL; }EnableWindow(online.download,TRUE);EnableWindow(online.preview,TRUE);
-        report_download_result();
+        ++online.serial;online.percent=SUCCEEDED(online.result)?100:0;report_download_result();
         if(SUCCEEDED(online.result)) { if(online.preview_job) player_request(online.job_path,FALSE);else SetWindowTextW(online.details,tr(L"原文件下载和 SHA-1 校验完成，可以导入壁纸库。",L"Original downloaded and SHA-1 verified. You can add it to your library.")); }
         else if(!g_app.close_requested && online.result!=HRESULT_FROM_WIN32(ERROR_CANCELLED)) error_box(window,tr(L"下载失败或内容校验不一致",L"Download failed or checksum did not match"),online.result);refresh();return 0;
     case WM_CTLCOLORSTATIC:SetBkMode((HDC)wp,TRANSPARENT);SetTextColor((HDC)wp,g_app.dark?RGB(235,240,249):RGB(29,38,49));return (LRESULT)online.brush;
@@ -170,7 +186,7 @@ void online_show(void) {
     WNDCLASSW cls={};cls.lpfnWndProc=online_proc;cls.hInstance=g_app.instance;cls.lpszClassName=L"LightBlockDesktopNative.Online";cls.hCursor=LoadCursorW(NULL,IDC_ARROW);RegisterClassW(&cls);HWND window=CreateWindowExW(0,cls.lpszClassName,tr(L"在线壁纸",L"Online wallpapers"),WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU,140,90,916,650,g_app.window,NULL,g_app.instance,NULL);if(window) { theme_window(window);ShowWindow(window,SW_SHOW); }
 }
 BOOL online_shutdown(void) { if(online.thread) { InterlockedExchange(&online.cancel,1);return FALSE; }if(online.window) DestroyWindow(online.window);return TRUE; }
-void online_snapshot(UiState* out) { out->download_busy=online.thread!=nullptr;out->download_percent=online.percent;out->download_index=int(online.job);out->download_preview=online.preview_job;out->download_error=!online.thread&&FAILED(online.result);out->download_serial=online.serial;StringCchCopyW(out->download_path,LB_UI_PATH,online.job_path); }
+void online_snapshot(UiState* out) { out->download_busy=online.thread!=nullptr;out->download_percent=online.percent;out->download_index=int(online.job);out->download_preview=online.preview_job;out->download_error=!online.thread&&FAILED(online.result);out->download_serial=online.serial;StringCchCopyW(out->download_path,LB_UI_PATH,online.job_path);out->download_received=online.received.load();out->download_total=online.total.load();out->download_stage=online.thread&&InterlockedCompareExchange(&online.cancel,0,0)?4:online.stage.load();out->download_elapsed=online.thread?int((GetTickCount64()-online.started)/1000):0;out->download_idle=online.thread?int((GetTickCount64()-online.activity.load())/1000):0; }
 bool online_message(UINT message,WPARAM wp,LPARAM) {
     if(online.window) return false;if(message==WM_ONLINE_PROGRESS) { online.percent=int(wp);return true; }if(message!=WM_ONLINE_DONE) return false;
     if(online.thread) { CloseHandle(online.thread);online.thread=nullptr; }++online.serial;online.percent=SUCCEEDED(online.result)?100:0;
@@ -181,5 +197,5 @@ void online_start(int index,int preview) {
     if(downloaded(item)) { StringCchCopyW(online.job_path,LB_PATH,item.local);online.percent=100;++online.serial;report_download_result();return; }
     if(preview) { auto directory=std::filesystem::path(g_app.data)/L"previews";ensure_directory(directory.c_str());StringCchCopyW(online.job_path,LB_PATH,(directory/item.filename).c_str()); }else {ensure_directory((std::filesystem::path(g_app.data)/L"online").c_str());StringCchCopyW(online.job_path,LB_PATH,item.local);}
     if(preview&&downloaded(item,online.job_path)){online.percent=100;++online.serial;report_download_result();return;}
-    InterlockedExchange(&online.cancel,0);online.thread=CreateThread(nullptr,0,download_thread,nullptr,0,nullptr);if(!online.thread) { online.result=HRESULT_FROM_WIN32(GetLastError());++online.serial;report_download_result(); }
+    reset_progress(item.bytes);set_status(L"正在连接壁纸来源…",L"Connecting to the wallpaper source…");InterlockedExchange(&online.cancel,0);online.thread=CreateThread(nullptr,0,download_thread,nullptr,0,nullptr);if(!online.thread) { online.result=HRESULT_FROM_WIN32(GetLastError());++online.serial;report_download_result(); }
 }

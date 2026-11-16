@@ -2,8 +2,8 @@
 #include <stdint.h>
 #include <wchar.h>
 /* Only plain data and C calling conventions cross the independently linked UI boundary. */
-enum { LB_UI_ABI=4, LB_UI_PATH=4096 };
-struct UiState { int dark,english,count,selected,paused,muted;uint32_t library_revision;wchar_t status[240],directory[LB_UI_PATH],data[LB_UI_PATH];int download_busy,download_percent,download_index,download_preview,download_error;uint32_t download_serial;wchar_t download_path[LB_UI_PATH];uint32_t thumbnail_revision; };
+enum { LB_UI_ABI=5, LB_UI_PATH=4096 };
+struct UiState { int dark,english,count,selected,paused,muted;uint32_t library_revision;wchar_t status[240],directory[LB_UI_PATH],data[LB_UI_PATH];int download_busy,download_percent,download_index,download_preview,download_error;uint32_t download_serial;wchar_t download_path[LB_UI_PATH];uint32_t thumbnail_revision;uint64_t download_received,download_total;int download_stage,download_elapsed,download_idle; };
 struct UiItem { int kind,builtin;uintptr_t thumbnail;wchar_t title[180],path[LB_UI_PATH]; };
 struct UiSetting { int id,section,kind,value,low,high,choice_count,choice_values[24];wchar_t label[160],choices[800]; };
 struct UiGroup { int color,count;wchar_t id[104],name[128]; };

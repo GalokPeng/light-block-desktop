@@ -1,6 +1,6 @@
 #pragma once
 // The only release-version source. Packaging and Windows resources read this file.
-#define LB_VERSION_UTF8 "1.1.0-beta.1"
+#define LB_VERSION_UTF8 "1.1.0-beta.2"
 #define LB_VERSION_NUMERIC_UTF8 "1.1.0.0"
 #define LB_WIDEN_IMPL(value) L##value
 #define LB_WIDEN(value) LB_WIDEN_IMPL(value)

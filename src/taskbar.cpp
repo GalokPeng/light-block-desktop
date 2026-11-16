@@ -92,42 +92,85 @@ public:
     bool status(LayoutStatus &out) { return status_ && status_read(status_,out) && events_[2] && WaitForSingleObject(events_[2].get(),0)==WAIT_OBJECT_0; }
 };
 struct WorkArea {
-    RECT before{},after{};bool owned{};
+    RECT before{},after{},footprint{};bool owned{};ULONGLONG next_check{};
     static BOOL CALLBACK resize(HWND window,LPARAM context) {
         auto self=reinterpret_cast<WorkArea*>(context);if(!IsWindowVisible(window)||!IsZoomed(window)) return TRUE;
         RECT frame{};if(SUCCEEDED(DwmGetWindowAttribute(window,9,&frame,sizeof frame)) && abs(frame.bottom-self->before.bottom)<=2 && frame.left>=self->before.left-2 && frame.right<=self->before.right+2) { RECT rect{};GetWindowRect(window,&rect);SetWindowPos(window,nullptr,0,0,rect.right-rect.left,rect.bottom-rect.top+self->after.bottom-frame.bottom,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOSENDCHANGING|SWP_ASYNCWINDOWPOS); }return TRUE;
     }
+    template<class Read,class Write,class Record,class Adjust>
+    void reconcile(RECT const& bar,ULONGLONG now,Read read,Write write,Record record,Adjust adjust) {
+        if(now<next_check) return;next_check=now+1000;
+        RECT current{};if(!read(current)) return;
+        if(owned) {
+            // Explorer can restore its reserved strip without replacing HWND.
+            // Reclaim only our exact previous area and unchanged display geometry;
+            // another app bar or a changed monitor layout belongs to its new owner.
+            if(rect_equal(bar,footprint)&&rect_equal(current,before)&&write(after)) adjust();
+            return;
+        }
+        if(current.bottom!=bar.top||bar.bottom<=bar.top||current.left<bar.left||current.right>bar.right) return;
+        before=current;after=current;after.bottom=bar.bottom;footprint=bar;
+        if(!record(before,after)) return;
+        if(write(after)) {owned=true;adjust();}
+    }
     void expand(HWND window,RECT const& bar,RecoveryLease& recovery) {
-        if(owned) return;RECT current{};if(!SystemParametersInfoW(SPI_GETWORKAREA,0,&current,0)||current.bottom!=bar.top) return;
-        before=current;after=current;after.bottom=bar.bottom;
-        if(!recovery.work(window,before,after)) return;
-        if(SystemParametersInfoW(SPI_SETWORKAREA,0,&after,0)) { owned=true;EnumWindows(resize,reinterpret_cast<LPARAM>(this)); }
+        reconcile(bar,GetTickCount64(),[](RECT& area){return SystemParametersInfoW(SPI_GETWORKAREA,0,&area,0)!=FALSE;},
+            [](RECT area){return SystemParametersInfoW(SPI_SETWORKAREA,0,&area,0)!=FALSE;},
+            [&](RECT old_area,RECT new_area){return recovery.work(window,old_area,new_area);},
+            [&]{EnumWindows(resize,reinterpret_cast<LPARAM>(this));});
     }
     void restore() noexcept {
-        if(!owned) return;RECT current{};if(SystemParametersInfoW(SPI_GETWORKAREA,0,&current,0) && rect_equal(current,after)) { SystemParametersInfoW(SPI_SETWORKAREA,0,&before,0);std::swap(before,after);EnumWindows(resize,reinterpret_cast<LPARAM>(this)); }owned=false;
+        if(!owned) return;RECT current{};if(SystemParametersInfoW(SPI_GETWORKAREA,0,&current,0) && rect_equal(current,after)&&SystemParametersInfoW(SPI_SETWORKAREA,0,&before,0)) {std::swap(before,after);EnumWindows(resize,reinterpret_cast<LPARAM>(this)); }owned=false;next_check=0;
     }
     ~WorkArea() { restore(); }
 };
+struct HiddenRegion {
+    bool hidden{};
+    unique_gdi<HRGN> saved,observed{CreateRectRgn(0,0,0,0)};
+    bool empty(HWND bar) const {return observed&&GetWindowRgn(bar,observed.get())==NULLREGION;}
+    bool restore(HWND bar) {
+        if(hidden&&empty(bar)) {
+            HRGN copy=nullptr;
+            if(saved) {copy=CreateRectRgn(0,0,0,0);if(!copy) return false;CombineRgn(copy,saved.get(),nullptr,RGN_COPY);}
+            if(!SetWindowRgn(bar,copy,TRUE)) {if(copy) DeleteObject(copy);return false;}
+        }
+        hidden=false;saved.reset();return true;
+    }
+    template<class Record> bool apply(HWND bar,RECT const& bounds,bool hide,Record record) {
+        if(!hide) return restore(bar);
+        if(!observed||!IsWindow(bar)) return false;
+        int kind=GetWindowRgn(bar,observed.get());if(kind==NULLREGION) return true;
+        RECT r{};GetRgnBox(observed.get(),&r);
+        if(kind!=ERROR&&(kind!=SIMPLEREGION||r.left||r.top||r.right!=bounds.right-bounds.left||r.bottom!=bounds.bottom-bounds.top)) return false;
+        // Check the actual region every tick, not just our cached hidden flag.
+        // Keep the original restoration receipt when Explorer overwrites it.
+        if(!hidden) {
+            if(!record(kind,bounds)) return false;
+            saved.reset();if(kind!=ERROR) {saved.reset(CreateRectRgn(0,0,0,0));if(!saved) return false;CombineRgn(saved.get(),observed.get(),nullptr,RGN_COPY);}
+        }
+        auto blank=CreateRectRgn(0,0,0,0);if(!blank) return false;
+        if(!SetWindowRgn(bar,blank,TRUE)) {DeleteObject(blank);return false;}
+        hidden=true;return true;
+    }
+};
+bool reveal_at_edge(bool covered,bool edge,bool hover,bool previously_revealed) {
+    return covered&&(edge||(previously_revealed&&hover));
+}
 struct Visibility {
-    HWND bar{};DWORD pid{};bool hidden{},topmost_changed{};unique_gdi<HRGN> saved;WorkArea work;
+    HWND bar{};DWORD pid{};bool revealed{},topmost_changed{};HiddenRegion region;WorkArea work;
     RecoveryLease recovery;
     bool same() const { return IsWindow(bar)&&window_pid(bar)==pid && FindWindowW(L"Shell_TrayWnd",nullptr)==bar; }
-    bool ours() const { unique_gdi<HRGN> current(CreateRectRgn(0,0,0,0)),empty(CreateRectRgn(0,0,0,0));return GetWindowRgn(bar,current.get())!=ERROR && EqualRgn(current.get(),empty.get()); }
     void restore_region() {
-        if(hidden && same() && ours()) { if(saved) { auto copy=CreateRectRgn(0,0,0,0);CombineRgn(copy,saved.get(),nullptr,RGN_COPY);if(!SetWindowRgn(bar,copy,TRUE)) DeleteObject(copy); }else SetWindowRgn(bar,nullptr,TRUE); }hidden=false;saved.reset();
+        if(same()) region.restore(bar);else {region.hidden=false;region.saved.reset();}revealed=false;
     }
     void restore() {
-        restore_region();if(topmost_changed && same()) SetWindowPos(bar,HWND_NOTOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);topmost_changed=false;work.restore();if(!recovery.restore()) log_line(L"Taskbar visibility recovery remains pending");bar=nullptr;pid=0;
+        restore_region();if(topmost_changed && same()) SetWindowPos(bar,HWND_NOTOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);topmost_changed=false;work.restore();if(!recovery.restore()) log_line(L"Taskbar visibility recovery remains pending");else {region.hidden=false;region.saved.reset();}bar=nullptr;pid=0;
     }
     void update(HWND current,RECT const& bounds,bool hide,bool reveal) {
         if(current!=bar || window_pid(current)!=pid) { restore();bar=current;pid=window_pid(current); }
         APPBARDATA data{sizeof data};if(SHAppBarMessage(ABM_GETSTATE,&data)&ABS_AUTOHIDE) { restore();return; }work.expand(bar,bounds,recovery);
-        if(hide && !hidden) {
-            unique_gdi<HRGN> previous(CreateRectRgn(0,0,0,0));int kind=GetWindowRgn(bar,previous.get());RECT r{};GetRgnBox(previous.get(),&r);
-            if(kind!=ERROR && (kind!=SIMPLEREGION || r.left || r.top || r.right!=bounds.right-bounds.left || r.bottom!=bounds.bottom-bounds.top)) return;
-            if(!recovery.region(bar,kind,bounds)) return;
-            if(kind!=ERROR) saved=std::move(previous);auto empty=CreateRectRgn(0,0,0,0);if(SetWindowRgn(bar,empty,TRUE)) hidden=true;else DeleteObject(empty);
-        } else if(!hide) restore_region();
+        bool applied=region.apply(bar,bounds,hide,[&](int kind,RECT area){return recovery.region(bar,kind,area);});
+        revealed=reveal&&applied;
         if(reveal && !(GetWindowLongPtrW(bar,GWL_EXSTYLE)&WS_EX_TOPMOST)) { if(recovery.topmost(bar)&&SetWindowPos(bar,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)) topmost_changed=true; }
         else if(!reveal && topmost_changed) { SetWindowPos(bar,HWND_NOTOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);topmost_changed=false; }
     }
@@ -171,6 +214,44 @@ void configure() {
     if(CreateProcessW(g_app.exe,command,nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,g_app.directory,&startup,&process)) { client.process.reset(process.hProcess);CloseHandle(process.hThread);SetTimer(g_app.window,16,250,nullptr); }
 }
 bool has_session() { return bool(client.process); }
+bool visibility_tests() {
+    // Exercise real window-region APIs on a private, never-shown test window.
+    // The system taskbar and desktop work area are not changed by this fixture.
+    HWND window=CreateWindowExW(WS_EX_TOOLWINDOW,L"STATIC",L"taskbar-region-fixture",WS_POPUP,0,0,400,48,nullptr,nullptr,g_app.instance,nullptr);
+    if(!window) return false;scope_exit close([&]{DestroyWindow(window);});
+    RECT bar{0,1032,400,1080};HiddenRegion region;int receipts=0;
+    auto record=[&](int,RECT){++receipts;return true;};
+    if(!region.apply(window,bar,true,record)||!region.empty(window)||receipts!=1) return false;
+    for(int n=0;n<100;++n) {
+        if(!SetWindowRgn(window,nullptr,FALSE)||!region.apply(window,bar,true,record)||!region.empty(window)) return false;
+    }
+    if(receipts!=1||!region.restore(window)||GetWindowRgn(window,region.observed.get())!=ERROR) return false;
+    HRGN full=CreateRectRgn(0,0,400,48);if(!SetWindowRgn(window,full,FALSE)) {DeleteObject(full);return false;}
+    if(!region.apply(window,bar,true,record)||!region.restore(window)) return false;
+    RECT actual{};if(GetWindowRgn(window,region.observed.get())!=SIMPLEREGION) return false;GetRgnBox(region.observed.get(),&actual);
+    if(actual.right!=400||actual.bottom!=48) return false;
+    if(!region.apply(window,bar,true,record)) return false;
+    HRGN foreign=CreateRectRgn(10,3,300,40);if(!SetWindowRgn(window,foreign,FALSE)) {DeleteObject(foreign);return false;}
+    if(region.apply(window,bar,true,record)||!region.restore(window)||GetWindowRgn(window,region.observed.get())!=SIMPLEREGION) return false;
+    GetRgnBox(region.observed.get(),&actual);if(actual.left!=10||actual.bottom!=40) return false;
+    // A screenshot finishing while the pointer is over the old taskbar strip
+    // must not reveal it. Only the screen edge starts a reveal session.
+    if(reveal_at_edge(true,false,true,false)||!reveal_at_edge(true,true,false,false)||
+       !reveal_at_edge(true,false,true,true)||reveal_at_edge(true,false,false,true)||reveal_at_edge(false,true,true,true)) return false;
+    WorkArea work;scope_exit disarm([&]{work.owned=false;});
+    RECT area{0,0,400,1032};int reads=0,writes=0,adjustments=0,records=0;bool fail=false;
+    auto step=[&](ULONGLONG now,RECT bounds){work.reconcile(bounds,now,[&](RECT& value){++reads;value=area;return true;},
+        [&](RECT value){if(fail) return false;++writes;area=value;return true;},
+        [&](RECT,RECT){++records;return true;},[&]{++adjustments;});};
+    step(1,bar);if(!work.owned||area.bottom!=1080||writes!=1||records!=1||adjustments!=1) return false;
+    for(int n=2;n<1000;n+=100) step(n,bar);if(reads!=1||writes!=1) return false;
+    for(int n=1;n<=100;++n) {area=work.before;step(1+n*1000,bar);if(area.bottom!=1080) return false;}
+    if(records!=1||writes!=101||adjustments!=101) return false;
+    area={0,0,400,1000};step(101001,bar);if(writes!=101||area.bottom!=1000) return false;
+    area=work.before;RECT moved=bar;moved.right=500;step(102001,moved);if(writes!=101) return false;
+    fail=true;step(103001,bar);if(writes!=101||area.bottom!=1032) return false;
+    fail=false;step(104001,bar);return writes==102&&area.bottom==1080&&records==1;
+}
 bool transition_tests() {
     if(client.process||client.control||client.mapping) return false;
     auto wanted=g_app.settings.taskbar_enabled;bool prior=client.stopping;Control control{};
@@ -206,17 +287,26 @@ int helper_main(int argc,wchar_t **argv) {
     auto control=static_cast<Control*>(MapViewOfFile(mapping.get(),FILE_MAP_READ|FILE_MAP_WRITE,0,0,sizeof(Control)));if(!control) return ERROR_INVALID_PARAMETER;scope_exit unmap([&]{UnmapViewOfFile(control);});
     FILETIME created{},exit{},kernel{},user{};if(!GetProcessTimes(parent.get(),&created,&exit,&kernel,&user) || control->parent_created!=((ULONGLONG(created.dwHighDateTime)<<32)|created.dwLowDateTime)) return ERROR_INVALID_PARAMETER;
     com_apartment apartment(COINIT_APARTMENTTHREADED);if(FAILED(apartment.result())) return ERROR_NOT_SUPPORTED;
-    LayoutSession session;Visibility visibility;ShellEpoch epoch;
+    LayoutSession session;Visibility visibility;ShellEpoch epoch;LayoutStatus last_layout{};
     while(WaitForSingleObject(parent.get(),120)==WAIT_TIMEOUT && InterlockedCompareExchange(&control->enabled,0,0)) {
         MSG message;while(PeekMessageW(&message,nullptr,0,0,PM_REMOVE)) { TranslateMessage(&message);DispatchMessageW(&message); }
         LONG before=InterlockedCompareExchange(&control->sequence,0,0);if(before&1) continue;Control wanted=*control;MemoryBarrier();if(before!=InterlockedCompareExchange(&control->sequence,0,0)) continue;
         HWND bar=FindWindowW(L"Shell_TrayWnd",nullptr);epoch.observe(bar,window_pid(bar),GetTickCount64());if(!bar) continue;
-        if(!session.same(bar)) { visibility.restore();HRESULT result=session.initialize(bar);if(FAILED(result)) { if(epoch.expired(GetTickCount64(),12000)) { log_line(L"taskbar attach failed 0x%08lX",DWORD(result));return ERROR_NOT_SUPPORTED; }continue; } }
-        session.appearance(wanted);LayoutStatus status{};if(!session.status(status)||status.state!=1) { if(status.state==3||status.state==4) return ERROR_NOT_SUPPORTED;if(epoch.expired(GetTickCount64(),15000)) return ERROR_TIMEOUT;continue; }epoch.healthy(GetTickCount64());
-        RECT bounds{};GetWindowRect(bar,&bounds);if(!(status.host_width>0 && status.group_left>=0 && status.group_right>status.group_left && status.group_right<=status.host_width)) continue;
-        double scale=double(bounds.right-bounds.left)/status.host_width;RECT strip{bounds.left+LONG(std::lround(status.group_left*scale)),bounds.top,bounds.left+LONG(std::lround(status.group_right*scale)),bounds.bottom};
+        if(!session.same(bar)) { visibility.restore();last_layout={};HRESULT result=session.initialize(bar);if(FAILED(result)) { if(epoch.expired(GetTickCount64(),12000)) { log_line(L"taskbar attach failed 0x%08lX",DWORD(result));return ERROR_NOT_SUPPORTED; }continue; } }
+        session.appearance(wanted);LayoutStatus status{};
+        if(session.status(status)&&status.state==1) {epoch.healthy(GetTickCount64());last_layout=status;}
+        else {if(status.state==3||status.state==4) {log_line(L"taskbar layout stopped, state=%ld error=%ld",status.state,status.error);return ERROR_NOT_SUPPORTED;}if(epoch.expired(GetTickCount64(),15000)) {log_line(L"taskbar layout status timed out");return ERROR_TIMEOUT;}}
+        // Layout reconstruction may briefly stop publishing geometry. Continue
+        // visibility checks using the last layout instead of freezing hidden state.
+        status=last_layout;RECT bounds{};if(!GetWindowRect(bar,&bounds)||bounds.right<=bounds.left||bounds.bottom<=bounds.top) continue;
+        RECT strip=bounds;
+        if(status.host_width>0&&status.group_left>=0&&status.group_right>status.group_left&&status.group_right<=status.host_width) {
+            double scale=double(bounds.right-bounds.left)/status.host_width;strip.left=bounds.left+LONG(std::lround(status.group_left*scale));strip.right=bounds.left+LONG(std::lround(status.group_right*scale));
+        }
         Coverage coverage{strip,bar};EnumWindows(covered_window,reinterpret_cast<LPARAM>(&coverage));POINT cursor{};GetCursorPos(&cursor);
-        bool edge=cursor.y>=bounds.bottom-2 && cursor.x>=bounds.left && cursor.x<bounds.right;RECT hover=strip;InflateRect(&hover,5,6);bool reveal=coverage.covered && (edge||PtInRect(&hover,cursor));visibility.update(bar,bounds,coverage.covered&&!reveal,reveal);
+        bool edge=cursor.y>=bounds.bottom-2&&cursor.y<bounds.bottom&&cursor.x>=bounds.left&&cursor.x<bounds.right;RECT hover=strip;InflateRect(&hover,5,6);
+        bool reveal=reveal_at_edge(coverage.covered,edge,PtInRect(&hover,cursor)!=FALSE,visibility.revealed&&visibility.bar==bar);
+        visibility.update(bar,bounds,coverage.covered&&!reveal,reveal);
     }
     return 0;
     } catch(std::exception const&) { log_line(L"taskbar helper exception; restoring through RAII");return ERROR_NOT_SUPPORTED; }

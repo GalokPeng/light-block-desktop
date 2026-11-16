@@ -18,7 +18,7 @@ def validate(path):
     if catalog.get('schema_version') != 4:
         raise ValueError('Expected catalog schema 4')
     entries = catalog['entries']
-    if not isinstance(entries, list) or not 1 <= len(entries) <= 60:
+    if not isinstance(entries, list) or not 1 <= len(entries) <= 120:
         raise ValueError('Invalid catalog size')
     ids, names, counts = set(), set(), Counter()
     for entry in entries:
@@ -49,8 +49,8 @@ def validate(path):
         ids.add(identity)
         names.add(name)
         counts[kind] += 1
-    if any(value > 20 for value in counts.values()):
-        raise ValueError('More than 20 entries in one media kind')
+    if any(value > 80 for value in counts.values()):
+        raise ValueError('More than 80 entries in one media kind')
     return dict(counts)
 
 

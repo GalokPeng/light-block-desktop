@@ -94,12 +94,12 @@ E7：`.local/pin-interaction-evidence.json` 记录生产 `pin_proc` 与 CaptureT
 | --- | --- | --- | --- |
 | L01 | 用户区域原样采集；首帧来自选区冻结像素；蓝框常驻不截进图。 | capture转场携首帧，outline独立点击穿透、WDA_EXCLUDEFROMCAPTURE；自动采样只在区域内滚轮。 | E3隔离验证首帧传递/时序；真实outline排除待实测。 |
 | L02 | 滚动105ms中间采样+190ms静止采样，避免必须停很久才有图。 | native hook只post消息，后台串行匹配、队列上限2，中间与settle计时独立。 | E3持续20ms滚轮夹具仍采到中间帧；不是任意高滚速保证。 |
-| L03 | 重叠匹配、去重、固定头/尾部，不能匹配时给可恢复提示，不悄悄丢原图。 | native匹配支持正反位移/低纹理拒绝/粘性栏/手动补接；等待异步结果不阻塞UI。 | E3像素/高度验证；视频/动画/重复纹理页面可能拒绝。 |
-| L04 | 手动重叠非输入下拉提供0..单帧高-1整数。 | 完整整数列表并预分配combo容量。 | E5通过：包括187px选择后实际拼接增长53px，不只验证菜单数量。 |
+| L03 | 重叠匹配、去重、固定头/尾部，不能匹配时给可恢复提示，不悄悄丢原图。 | native匹配支持正反位移/低纹理拒绝/粘性栏；等待异步结果不阻塞UI。明确点击“采集下一屏”先匹配，无重叠则整页追加。 | 合成像素/高度验证；普通自动滚动遇到动画/重复纹理仍可能拒绝，提示用户明确采集新页。 |
+| L04 | 原版手动重叠下拉。 | 按2026-11-16用户要求移除手动拼接按钮和重叠下拉；由“采集下一屏”自动处理换页。 | 真实worker覆盖有重叠、无重叠、重复页和与完成竞争的待采页面；UI断言无下拉框。 |
 | L05 | 缩略图随长图增长，最大半工作区/320逻辑px，不频繁重摆。 | 原生保留位图与后台缩放，最大高度对齐；同高度不移动窗口/控件。 | E5原生高度/position测试通过；后续Qt卡片310px/预览272px已接，三档独立scroll-ui-checks检查48次无复制/resize/show/hide通过。真实滚动合成器闪烁未验收。 |
-| L06 | 撤销最近一屏，恢复被替换粘性尾部，并把撤销帧作为pending供改重叠重接。 | Stitch Undo保留必要边缘与previous frame；忙时defer操作；当前手动/undo都有真实worker流程。 | E3像素恢复与忙时撤销回归；不是只检查按钮enabled。 |
-| L07 | 完成进入可立即编辑长图的编辑器，禁普通标注滚轮；可裁剪、复制、贴图、保存。 | Finish传`edit=true,wheel_sizes=false`，采用用户要求的原位编辑。静图裁剪仍见A19。 | 最新联合回归通过；可见合成页面700×880完成后获得原位贴图，右键菜单为“完成编辑”，长图普通标注滚轮禁用有独立断言。 |
-| L08 | 源屏丢失停止监听/采集，隐藏框，保留已采图。 | device+rect快照，每次采样前和WM_DISPLAYCHANGE核对，失效停hook/timer，排空已采队列后Finish可编辑。 | E5通过：模拟移除/重排、0额外读取、304px成图逐像素保持；无真实拔插。 |
+| L06 | 撤销最近一屏，恢复被替换粘性尾部。 | Stitch Undo保留必要边缘与previous frame；忙时defer操作；新页/undo都有真实worker流程。 | 合成像素恢复与忙时撤销回归；不是只检查按钮enabled。 |
+| L07 | 原版完成进入编辑；最新用户要求直接贴图。 | Finish传`edit=false,wheel_sizes=false`。普通滚轮浏览长图，Ctrl滚轮缩放、Shift滚轮透明度，Home/End/PageUp/PageDown浏览。窗口大小受屏幕约束，复制/保存保持整图。 | 合成回归覆盖未滚动/未匹配/采集失败仍可完成、视口坐标映射、完整原图导出、键盘滚动、透明度和缩放边界；真实滚动与合成器闪烁待实测。 |
+| L08 | 源屏丢失停止监听/采集，隐藏框，保留已采图。 | device+rect快照，每次采样前和WM_DISPLAYCHANGE核对，失效停hook/timer，排空已采队列后Finish生成贴图。 | 模拟移除/重排、0额外读取、304px成图逐像素保持；无真实拔插。 |
 | L09 | 老系统不支持排除窗口时，自动采样若面板覆盖选区则提示移开；手动隐藏70ms后采样。 | native等价分支，`SetWindowDisplayAffinity`失败不会无脑把面板截进去。 | 已接线；老Windows实际效果未验收。 |
 | L10 | Finish保留最后滚动屏；取消停hook/计时，晚到worker不能再开图。 | Finish额外终帧并有序排空；shutdown先隐藏，工作完成再回收。 | E5终帧/取消/源失效Finish均通过；Qt桥额外验证Cancel仅destroy一次，controller与panel均回收。 |
 | L11 | 预留最大缩略图高度，面板在框旁，空间不足尝试别屏。 | 以最大面板尺寸尝试右/左/下/上，再尝试其他工作区，负原点也支持；后续高度变化按面板所在屏约束。 | E5纯几何右/左/上下/负原点异屏/无空间测试通过；无空间保留原排除捕获与手动临时隐藏策略。 |
@@ -112,6 +112,6 @@ E7：`.local/pin-interaction-evidence.json` 记录生产 `pin_proc` 与 CaptureT
 3. 失败测试保留证据，最新DLL/EXE摘要与通过报告配套；旧E1通过不自动涵盖新代码。
 4. 真实中文IME、混合DPI/多屏、Explorer/显示拓扑变化、受保护窗口、真实滚动网页及录屏音频需分别记录接受结果。没有这些证据时，状态保留“待实测”，不称1:1完美完成。
 
-长图Qt控制层补充：`src/scroll_ui_api.h` 是独立版本化POD边界，native仅借出已完成的缩略图句柄，UI当场复制且以revision避免重复副本。隐藏controller继续拥有采样计时器/线程/鼠标hook；关闭回收面板和controller，取消不生成贴图。`ui_bridge_tests` 真串行worker验证187px手动拼接、Undo与单次destroy，三档Qt卡片图位于 `.local/scroll-parity/ui-dpi*/`。未将真实鼠标或屏幕读入自动测试。
+长图Qt控制层补充：`src/scroll_ui_api.h` 是独立版本化POD边界，native仅借出已完成的缩略图句柄，UI当场复制且以revision避免重复副本。隐藏controller继续拥有采样计时器/线程/鼠标hook；关闭回收面板和controller，取消不生成贴图。`ui_bridge_tests` 当前通过“采集下一屏”自动匹配187px重叠、Undo与单次destroy。历史三档Qt卡片图位于 `.local/scroll-parity/ui-dpi*/`，当前图以最新测试目录为准。未将真实鼠标或屏幕读入自动测试。
 
 本轮UI精确证据：`.local/capture-pin-final-dpi{100,150,200}/capture-ui-checks.json` 对Capture ABI4全部通过，包含mode2裁剪、Enter/Escape、非空暗色Pin菜单抓图、全部返回命令、owner在菜单exec期间销毁、负坐标/混合比例点映射。`number_1_to_9999`和`underline_keeps_editor_style`也通过。此报告由真实DLL `d9c58a4b41f6818039e00e9b1b132d5023ab7e137f1106b04148c5fa4141ecad` 的隐藏夹具产生；菜单图由自身QMenu.grab生成，未抓取用户桌面。此后联合Main/原生完整门禁仍须单列最终版本证据。

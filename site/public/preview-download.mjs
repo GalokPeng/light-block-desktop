@@ -1,4 +1,4 @@
-export const previewTag = 'preview-v1.1.0-beta.1';
+export const previewTag = 'preview-v1.1.0-beta.2';
 export const previewSetup = 'Qingkuai-Preview-Setup-x64.exe';
 const roots = { github: '', 'gh-proxy': 'https://gh-proxy.com/', ghfast: 'https://ghfast.top/' };
 export function previewUrl(source = 'github') {

@@ -12,6 +12,7 @@ struct Control { LONG sequence,enabled,color,opacity,radius;ULONGLONG parent_cre
 void configure();
 bool has_session();
 bool transition_tests();
+bool visibility_tests();
 bool shutdown();
 void tick();
 int helper_main(int argc,wchar_t **argv);

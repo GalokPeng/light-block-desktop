@@ -27,7 +27,8 @@ struct Surface {
     int active{-1},edit_index{-1};POINT previous{},move_anchor{};bool move_started{};
     int wheel_target{-3},wheel_delta{};
     bool drawing{},moving{},editing{},border{true},qt_toolbar{},brush_visible{},tracking{};double scale{1.};POINT brush_point{};
-    double opacity{1.};bool wheel_sizes{true};
+    double opacity{1.};bool wheel_sizes{true},long_image{};double scroll_y{};
+    unique_gdi<HBITMAP> paint_buffer;SIZE paint_size{};
     bool cropping{},crop_selected{},resizable{};int crop_drag{};POINT crop_anchor{};RECT crop_selection{},crop_before{};
     int resize_drag{};POINT resize_anchor{};RECT resize_before{};
     std::function<void(std::vector<Annotation>)> complete;
@@ -158,15 +159,21 @@ RECT source_view(Surface const& surface){
 }
 int pin_margin(Surface const& surface){auto dpi=GetDpiForWindow(surface.window);return surface.border?std::max(1,MulDiv(5,dpi?dpi:96,96)):0;}
 RECT image_viewport(Surface const& surface){if(session&&surface.window==session->window)return session->selection;RECT area{};GetClientRect(surface.window,&area);int margin=pin_margin(surface);InflateRect(&area,-margin,-margin);return area;}
-POINT to_document(Surface const& surface,POINT point,bool clamp=true) {
-    if(!surface.document)return point;auto area=image_viewport(surface),source=source_view(surface);point.x=source.left+LONG(std::floor(double(point.x-area.left)*(source.right-source.left)/std::max(1L,area.right-area.left)));point.y=source.top+LONG(std::floor(double(point.y-area.top)*(source.bottom-source.top)/std::max(1L,area.bottom-area.top)));if(clamp){point.x=std::clamp(point.x,source.left,std::max(source.left,source.right-1));point.y=std::clamp(point.y,source.top,std::max(source.top,source.bottom-1));}return point;
+RECT display_view(Surface const& surface){
+    auto view=source_view(surface);if(!surface.long_image)return view;
+    auto area=image_viewport(surface);double scale=double(area.right-area.left)/std::max(1L,view.right-view.left);
+    int visible=std::clamp(int(std::lround((area.bottom-area.top)/std::max(.001,scale))),1,int(view.bottom-view.top));
+    view.top+=std::clamp(int(std::lround(surface.scroll_y)),0,int(view.bottom-view.top)-visible);view.bottom=view.top+visible;return view;
 }
-POINT from_document(Surface const& surface,POINT point){auto area=image_viewport(surface),source=source_view(surface);if(!surface.document)return point;return {area.left+MulDiv(point.x-source.left,area.right-area.left,std::max(1L,source.right-source.left)),area.top+MulDiv(point.y-source.top,area.bottom-area.top,std::max(1L,source.bottom-source.top))};}
-double image_scale_y(Surface const& surface){auto area=image_viewport(surface),source=source_view(surface);return surface.document?double(area.bottom-area.top)/std::max(1L,source.bottom-source.top):1.;}
-int hit_annotation(Surface const& surface,POINT point,bool mosaics=true,int skip=-1){if(!surface.document)return -1;auto area=image_viewport(surface),source=source_view(surface);double scale=std::min(double(area.right-area.left)/std::max(1L,source.right-source.left),double(area.bottom-area.top)/std::max(1L,source.bottom-source.top));UINT dpi=GetDpiForWindow(surface.window);double margin=6.*(dpi?dpi:96)/96/std::max(.001,scale);return surface.document->hit(point,margin,mosaics,skip);}
-RECT brush_bounds(Surface const& surface){auto area=image_viewport(surface),source=source_view(surface);auto point=from_document(surface,to_document(surface,surface.brush_point));int x=surface.document?int(std::ceil(double(surface.style.width)*(area.right-area.left)/std::max(1L,source.right-source.left)/2))+3:3,y=surface.document?int(std::ceil(double(surface.style.width)*(area.bottom-area.top)/std::max(1L,source.bottom-source.top)/2))+3:3;return {point.x-x,point.y-y,point.x+x+1,point.y+y+1};}
+POINT to_document(Surface const& surface,POINT point,bool clamp=true) {
+    if(!surface.document)return point;auto area=image_viewport(surface),source=display_view(surface);point.x=source.left+LONG(std::floor(double(point.x-area.left)*(source.right-source.left)/std::max(1L,area.right-area.left)));point.y=source.top+LONG(std::floor(double(point.y-area.top)*(source.bottom-source.top)/std::max(1L,area.bottom-area.top)));if(clamp){point.x=std::clamp(point.x,source.left,std::max(source.left,source.right-1));point.y=std::clamp(point.y,source.top,std::max(source.top,source.bottom-1));}return point;
+}
+POINT from_document(Surface const& surface,POINT point){auto area=image_viewport(surface),source=display_view(surface);if(!surface.document)return point;return {area.left+MulDiv(point.x-source.left,area.right-area.left,std::max(1L,source.right-source.left)),area.top+MulDiv(point.y-source.top,area.bottom-area.top,std::max(1L,source.bottom-source.top))};}
+double image_scale_y(Surface const& surface){auto area=image_viewport(surface),source=display_view(surface);return surface.document?double(area.bottom-area.top)/std::max(1L,source.bottom-source.top):1.;}
+int hit_annotation(Surface const& surface,POINT point,bool mosaics=true,int skip=-1){if(!surface.document)return -1;auto area=image_viewport(surface),source=display_view(surface);double scale=std::min(double(area.right-area.left)/std::max(1L,source.right-source.left),double(area.bottom-area.top)/std::max(1L,source.bottom-source.top));UINT dpi=GetDpiForWindow(surface.window);double margin=6.*(dpi?dpi:96)/96/std::max(.001,scale);return surface.document->hit(point,margin,mosaics,skip);}
+RECT brush_bounds(Surface const& surface){auto area=image_viewport(surface),source=display_view(surface);auto point=from_document(surface,to_document(surface,surface.brush_point));int x=surface.document?int(std::ceil(double(surface.style.width)*(area.right-area.left)/std::max(1L,source.right-source.left)/2))+3:3,y=surface.document?int(std::ceil(double(surface.style.width)*(area.bottom-area.top)/std::max(1L,source.bottom-source.top)/2))+3:3;return {point.x-x,point.y-y,point.x+x+1,point.y+y+1};}
 void brush_cursor(Surface& surface,POINT point,bool visible){if(surface.brush_visible){auto old=brush_bounds(surface);InvalidateRect(surface.window,&old,FALSE);}auto viewport=image_viewport(surface);surface.brush_point=point;surface.brush_visible=visible&&surface.editing&&surface.tool==Tool::eraser&&surface.document&&PtInRect(&viewport,point);if(surface.brush_visible){auto area=brush_bounds(surface);InvalidateRect(surface.window,&area,FALSE);}if(visible&&!surface.tracking){TRACKMOUSEEVENT track{sizeof track,TME_LEAVE,surface.window,0};if(TrackMouseEvent(&track))surface.tracking=true;}}
-void paint_brush_cursor(Surface const& surface,HDC dc){if(!surface.brush_visible||surface.tool!=Tool::eraser||!surface.document)return;struct Runtime{ULONG_PTR token{};Runtime(){Gdiplus::GdiplusStartupInput input;Gdiplus::GdiplusStartup(&token,&input,nullptr);}~Runtime(){if(token)Gdiplus::GdiplusShutdown(token);}};static Runtime runtime;if(!runtime.token)return;auto area=image_viewport(surface),source=source_view(surface);auto point=to_document(surface,surface.brush_point);Gdiplus::Graphics graphics(dc);graphics.SetClip(Gdiplus::Rect(area.left,area.top,area.right-area.left,area.bottom-area.top));graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);float sx=float(area.right-area.left)/std::max(1L,source.right-source.left),sy=float(area.bottom-area.top)/std::max(1L,source.bottom-source.top);float width=surface.style.width*sx,height=surface.style.width*sy,cx=area.left+(point.x-source.left+.5f)*sx,cy=area.top+(point.y-source.top+.5f)*sy;Gdiplus::Pen dark(Gdiplus::Color(230,16,20,28),3.f),light(Gdiplus::Color(245,235,245,255),1.f);graphics.DrawEllipse(&dark,cx-width/2,cy-height/2,width,height);graphics.DrawEllipse(&light,cx-width/2,cy-height/2,width,height);graphics.DrawLine(&light,cx-2,cy,cx+2,cy);graphics.DrawLine(&light,cx,cy-2,cx,cy+2);}
+void paint_brush_cursor(Surface const& surface,HDC dc){if(!surface.brush_visible||surface.tool!=Tool::eraser||!surface.document)return;struct Runtime{ULONG_PTR token{};Runtime(){Gdiplus::GdiplusStartupInput input;Gdiplus::GdiplusStartup(&token,&input,nullptr);}~Runtime(){if(token)Gdiplus::GdiplusShutdown(token);}};static Runtime runtime;if(!runtime.token)return;auto area=image_viewport(surface),source=display_view(surface);auto point=to_document(surface,surface.brush_point);Gdiplus::Graphics graphics(dc);graphics.SetClip(Gdiplus::Rect(area.left,area.top,area.right-area.left,area.bottom-area.top));graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);float sx=float(area.right-area.left)/std::max(1L,source.right-source.left),sy=float(area.bottom-area.top)/std::max(1L,source.bottom-source.top);float width=surface.style.width*sx,height=surface.style.width*sy,cx=area.left+(point.x-source.left+.5f)*sx,cy=area.top+(point.y-source.top+.5f)*sy;Gdiplus::Pen dark(Gdiplus::Color(230,16,20,28),3.f),light(Gdiplus::Color(245,235,245,255),1.f);graphics.DrawEllipse(&dark,cx-width/2,cy-height/2,width,height);graphics.DrawEllipse(&light,cx-width/2,cy-height/2,width,height);graphics.DrawLine(&light,cx-2,cy,cx+2,cy);graphics.DrawLine(&light,cx,cy-2,cx,cy+2);}
 void layout_text(Surface& surface) {
     if(!surface.edit||!surface.document||surface.edit_index<0||size_t(surface.edit_index)>=surface.document->items.size())return;
     auto const& item=surface.document->items[size_t(surface.edit_index)];if(item.points.empty())return;
@@ -427,8 +434,8 @@ void paint_text_selection(Surface const& surface,HDC dc){if(!surface.editing||su
 HWND create_pin(std::unique_ptr<Document> document,RECT screen,bool fit=false,std::function<void(std::vector<Annotation>)> complete={},bool edit=false,bool wheel_sizes=true) {
     auto slot=std::find_if(pins.begin(),pins.end(),[](auto const& pin){return !pin;});
     if(slot==pins.end()) { error_box(g_app.window,tr(L"最多同时显示 12 张贴图",L"Up to twelve pins can be open at once"),E_OUTOFMEMORY);return nullptr; }
-    auto pin=std::make_unique<Pin>();pin->wheel_sizes=wheel_sizes;pin->resizable=fit&&!complete;
-    if(fit) { MONITORINFO monitor{sizeof monitor};GetMonitorInfoW(MonitorFromRect(&screen,MONITOR_DEFAULTTONEAREST),&monitor);pin->scale=std::min({1.,double(monitor.rcWork.right-monitor.rcWork.left-32)/document->width,double(monitor.rcWork.bottom-monitor.rcWork.top-32)/document->height});screen.right=screen.left+int(document->width*pin->scale);screen.bottom=screen.top+int(document->height*pin->scale);if(screen.bottom>monitor.rcWork.bottom) OffsetRect(&screen,0,monitor.rcWork.bottom-screen.bottom); }
+    auto pin=std::make_unique<Pin>();pin->wheel_sizes=wheel_sizes;pin->resizable=fit&&!complete;pin->long_image=fit&&!wheel_sizes&&!complete;
+    if(fit) { MONITORINFO monitor{sizeof monitor};GetMonitorInfoW(MonitorFromRect(&screen,MONITOR_DEFAULTTONEAREST),&monitor);pin->scale=std::min({1.,double(monitor.rcWork.right-monitor.rcWork.left-32)/document->width,double(monitor.rcWork.bottom-monitor.rcWork.top-32)/document->height});if(pin->long_image)pin->scale=std::min(1.,double(monitor.rcWork.right-monitor.rcWork.left-48)*.7/document->width);screen.right=screen.left+int(document->width*pin->scale);screen.bottom=screen.top+std::min(int(document->height*pin->scale),int(monitor.rcWork.bottom-monitor.rcWork.top-48));if(screen.bottom>monitor.rcWork.bottom-16) OffsetRect(&screen,0,monitor.rcWork.bottom-16-screen.bottom);if(screen.right>monitor.rcWork.right-16)OffsetRect(&screen,monitor.rcWork.right-16-screen.right,0); }
     if(!fit&&complete&&document->width>0)pin->scale=double(screen.right-screen.left)/document->width;
     pin->document=std::move(document);pin->complete=std::move(complete);WNDCLASSW cls{};cls.hInstance=g_app.instance;cls.lpfnWndProc=pin_proc;
     cls.lpszClassName=L"LightBlockDesktopNative.Pin";cls.style=CS_DBLCLKS;cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);RegisterClassW(&cls);auto pointer=pin.get();*slot=std::move(pin);
@@ -461,13 +468,25 @@ void pin_zoom(Surface& surface,POINT anchor,int delta){
     int width=content.right-content.left,height=content.bottom-content.top;if(width<1||height<1)return;
     MONITORINFO monitor{sizeof monitor};if(!GetMonitorInfoW(MonitorFromPoint(anchor,MONITOR_DEFAULTTONEAREST),&monitor))return;
     int margin=pin_margin(surface);double factor=std::pow(1.16,std::clamp(delta/120.,-5.,5.));
-    double maximum=std::min(double(monitor.rcWork.right-monitor.rcWork.left-2*margin)/source_width,double(monitor.rcWork.bottom-monitor.rcWork.top-2*margin)/source_height);
+    double maximum=double(monitor.rcWork.right-monitor.rcWork.left-2*margin)/source_width;if(!surface.long_image)maximum=std::min(maximum,double(monitor.rcWork.bottom-monitor.rcWork.top-2*margin)/source_height);
     double minimum=std::max(double(std::min(100,source_width))/source_width,double(std::min(70,source_height))/source_height);
     if(maximum<=0)return;double scale=std::clamp(double(width)/source_width*factor,std::min(minimum,maximum),maximum);
     int target_width=std::max(1,int(std::lround(source_width*scale))),target_height=std::max(1,int(std::lround(source_height*scale)));
-    int x=anchor.x-int(std::lround(double(anchor.x-content.left)*target_width/width))-margin,y=anchor.y-int(std::lround(double(anchor.y-content.top)*target_height/height))-margin;
+    double anchor_y=surface.scroll_y+(anchor.y-content.top)*double(source_width)/width;
+    if(surface.long_image)target_height=std::min(target_height,int(monitor.rcWork.bottom-monitor.rcWork.top-2*margin));
+    int x=anchor.x-int(std::lround(double(anchor.x-content.left)*target_width/width))-margin,y=surface.long_image?content.top-margin:anchor.y-int(std::lround(double(anchor.y-content.top)*target_height/height))-margin;
     x=std::clamp(x,int(monitor.rcWork.left),std::max(int(monitor.rcWork.left),int(monitor.rcWork.right)-target_width-2*margin));y=std::clamp(y,int(monitor.rcWork.top),std::max(int(monitor.rcWork.top),int(monitor.rcWork.bottom)-target_height-2*margin));
+    if(surface.long_image)surface.scroll_y=std::clamp(anchor_y-(anchor.y-y-margin)/scale,0.,std::max(0.,source_height-target_height/scale));
     surface.scale=scale;SetWindowPos(surface.window,nullptr,x,y,target_width+2*margin,target_height+2*margin,SWP_NOZORDER|SWP_NOACTIVATE);InvalidateRect(surface.window,nullptr,FALSE);place_toolbar(surface);
+}
+void pin_scroll(Surface& surface,double delta){
+    if(!surface.long_image||surface.drawing||surface.moving||surface.cropping)return;commit_text(surface);
+    auto view=source_view(surface),area=image_viewport(surface);
+    double scale=double(area.right-area.left)/std::max(1L,view.right-view.left);
+    double limit=std::max(0.,view.bottom-view.top-(area.bottom-area.top)/std::max(.001,scale));
+    double next=std::clamp(surface.scroll_y+delta/std::max(.001,scale),0.,limit);
+    if(std::abs(next-surface.scroll_y)<.01)return;surface.scroll_y=next;
+    layout_text(surface);InvalidateRect(surface.window,nullptr,FALSE);
 }
 HBITMAP render_result(Surface& surface,unique_gdi<HBITMAP>& storage){
     if(!surface.document)return nullptr;auto image=surface.document->render();RECT full{0,0,surface.document->width,surface.document->height},view=source_view(surface);
@@ -476,6 +495,7 @@ HBITMAP render_result(Surface& surface,unique_gdi<HBITMAP>& storage){
 bool copy_surface(Surface& surface){unique_gdi<HBITMAP> result;bool ok=copy_bitmap(surface.window,render_result(surface,result));if(!ok&&IsWindowVisible(surface.window))MessageBeep(MB_ICONWARNING);return ok;}
 void pin_view_changed(Surface& surface,RECT before){
     auto view=source_view(surface);if(EqualRect(&before,&view))return;
+    if(surface.long_image){surface.scroll_y=0;InvalidateRect(surface.window,nullptr,FALSE);layout_text(surface);place_toolbar(surface);return;}
     RECT content=image_viewport(surface);MapWindowPoints(surface.window,nullptr,reinterpret_cast<POINT*>(&content),2);
     double sx=double(content.right-content.left)/std::max(1L,before.right-before.left),sy=double(content.bottom-content.top)/std::max(1L,before.bottom-before.top);int margin=pin_margin(surface);
     int x=content.left+int(std::lround((view.left-before.left)*sx)),y=content.top+int(std::lround((view.top-before.top)*sy));
@@ -509,7 +529,7 @@ void pin_crop_paint(Surface const& surface,HDC dc){
     unique_gdi<HBRUSH> handle(CreateSolidBrush(RGB(90,189,250)));for(POINT p:std::array<POINT,8>{{{r.left,r.top},{(r.left+r.right)/2,r.top},{r.right,r.top},{r.left,(r.top+r.bottom)/2},{r.right,(r.top+r.bottom)/2},{r.left,r.bottom},{(r.left+r.right)/2,r.bottom},{r.right,r.bottom}}}){RECT dot{p.x-3,p.y-3,p.x+4,p.y+4};FillRect(dc,&dot,handle.get());}
 }
 void draw_pin_image(Surface& surface,HDC dc){
-    auto source=source_view(surface),destination=image_viewport(surface);auto image=surface.document->render(surface.edit?surface.edit_index:-1);if(!image)return;
+    auto source=display_view(surface),destination=image_viewport(surface);auto image=surface.document->render(surface.edit?surface.edit_index:-1);if(!image)return;
     HDC pixels=CreateCompatibleDC(dc);if(!pixels)return;auto old=SelectObject(pixels,image);SetStretchBltMode(dc,HALFTONE);SetBrushOrgEx(dc,0,0,nullptr);StretchBlt(dc,destination.left,destination.top,destination.right-destination.left,destination.bottom-destination.top,pixels,source.left,source.top,source.right-source.left,source.bottom-source.top,SRCCOPY);SelectObject(pixels,old);DeleteDC(pixels);
 }
 int pin_resize_hit(Surface const& surface,POINT screen){
@@ -518,6 +538,12 @@ int pin_resize_hit(Surface const& surface,POINT screen){
     if(top)return left?HTTOPLEFT:right?HTTOPRIGHT:HTTOP;if(bottom)return left?HTBOTTOMLEFT:right?HTBOTTOMRIGHT:HTBOTTOM;return left?HTLEFT:right?HTRIGHT:HTCAPTION;
 }
 void pin_sizing(Surface& surface,int edge,RECT& proposed){
+    if(surface.long_image){MONITORINFO monitor{sizeof monitor};if(!GetMonitorInfoW(MonitorFromWindow(surface.window,MONITOR_DEFAULTTONEAREST),&monitor))return;auto work=monitor.rcWork,view=source_view(surface);int margin=pin_margin(surface)*2;
+        int width=std::clamp(int(proposed.right-proposed.left),100,std::max(100,int(work.right-work.left)));
+        int full_height=int(std::lround(double(width-margin)*(view.bottom-view.top)/std::max(1L,view.right-view.left)))+margin;
+        int height=std::clamp(int(proposed.bottom-proposed.top),std::min(100,full_height),std::max(1,std::min(full_height,int(work.bottom-work.top))));
+        if(edge==WMSZ_LEFT||edge==WMSZ_TOPLEFT||edge==WMSZ_BOTTOMLEFT)proposed.left=proposed.right-width;else proposed.right=proposed.left+width;
+        if(edge==WMSZ_TOP||edge==WMSZ_TOPLEFT||edge==WMSZ_TOPRIGHT)proposed.top=proposed.bottom-height;else proposed.bottom=proposed.top+height;return;}
     auto view=source_view(surface);int margin=pin_margin(surface);double aspect=double(view.right-view.left)/std::max(1L,view.bottom-view.top);if(aspect<=0)return;
     int width=std::max(40L,proposed.right-proposed.left-margin*2),height=std::max(30L,proposed.bottom-proposed.top-margin*2);
     if(edge==WMSZ_TOP||edge==WMSZ_BOTTOM)width=std::max(40,int(std::lround(height*aspect)));else height=std::max(30,int(std::lround(width/aspect)));
@@ -544,11 +570,14 @@ LRESULT CALLBACK pin_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
     switch(message) {
     case WM_ERASEBKGND:return 1;
     case WM_PAINT: {
-        PAINTSTRUCT ps;HDC dc=BeginPaint(window,&ps);RECT bounds{};GetClientRect(window,&bounds);
+        PAINTSTRUCT ps;HDC output=BeginPaint(window,&ps);RECT bounds{};GetClientRect(window,&bounds);
+        if(surface->paint_size.cx!=bounds.right||surface->paint_size.cy!=bounds.bottom||!surface->paint_buffer){surface->paint_buffer.reset(CreateCompatibleBitmap(output,std::max(1L,bounds.right),std::max(1L,bounds.bottom)));surface->paint_size={bounds.right,bounds.bottom};}
+        HDC memory=surface->paint_buffer?CreateCompatibleDC(output):nullptr;HDC dc=memory?memory:output;
+        auto previous=memory?SelectObject(memory,surface->paint_buffer.get()):nullptr;
         FillRect(dc,&bounds,static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
         draw_pin_image(*surface,dc);
         if(surface->border) { unique_gdi<HPEN> pen(CreatePen(PS_SOLID,1,RGB(123,224,205)));auto p=SelectObject(dc,pen.get()),b=SelectObject(dc,GetStockObject(HOLLOW_BRUSH));Rectangle(dc,0,0,bounds.right,bounds.bottom);if(surface->resizable&&!surface->editing)for(int offset:{5,9}){MoveToEx(dc,bounds.right-offset,bounds.bottom-3,nullptr);LineTo(dc,bounds.right-3,bounds.bottom-offset);}SelectObject(dc,p);SelectObject(dc,b); }
-        paint_text_selection(*surface,dc);paint_brush_cursor(*surface,dc);pin_crop_paint(*surface,dc);EndPaint(window,&ps);return 0;
+        paint_text_selection(*surface,dc);paint_brush_cursor(*surface,dc);pin_crop_paint(*surface,dc);if(memory){BitBlt(output,ps.rcPaint.left,ps.rcPaint.top,ps.rcPaint.right-ps.rcPaint.left,ps.rcPaint.bottom-ps.rcPaint.top,dc,ps.rcPaint.left,ps.rcPaint.top,SRCCOPY);SelectObject(memory,previous);DeleteDC(memory);}EndPaint(window,&ps);return 0;
     }
     case WM_NCHITTEST:if(!surface->editing)return pin_resize_hit(*surface,{GET_X_LPARAM(lp),GET_Y_LPARAM(lp)});break;
     case WM_SETCURSOR:if(LOWORD(lp)==HTCLIENT&&surface->cropping){SetCursor(LoadCursorW(nullptr,IDC_CROSS));return TRUE;}if(LOWORD(lp)==HTCLIENT&&surface->editing&&surface->tool==Tool::eraser){POINT point{};GetCursorPos(&point);ScreenToClient(window,&point);auto area=image_viewport(*surface);if(PtInRect(&area,point)){brush_cursor(*surface,point,true);SetCursor(nullptr);return TRUE;}}break;
@@ -564,7 +593,8 @@ LRESULT CALLBACK pin_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
     case WM_MOUSEWHEEL:
         if(surface->cropping||surface->resize_drag)return 0;
         if(GET_KEYSTATE_WPARAM(wp)&MK_CONTROL)pin_zoom(*surface,{GET_X_LPARAM(lp),GET_Y_LPARAM(lp)},GET_WHEEL_DELTA_WPARAM(wp));
-        else if(surface->editing)wheel(*surface,{GET_X_LPARAM(lp),GET_Y_LPARAM(lp)},wp);
+        else if(surface->long_image&&!(GET_KEYSTATE_WPARAM(wp)&MK_SHIFT))pin_scroll(*surface,-GET_WHEEL_DELTA_WPARAM(wp)*96./120.);
+        else if(surface->editing&&!(GET_KEYSTATE_WPARAM(wp)&MK_SHIFT))wheel(*surface,{GET_X_LPARAM(lp),GET_Y_LPARAM(lp)},wp);
         else if(GET_WHEEL_DELTA_WPARAM(wp))pin_opacity(*surface,surface->opacity+GET_WHEEL_DELTA_WPARAM(wp)*.05/120.);return 0;
     case WM_NCRBUTTONUP:PostMessageW(window,WM_CONTEXTMENU,WPARAM(window),lp);return 0;
     case WM_RBUTTONUP:{if(surface->cropping){pin_crop_cancel(*surface);return 0;}POINT point{GET_X_LPARAM(lp),GET_Y_LPARAM(lp)};ClientToScreen(window,&point);PostMessageW(window,WM_CONTEXTMENU,WPARAM(window),MAKELPARAM(point.x,point.y));return 0;}
@@ -587,6 +617,7 @@ LRESULT CALLBACK pin_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
     case WM_COMMAND:if(LOWORD(wp)==8&&HIWORD(wp)==EN_CHANGE)layout_text(*surface);return 0;
     case WM_CTLCOLOREDIT:SetTextColor(HDC(wp),surface->style.color);SetBkColor(HDC(wp),RGB(27,33,42));return LRESULT(surface->edit_brush.get());
     case WM_KEYDOWN:
+        if(surface->long_image&&(wp==VK_UP||wp==VK_DOWN||wp==VK_PRIOR||wp==VK_NEXT||wp==VK_HOME||wp==VK_END)){auto area=image_viewport(*surface);double step=wp==VK_UP?-48:wp==VK_DOWN?48:wp==VK_PRIOR?-(area.bottom-area.top)*.9:wp==VK_NEXT?(area.bottom-area.top)*.9:wp==VK_HOME?-1e9:1e9;pin_scroll(*surface,step);return 0;}
         if(wp==VK_ESCAPE) { if(surface->cropping)pin_crop_cancel(*surface);else if(surface->complete||!surface->editing)DestroyWindow(window);else close_toolbar(*surface); }
         else if(surface->cropping){if(wp==VK_RETURN)pin_crop_apply(*surface);}
         else if(wp=='C'&&GetKeyState(VK_CONTROL)<0){commit_text(*surface);copy_surface(*surface);}
@@ -898,6 +929,21 @@ bool capture_pin_tests(){
     pin_crop_begin(*surface);pin_crop_down(*surface,{viewport.left+2,viewport.top+2});pin_crop_move(*surface,{viewport.right-3,viewport.bottom-3});pin_crop_cancel(*surface);auto cancelled=source_view(*surface);if(!EqualRect(&clipped,&cancelled)||surface->cropping)return false;
     close_toolbar(*surface);surface->resizable=true;surface->border=true;RECT placement{};GetWindowRect(window,&placement);if(pin_resize_hit(*surface,{placement.right-1,placement.bottom-1})!=HTBOTTOMRIGHT)return false;surface->border=false;if(pin_resize_hit(*surface,{placement.right-1,placement.bottom-1})!=HTCAPTION)return false;
     RECT sizing{10,20,414,284};pin_sizing(*surface,WMSZ_BOTTOMRIGHT,sizing);if(std::abs(double(sizing.right-sizing.left)/(sizing.bottom-sizing.top)-240./150)>.01)return false;
+    // A long pin scrolls a viewport while copy/save retain the whole source.
+    surface->document->items.clear();surface->document->changed();surface->long_image=true;surface->wheel_sizes=false;
+    SetWindowPos(window,nullptr,monitor.rcWork.left+40,monitor.rcWork.top+40,400,100,SWP_NOZORDER|SWP_NOACTIVATE);
+    SendMessageW(window,WM_MOUSEWHEEL,MAKEWPARAM(0,short(-WHEEL_DELTA)),0);
+    auto visible=display_view(*surface);if(visible.top<=0||visible.bottom-visible.top>101||surface->opacity!=1.)return false;
+    auto top_point=to_document(*surface,{0,0});if(top_point.y!=visible.top)return false;
+    exported.reset();rendered=render_result(*surface,exported);if(!GetObjectW(rendered,sizeof metadata,&metadata)||metadata.bmWidth!=400||metadata.bmHeight!=240)return false;
+    SendMessageW(window,WM_KEYDOWN,VK_END,0);visible=display_view(*surface);if(visible.bottom!=240)return false;
+    SendMessageW(window,WM_KEYDOWN,VK_HOME,0);if(display_view(*surface).top)return false;
+    SendMessageW(window,WM_MOUSEWHEEL,MAKEWPARAM(MK_SHIFT,short(-WHEEL_DELTA)),0);if(std::abs(surface->opacity-.95)>.001)return false;
+    pin_opacity(*surface,1.);for(int n=0;n<30;++n)pin_zoom(*surface,anchor,WHEEL_DELTA);
+    GetWindowRect(window,&outer);if(outer.right>monitor.rcWork.right||outer.bottom>monitor.rcWork.bottom)return false;
+    RECT tall_size{10,20,210,1020};pin_sizing(*surface,WMSZ_BOTTOMRIGHT,tall_size);if(tall_size.bottom-tall_size.top!=120)return false;
+    RECT left_size{100,20,350,170};pin_sizing(*surface,WMSZ_TOPLEFT,left_size);if(left_size.right!=350||left_size.bottom!=170)return false;
+    surface->long_image=false;surface->wheel_sizes=true;
     auto previous_open=open_image_clipboard;open_image_clipboard=+[](HWND)->BOOL{return FALSE;};SendMessageW(window,WM_NCLBUTTONDBLCLK,HTCAPTION,0);open_image_clipboard=previous_open;if(!IsWindow(window)||!pins[0])return false;
     show_toolbar(*surface);
     // Losing capture mid-stroke must finalize the gesture once. Subsequent

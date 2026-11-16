@@ -23,6 +23,7 @@ public:
     int width{},height{};
     std::vector<uint32_t> pixels;
     Change append(Frame frame);
+    Change page(Frame frame);
     Change manual(Frame frame,int overlap);
     bool can_undo() const { return undo_.has_value(); }
     Frame const& current_frame() const { return previous_; }

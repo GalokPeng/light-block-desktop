@@ -28,7 +28,10 @@ try {
     if (-not $DestinationDirectory) { $DestinationDirectory=Join-Path $root 'dist/LightBlockDesktopPreview/runtime/recording' }
     $sources=Join-Path $root 'build/corresponding-sources'
     New-Item -ItemType Directory -Force -Path $DestinationDirectory,$sources | Out-Null
-    Copy-Item -LiteralPath $binary -Destination (Join-Path $DestinationDirectory 'ffmpeg.exe') -Force
+    $stagedBinary=Join-Path $DestinationDirectory 'ffmpeg.exe'
+    if (-not (Test-Path -LiteralPath $stagedBinary) -or (Get-FileHash -LiteralPath $stagedBinary).Hash.ToLowerInvariant() -cne $binaryHash) {
+        Copy-Item -LiteralPath $binary -Destination $stagedBinary -Force
+    }
     Copy-Item -LiteralPath $source -Destination (Join-Path $sources 'ffmpeg-source.zip') -Force
     Copy-Item -LiteralPath (Join-Path $root 'licenses/FFmpeg-Native-runtime.txt'),(Join-Path $root 'licenses/FFmpeg-GPL-3.0.txt') -Destination $DestinationDirectory -Force
     $identity=Join-Path $root 'build/runtime_identity.hpp'

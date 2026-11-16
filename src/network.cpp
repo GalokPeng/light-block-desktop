@@ -33,8 +33,9 @@ BOOL safe_https_url(const wchar_t *url) {
     URL_COMPONENTS parts={};parts.dwStructSize=sizeof parts;parts.dwHostNameLength=(DWORD)-1;parts.dwUserNameLength=(DWORD)-1;parts.dwPasswordLength=(DWORD)-1;
     return WinHttpCrackUrl(url,0,0,&parts) && parts.nScheme==INTERNET_SCHEME_HTTPS && parts.dwHostNameLength && !parts.dwUserNameLength && !parts.dwPasswordLength;
 }
-HRESULT download_https(const wchar_t *url,const wchar_t *destination,uint64_t maximum,uint64_t expected,const wchar_t *algorithm,const wchar_t *digest,volatile LONG *cancel,DownloadProgress progress,void *context) {
+HRESULT download_https(const wchar_t *url,const wchar_t *destination,uint64_t maximum,uint64_t expected,const wchar_t *algorithm,const wchar_t *digest,volatile LONG *cancel,DownloadProgress progress,void *context,DownloadStatus status_callback) {
     if(!safe_https_url(url) || !destination || !maximum || expected>maximum) return E_INVALIDARG;
+    if(status_callback)status_callback(DownloadStage::connecting,context);if(progress)progress(0,expected,context);
     wchar_t current[8192],temp[LB_PATH],actual[129];StringCchCopyW(current,ARRAYSIZE(current),url);
     if(FAILED(StringCchPrintfW(temp,LB_PATH,L"%s.partial",destination))) return E_INVALIDARG;
     if(digest && *digest && GetFileAttributesW(destination)!=INVALID_FILE_ATTRIBUTES && hash_file(destination,algorithm,actual,ARRAYSIZE(actual)) && !_wcsicmp(actual,digest)) return S_OK;
@@ -60,16 +61,19 @@ HRESULT download_https(const wchar_t *url,const wchar_t *destination,uint64_t ma
         if(status!=200) { hr=HRESULT_FROM_WIN32(ERROR_WINHTTP_INVALID_SERVER_RESPONSE);goto done; }
         wchar_t size[40];length=sizeof size;if(WinHttpQueryHeaders(request,WINHTTP_QUERY_CONTENT_LENGTH,WINHTTP_HEADER_NAME_BY_INDEX,size,&length,WINHTTP_NO_HEADER_INDEX)) { uint64_t bytes=_wcstoui64(size,NULL,10);if(bytes>maximum || (expected && bytes!=expected)) { hr=HRESULT_FROM_WIN32(ERROR_FILE_TOO_LARGE);goto done; }if(bytes) total=bytes; }
         file=CreateFileW(temp,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL);if(file==INVALID_HANDLE_VALUE) goto done;
-        BYTE buffer[65536];
+        if(status_callback)status_callback(DownloadStage::receiving,context);
+        BYTE buffer[8192];
         for(;;) {
             if(cancel && InterlockedCompareExchange(cancel,0,0)) { hr=HRESULT_FROM_WIN32(ERROR_CANCELLED);goto done; }
             if(GetTickCount64()-started>120000) { hr=HRESULT_FROM_WIN32(ERROR_TIMEOUT);goto done; }
-            DWORD count=0;if(!WinHttpReadData(request,buffer,sizeof buffer,&count)) goto done;if(!count) break;
+            DWORD available=0;if(!WinHttpQueryDataAvailable(request,&available))goto done;if(!available)break;
+            DWORD count=0;if(!WinHttpReadData(request,buffer,std::min<DWORD>(available,sizeof buffer),&count)) goto done;if(!count) break;
             if(count>maximum-received) { hr=HRESULT_FROM_WIN32(ERROR_FILE_TOO_LARGE);goto done; }
             DWORD written=0;if(!WriteFile(file,buffer,count,&written,NULL) || written!=count) goto done;
             if(hashing && BCryptHashData(hash.hash,buffer,count,0)<0) goto done;received+=count;
             ULONGLONG now=GetTickCount64();if(progress && now-last_progress>=80) { progress(received,total,context);last_progress=now; }
         }
+        if(status_callback)status_callback(DownloadStage::verifying,context);if(progress)progress(received,total,context);
         if(!received || (expected && received!=expected)) { hr=HRESULT_FROM_WIN32(ERROR_INVALID_DATA);goto done; }
         if(hashing && (!hash_end(&hash,actual,ARRAYSIZE(actual)) || _wcsicmp(actual,digest))) { hr=HRESULT_FROM_WIN32(ERROR_CRC);goto done; }
         if(!FlushFileBuffers(file)) goto done;CloseHandle(file);file=INVALID_HANDLE_VALUE;

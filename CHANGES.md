@@ -1,3 +1,17 @@
+# v1.1.0-beta.2 · 长截图与任务栏修复 / Capture and taskbar fixes
+
+- 独立、不稳定的测试版；Python v1.0.0 继续作为正式版，main、正式安装和自动更新通道保持不变。请使用独立目录安装。
+- 长截图未滚动、末帧无法匹配或读取失败时，也可完成并保留已采集内容。“采集下一屏”自动匹配，换页没有重叠时整页追加；移除手动拼接按钮。
+- 完成长截图直接生成贴图。普通滚轮浏览、Ctrl+滚轮缩放、Shift+滚轮透明度，复制和保存保留整张原图；同步预览布局并复用绘图缓冲，修复缩略图与按钮重叠。
+- 在线壁纸从连接开始显示等待时间、下载字节与进度；网络停滞和校验保存阶段有明确提示，可取消重试。新增32张有公开授权、原图尺寸和热度依据的静态壁纸，图库共52张静图、10个GIF、20个视频。
+- 修复任务栏隐藏标记与实际区域不一致，以及系统重新预留底部工作区后未处理的问题。工作区每秒最多复核一次；隐藏时仅触及底边唤出，布局短暂重建期间继续检查显隐。
+- 本地合成回归覆盖连续100次隐藏区域重置和100次工作区回退；真实Explorer长时间、多屏及其他任务栏工具兼容性仍需目标机器测试。安装包未签名。
+- Separate, unstable preview. Python v1.0.0 remains the stable release; stable installs and updates are unchanged.
+- Scroll capture can finish without scrolling or a matched terminal frame. Capture next stitches matching content or appends a new page; manual overlap controls are removed.
+- Finished long captures open as scrollable pins with Ctrl-wheel zoom and Shift-wheel opacity. Full-image copy/save is preserved; thumbnail growth no longer overlaps the controls.
+- Wallpaper downloads show connection time, byte progress, network stalls and verification. Adds 32 licensed static images, bringing the catalog to 52 images, 10 GIFs and 20 videos.
+- Reconciles taskbar region/work-area resets and requires the screen edge to reveal a hidden bar. Synthetic regression coverage does not certify long-running Explorer, multi-monitor or third-party customization compatibility. Setup is unsigned.
+
 # v1.1.0-beta.1 · 测试版（极度优化） / Preview (Extensive optimization)
 
 - 独立 C++23 / Qt Widgets / Win32 测试分支，尚不稳定，以 Python 1.0.0 为功能与交互参照；不替换正式 `main`、官网、安装或更新渠道。

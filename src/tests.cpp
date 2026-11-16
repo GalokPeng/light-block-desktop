@@ -63,7 +63,7 @@ int run_self_tests(const wchar_t *report) {
     const char *invalid_json[]={"{\"x\":1,}","[1,]","{\"x\":01}","{\"x\":1e}","true false","{\"x\":\"\\q\"}"};for(UINT n=0;n<ARRAYSIZE(invalid_json);++n) { BOOL accepted=json_parse(&json,invalid_json[n],strlen(invalid_json[n]));check(!accepted,L"json-invalid-rejected");if(accepted) json_free(&json); }
     check(safe_filename(L"合法 wallpaper.jpg") && !safe_filename(L"../bad.jpg") && !safe_filename(L"CON.txt") && !safe_filename(L"x.exe:stream") && !safe_filename(L"LPT1.jpg"),L"download-filename-boundary");
     check(safe_https_url(L"https://upload.wikimedia.org/example.jpg") && !safe_https_url(L"http://example.com/x") && !safe_https_url(L"https://user:password@example.com/x") && !safe_https_url(L"https://example.com/\r\n"),L"https-url-boundary");
-    check(online_catalog_test()==50,L"licensed-catalog-50-entries");
+    check(online_catalog_test()==82,L"licensed-catalog-82-entries");
     check(online_catalog_refresh_tests((std::filesystem::path(g_app.data)/L"catalog-refresh-fixture").c_str()),L"online-catalog-atomic-refresh");
     check(lb::organizer::model_tests((std::filesystem::path(g_app.data)/L"organizer-fixture").wstring()),L"organizer-model-group-sort-auto-collect");
     check(lb::organizer::transition_tests(),L"organizer-retiring-lease-keeps-new-intent");
@@ -71,6 +71,7 @@ int run_self_tests(const wchar_t *report) {
     check(lb::organizer::entry_tests((std::filesystem::path(g_app.data)/L"organizer-entry-fixture").wstring()),L"organizer-entry-alias-move-restore-reference-drop-rollback");
     check(lb::organizer::interaction_tests((std::filesystem::path(g_app.data)/L"organizer-interaction-fixture").wstring()),L"organizer-menu-drag-auto-collect-stale-target-lifetime");
     check(lb::taskbar::transition_tests(),L"taskbar-reenable-waits-for-restoration");
+    check(lb::taskbar::visibility_tests(),L"taskbar-shell-region-workarea-drift-and-edge-reveal");
     check(lb::pointer::transition_tests(),L"pointer-retiring-result-keeps-new-intent");
     check(lb::capture::annotation_tests(),L"annotation-render-hit-move-undo");
     check(lb::capture::visual_parity_tests(),L"annotation-python-fill-open-arrow-highlight-number-visuals");
@@ -95,7 +96,7 @@ int run_self_tests(const wchar_t *report) {
     check(lb::scroll::finish_tests(),L"scroll-finish-drains-overlaps-and-captures-terminal-frame");
     check(lb::scroll::controls_tests(),L"scroll-preview-controls-stable-between-frame-updates");
     check(lb::scroll::source_tests(),L"scroll-source-display-removal-stops-sampling-retains-finish-image");
-    check(lb::scroll::ui_bridge_tests(),L"scroll-qt-card-bridge-exact-overlap-revision-and-lifetime");
+    check(lb::scroll::ui_bridge_tests(),L"scroll-qt-card-next-page-revision-and-lifetime");
     check(lb::pointer::artwork_tests(std::filesystem::path(g_app.data)/L"cursor-fixture"),L"three-cursor-styles-tint-all-roles-animated-load");
     check(lb::sql::tests(std::filesystem::path(g_app.data)/L"sqlite-fixture.db"),L"system-sqlite-unicode-binary-bind-rollback");
     check(lb::clipboard::tests(std::filesystem::path(g_app.data)/L"clipboard-fixture.db"),L"clipboard-store-deduplicate-pin-retention");

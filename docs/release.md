@@ -6,7 +6,7 @@
 
 ## 固定身份
 
-版本唯一来源为 `src/version.hpp`。显示版本采用 `1.1.0-beta.1`，Windows 文件和安装器数值版本为 `1.1.0.0`。后续测试版递增 beta.N 或 rc.N，不能省略预发布后缀。
+版本唯一来源为 `src/version.hpp`。显示版本采用 `1.1.0-beta.2`，Windows 文件和安装器数值版本为 `1.1.0.0`。后续测试版递增 beta.N 或 rc.N，不能省略预发布后缀。
 
 | 内容 | 测试版约定 |
 | --- | --- |
@@ -15,7 +15,7 @@
 | 默认安装目录 | `%LOCALAPPDATA%/Programs/Light Block Desktop Preview` |
 | 数据/自启动/右键菜单命名空间 | `LightBlockDesktopPreview` |
 | 本地构建目录 | `dist/LightBlockDesktopPreview` |
-| 发布标签 | `preview-v1.1.0-beta.1` |
+| 发布标签 | `preview-v1.1.0-beta.2` |
 | 测试版固定下载名 | `Qingkuai-Preview-Setup-x64.exe` |
 
 安装器拒绝覆盖包含正式版程序的目录、正式默认目录及已登记正式安装目录的子目录。测试版默认使用安装目录下的 `data-preview`，不可写时回退到 `%LOCALAPPDATA%/LightBlockDesktopPreview`。卸载只处理测试版注册项并保留这些用户数据。不能自动迁移、写入或删除正式版真实配置；需要测试迁移时只能使用复制的合成测试数据。

@@ -28,6 +28,14 @@ std::optional<int> match(Frame const& previous,Frame const& current) {
     if(second-best<.35) return {};return best_shift;
 }
 Stitch::Change Stitch::append(Frame frame) { return append_impl(std::move(frame),{}); }
+Stitch::Change Stitch::page(Frame frame) {
+    auto change=append(frame);if(change!=Change::unmatched)return change;
+    // A new page has no shared seam. Append to the end, even after scrolling back.
+    int before=position_;position_=height-previous_.height;
+    change=manual(std::move(frame),0);
+    if(change==Change::added&&undo_)undo_->position=before;else position_=before;
+    return change;
+}
 Stitch::Change Stitch::manual(Frame frame,int overlap) {if(overlap<0||overlap>=frame.height)return Change::unmatched;int shift=frame.height-overlap;return append_impl(std::move(frame),shift);}
 Stitch::Change Stitch::append_impl(Frame frame,std::optional<int> forced) {
     if(frame.width<32||frame.height<96||frame.pixels.size()!=size_t(frame.width)*frame.height||frame.pixels.size()>maximum_pixels) return Change::limit;

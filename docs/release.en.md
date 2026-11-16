@@ -6,7 +6,7 @@ The Chinese display label is **测试版（极度优化）** (Preview — Extens
 
 ## Independent identity
 
-`src/version.hpp` is the version source. The display version is `1.1.0-beta.1`; Windows numeric versions are `1.1.0.0`. Subsequent previews increment beta.N or rc.N.
+`src/version.hpp` is the version source. The display version is `1.1.0-beta.2`; Windows numeric versions are `1.1.0.0`. Subsequent previews increment beta.N or rc.N.
 
 | Item | Preview value |
 | --- | --- |
@@ -15,7 +15,7 @@ The Chinese display label is **测试版（极度优化）** (Preview — Extens
 | Default installation | `%LOCALAPPDATA%/Programs/Light Block Desktop Preview` |
 | Data, startup and desktop-menu namespace | `LightBlockDesktopPreview` |
 | Local build | `dist/LightBlockDesktopPreview` |
-| Tag | `preview-v1.1.0-beta.1` |
+| Tag | `preview-v1.1.0-beta.2` |
 | Fixed preview asset | `Qingkuai-Preview-Setup-x64.exe` |
 
 Setup refuses a directory containing the stable executable, the default stable directory, or a registered stable installation and its descendants. The preview defaults to `data-preview` beside its executable, falling back to `%LOCALAPPDATA%/LightBlockDesktopPreview` if necessary. Uninstall only cleans preview registration and keeps user data. Do not automatically import, modify or delete the stable profile. Migration testing uses copied synthetic fixtures only.
