@@ -1,3 +1,12 @@
+# v2.0.2 · 透明圆角、交互动画与在线图库 / Rounded surfaces, motion and wallpapers
+
+- 重新处理收纳外框：移除会产生矩形残影的整窗系统亚克力层，改为逐像素透明的抗锯齿圆角和自绘柔光材质；保留颜色、透明度与任务栏避让。柔光为半透明渐变，不再使用系统实时背景模糊。
+- 展开/收起从当前位置和速度继续，搜索标题区随布局平滑移动；增加按下反馈、悬停透明度过渡和设置开关动画。跟随系统减少动画偏好，静止后停止动画计时，复用绘制缓冲区。
+- 在线图库增加 9 款 GIF、4 段原始 MP4，共 52 张静图、20 款 GIF、33 段视频。新 GIF 包括数字雨、磁带、月海、城市雨景、台风云眼、海上火山和地球晨昏；每项保留作者、许可、原始链接及真实可用热度。原文件至少 1920×1080、单个不超过 20 MB，不转换或放大凑数。
+- Adds per-pixel antialiased organizer corners and a painted translucent material, eliminating the rectangular native-acrylic layer while retaining color, opacity and taskbar clearance. The soft material is a translucent gradient, not live OS background blur.
+- Interruptible expansion, coordinated search-header motion, pressed/hover feedback and animated settings toggles respect reduced motion. Animation timers stop at rest and drawing buffers are reused.
+- Adds nine original GIFs and four MP4 clips: 52 images, 20 GIFs and 33 videos total. HD originals remain byte-for-byte unchanged and under 20 MB. Author, license, source and available popularity evidence accompany each item; page views are not likes or downloads.
+
 # v2.0.1 · 收纳布局与圆角修复 / Organizer layout and rounded surfaces
 
 - 修复重新开启收纳、调整图标大小或展开收起后与任务栏重叠：按所在显示器的任务栏实际边界独立预留位置，普通窗口仍可铺满原工作区。上、中、下布局及自定义位置均限制在安全范围；任务栏位置变化时自动校准。

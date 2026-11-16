@@ -18,6 +18,7 @@
 #include <map>
 #include <QAbstractNativeEventFilter>
 #include <psapi.h>
+#include "../src/ui_motion.hpp"
 #include "../src/capture_ui_api.h"
 #include "../src/recording_ui_api.h"
 #include "../src/scroll_ui_api.h"
@@ -40,10 +41,16 @@ QIcon icon(int index,bool light) {
 }
 QImage bitmap(uintptr_t handle) { auto source=reinterpret_cast<HBITMAP>(handle);BITMAP metadata{};if(!source||!GetObjectW(source,sizeof metadata,&metadata)||metadata.bmWidth<1||metadata.bmHeight<1) return {};QImage image(metadata.bmWidth,metadata.bmHeight,QImage::Format_RGB32);BITMAPINFO info{};info.bmiHeader={sizeof(BITMAPINFOHEADER),metadata.bmWidth,-metadata.bmHeight,1,32,BI_RGB,0,0,0,0,0};HDC dc=GetDC(nullptr);bool ok=GetDIBits(dc,source,0,metadata.bmHeight,image.bits(),&info,DIB_RGB_COLORS)!=0;ReleaseDC(nullptr,dc);return ok?image:QImage{}; }
 class Toggle:public QCheckBox {
+    lb::motion::Spring position_;QTimer timer_;QElapsedTimer elapsed_;
+    static bool reduced_motion(){BOOL enabled=TRUE;return SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION,0,&enabled,0)&&!enabled;}
+    void sync(){double target=isChecked()?16.:0.;if(!isVisible()||reduced_motion()){position_.reset(target);timer_.stop();update();return;}if(position_.target==target)return;position_.aim(target);elapsed_.restart();timer_.start();}
+    void checkStateSet() override {QCheckBox::checkStateSet();sync();}
 public:
-    Toggle() { setFixedSize(38,23);setCursor(Qt::PointingHandCursor);setFocusPolicy(Qt::StrongFocus); }
+    Toggle() { setFixedSize(38,23);setCursor(Qt::PointingHandCursor);setFocusPolicy(Qt::StrongFocus);timer_.setInterval(16);connect(this,&QCheckBox::toggled,this,[this]{sync();});connect(&timer_,&QTimer::timeout,this,[this]{bool active=position_.step(elapsed_.restart()/1000.,reduced_motion());update();if(!active)timer_.stop();}); }
+    void hideEvent(QHideEvent* event) override {timer_.stop();position_.reset(isChecked()?16:0);QCheckBox::hideEvent(event);}
     bool hitButton(QPoint const& point) const override { return rect().contains(point); }
-    void paintEvent(QPaintEvent*) override { QPainter p(this);p.setRenderHint(QPainter::Antialiasing);p.setPen(hasFocus()?QPen(QColor("#ceeedd"),1):QPen(Qt::NoPen));p.setBrush(QColor(isChecked()?"#a6e4ca":"#3b4756"));p.drawRoundedRect(QRectF(1,2,36,20),10,10);p.setPen(Qt::NoPen);p.setBrush(QColor(isChecked()?"#18392b":"#b3beca"));p.drawEllipse(QRectF(isChecked()?20:4,5,14,14)); }
+    static bool fixture_tests(){Toggle toggle;toggle.setAttribute(Qt::WA_DontShowOnScreen);auto off=toggle.grab().toImage();{QSignalBlocker blocked(&toggle);toggle.setChecked(true);}auto on=toggle.grab().toImage();if(off==on||!toggle.isChecked()||toggle.timer_.isActive())return false;toggle.show();toggle.setChecked(false);toggle.setChecked(true);toggle.setChecked(false);QElapsedTimer clock;clock.start();while(toggle.timer_.isActive()&&clock.elapsed()<900){qApp->processEvents(QEventLoop::AllEvents,15);QThread::msleep(4);}bool settled=!toggle.isChecked()&&!toggle.timer_.isActive()&&toggle.position_.value==0;toggle.hide();return settled;}
+    void paintEvent(QPaintEvent*) override { QPainter p(this);p.setRenderHint(QPainter::Antialiasing);if(!isEnabled())p.setOpacity(.45);auto mix=[this](QColor from,QColor to){double t=std::clamp(position_.value/16.,0.,1.);return QColor::fromRgbF(from.redF()+(to.redF()-from.redF())*t,from.greenF()+(to.greenF()-from.greenF())*t,from.blueF()+(to.blueF()-from.blueF())*t);};p.setPen(hasFocus()?QPen(QColor("#ceeedd"),1):QPen(Qt::NoPen));p.setBrush(mix(QColor("#3b4756"),QColor("#a6e4ca")));p.drawRoundedRect(QRectF(1,2,36,20),10,10);p.setPen(Qt::NoPen);p.setBrush(mix(QColor("#b3beca"),QColor("#18392b")));p.drawEllipse(QRectF(4+position_.value,5,14,14)); }
 };
 class NativePane:public QWidget {
     int action_{};uintptr_t child_{};

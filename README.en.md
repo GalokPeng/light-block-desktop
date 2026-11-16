@@ -4,7 +4,7 @@
 <p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases"><strong>Download latest release</strong></a> · <a href="#feature-preview">Feature preview</a> · <a href="https://light-block-desktop.vercel.app/en/">Website</a> · <a href="README.md">简体中文</a> · <a href="CHANGES.md">Changelog</a></p>
 
 
-**v2.0.1 stable**: wallpapers, screen capture, recording, desktop styling and notes, with playback and recording components included.
+**v2.0.2 stable**: wallpapers, screen capture, recording, desktop styling and notes, with playback and recording components included.
 
 ## Download and install
 
@@ -64,7 +64,9 @@ Right-click the desktop background to create and pin a note. On Windows 11, star
 
 Settings and downloaded wallpapers stay on your device. The online gallery contacts media sources on demand. No account, ads or telemetry. Appearance offers three original silhouettes—Stream, Prism and Pixel—with custom colors and 75%–200% sizing. Mix them with independently colored Dots, Falling or Glow effects, which stop painting when idle. Settings retains the native Windows Night light entry. The app also includes a launcher, clipboard history, a file workbench and focus timers. [User guide](docs/usage.en.md)
 
-The online gallery has 52 images, 11 GIFs and 29 videos, with media-type filters and bilingual search. The maintainer approved retaining the ten GIFs from the local review build. Every source file is at least 1920 × 1080 and no larger than 20 MB, without app-side recompression, trimming or upscaling. GIF candidates must be original 1080p, 16:9 complete looping scenes. GIFs have no likes/favorites threshold; available metrics are recorded as reported. Images and earlier videos retain their public-vote or favorite-based selection. NASA additions use source provenance, dated public page views, visual review and decoded-original verification; unpublished metrics remain null. It supports on-demand previews, byte-preserving downloads, progress/cancellation, downloaded status and Apply. GitHub stores URL and attribution metadata only. Downloads continue when settings close; quitting cancels unfinished downloads. [Evaluation and selection](docs/wallpaper-evaluation.md)
+v2.0.2 uses antialiased per-pixel organizer corners and a painted translucent material, avoiding rectangular native-acrylic artifacts. Expansion can reverse smoothly; icon and toggle feedback respects Windows reduced-motion settings.
+
+The online gallery has 52 images, 20 GIFs and 33 videos, with media-type filters and bilingual search. The maintainer approved retaining the ten GIFs from the local review build. Every source file is at least 1920 × 1080 and no larger than 20 MB, without app-side recompression, trimming or upscaling. GIF candidates must be original 1080p, 16:9 complete looping scenes. GIFs have no likes/favorites threshold; available metrics are recorded as reported. Images and earlier videos retain their public-vote or favorite-based selection. Motion additions use source provenance, dated public page views, visual review and decoded-original verification; unpublished metrics remain null. It supports on-demand previews, byte-preserving downloads, progress/cancellation, downloaded status and Apply. GitHub stores URL and attribution metadata only. Downloads continue when settings close; quitting cancels unfinished downloads. [Evaluation and selection](docs/wallpaper-evaluation.md)
 
 ![Online wallpaper gallery and source information](site/public/media/online-wallpaper-en.webp)
 
@@ -93,6 +95,8 @@ The application source uses the [MIT license](LICENSE). Bundled dependencies kee
 [Internet Archive](https://archive.org/) · [Jeffrey Beach / Beachfront Productions](https://beachfrontprod.blogspot.com/) provide the creator's CC BY 3.0 HD footage, previews and public view/favorite records. The app retains source and attribution.
 
 [NASA Scientific Visualization Studio](https://svs.gsfc.nasa.gov/) supplies aurora, Moon, Earth and black-hole imagery under its [reuse policy](https://svs.gsfc.nasa.gov/help/) and individual credits. New entries have no audio or a verified silent track. NASA does not endorse this application.
+
+[CSU/CIRA Satellite Library](https://satlib.cira.colostate.edu/) · [NOAA](https://www.noaa.gov/) · [JMA](https://www.jma.go.jp/jma/indexe.html) supply the satellite-cloud and Earth imagery used through explicitly licensed Commons originals. Item-specific credits and source marks are retained.
 
 ## Thanks and community
 

@@ -51,6 +51,7 @@ int lease_main(int argc,wchar_t **argv);
 bool model_tests(std::wstring const& directory);
 bool entry_tests(std::wstring const& directory);
 bool interaction_tests(std::wstring const& directory);
+bool surface_tests(std::wstring const& directory);
 int settings_group(int index,UiGroup* out);
 int settings_group_action(int action,wchar_t const* group,wchar_t const* argument,int value);
 bool settings_group_tests(std::wstring const& directory);

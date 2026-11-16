@@ -2,7 +2,7 @@
 
 当前精选：静态 52、GIF 11、视频 29。旧 300 项目录已全部退下，不再按内容题材分组。
 
-Current selection: 52 images, 11 GIFs and 29 videos. The former 300-item catalog was retired. Only the three media types remain.
+Current selection: 52 images, 20 GIFs and 33 videos. The former 300-item catalog was retired. Only the three media types remain.
 
 所有入选原文件宽度至少 1920、高度至少 1080，且不超过 20,000,000 字节（20 MB），不通过放大或软件转码凑数量。GitHub 与安装包只提供 URL 和署名元数据；正式下载保留发布者提供文件的原始字节。
 
@@ -151,3 +151,25 @@ One GIF and seven videos are added from NASA SVS HTTPS URLs. Videos range from 1
 
 - [金色日珥 / Golden Solar Prominence](https://svs.gsfc.nasa.gov/20192/#media_group_348115) — NASA Goddard Space Flight Center / Walt Feimer / Michael Lentz · [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) · 18,192,727 bytes · [page views: None](https://svs.gsfc.nasa.gov/api/search/?search=Space+Weather&limit=100)
 - [极光之环 / Auroral Ring from Space](https://svs.gsfc.nasa.gov/20192/#media_group_348122) — NASA Goddard Space Flight Center / Walt Feimer / Michael Lentz · [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) · 3,516,813 bytes · [page views: None](https://svs.gsfc.nasa.gov/api/search/?search=Space+Weather&limit=100)
+
+## v2.0.2 新增 / Additions
+
+每项均核对原文件、原始尺寸、SHA-1 和逐项许可。新增 GIF 25–93 帧（方形律动 192 帧），保留来源循环与标识。公开浏览量是文件说明页或来源页面的统计，不代表原作品全部播放量；部分条目的近期页面浏览量很低，未将其宣传为高赞作品。不同来源不能直接相加。/ Original files, native dimensions, hashes and item licenses were verified. Metrics are source/file-page views, not universal play counts; some are low-traffic pages. Unpublished likes/favorites remain null.
+
+| 作品 / Work | 作者 / Credit | 许可 / License | 原尺寸 | MB | 热度依据 / Evidence |
+| --- | --- | --- | --- | --- | --- |
+| [磁带时光 / Cassette in Motion](https://commons.wikimedia.org/wiki/File:Compact-cassette-playing-in-revox_full.gif) | Matthias Wunderlich (gif by Jahobr) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0) | 1920×1080 | 0.96 | [14 views](https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=pageviews&pvipdays=30&pageids=98765333) |
+| [方形律动 / Minimal Cube Rhythm](https://commons.wikimedia.org/wiki/File:Mina-cubes.gif) | Gudinilabs | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0) | 1920×1080 | 1.81 | [0 views](https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=pageviews&pvipdays=30&pageids=100924282) |
+| [数字雨幕 / Digital Rain](https://commons.wikimedia.org/wiki/File:Maxtix.gif) | mutedagain | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0) | 1920×1080 | 9.27 | [2 views](https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=pageviews&pvipdays=30&pageids=112726730) |
+| [掠过月海 / Over the Lunar Sea](https://commons.wikimedia.org/wiki/File:Apollo10-SinusMedii.gif) | NASA | [Public domain](https://commons.wikimedia.org/wiki/File:Apollo10-SinusMedii.gif#Licensing) | 1920×1080 | 1.79 | [1 views](https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=pageviews&pvipdays=30&pageids=131282290) |
+| [雨过城际 / Rain over Osorio](https://commons.wikimedia.org/wiki/File:Chuva_sobre_a_cidade_de_Os%C3%B3rio,_Rio_Grande_do_Sul.gif) | Ricardo de Sampaio Dagnino | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0) | 1920×1080 | 15.95 | [3 views](https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=pageviews&pvipdays=30&pageids=142196940) |
+| [云眼晨光 / Sunrise over the Cloud Eye](https://commons.wikimedia.org/wiki/File:Sunrise_on_Typhoon_Hinnamnor%E2%80%99s_Eye_(CIRA_2022-08-29_-_nolabels).gif) | Himawari imagery: CSU/CIRA & JMA/JAXA | [Public domain](https://commons.wikimedia.org/wiki/File:Sunrise_on_Typhoon_Hinnamnor%E2%80%99s_Eye_(CIRA_2022-08-29_-_nolabels).gif#Licensing) | 1920×1080 | 15.79 | [1 views](https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=pageviews&pvipdays=30&pageids=164572272) |
+| [海上火山 / Ocean Volcano](https://commons.wikimedia.org/wiki/File:Close-Up_View_of_Hunga_Tonga-Hunga_Ha%E2%80%98apai_Eruption_(CIRA_2022-01-15_-_nolabels).gif) | Himawari imagery: CSU/CIRA & JMA/JAXA | [Public domain](https://commons.wikimedia.org/wiki/File:Close-Up_View_of_Hunga_Tonga-Hunga_Ha%E2%80%98apai_Eruption_(CIRA_2022-01-15_-_nolabels).gif#Licensing) | 1920×1080 | 18.73 | [1 views](https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=pageviews&pvipdays=30&pageids=164581269) |
+| [月影掠过地球 / Moon Shadow over Earth](https://commons.wikimedia.org/wiki/File:Moon%E2%80%99s_Shadow_Arrives_at_Spain_(CIRA_2026-08-12_-_nolabels).gif) | GOES imagery: CSU/CIRA & NOAA | [Public domain](https://commons.wikimedia.org/wiki/File:Moon%E2%80%99s_Shadow_Arrives_at_Spain_(CIRA_2026-08-12_-_nolabels).gif#Licensing) | 1920×1080 | 19.63 | [0 views](https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=pageviews&pvipdays=30&pageids=197320222) |
+| [极地晨昏 / Arctic Twilight](https://commons.wikimedia.org/wiki/File:Day-Night_Terminator_Line_Peeling_Back_Across_the_Arctic_(CIRA_2024-06-20_-_nolabels).gif) | Himawari imagery: CSU/CIRA & JMA/JAXA | [Public domain](https://commons.wikimedia.org/wiki/File:Day-Night_Terminator_Line_Peeling_Back_Across_the_Arctic_(CIRA_2024-06-20_-_nolabels).gif#Licensing) | 1920×1080 | 10.16 | [0 views](https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=pageviews&pvipdays=30&pageids=164366315) |
+| [耀斑跃动 / Solar Flare](https://svs.gsfc.nasa.gov/20192/#media_group_348114) | NASA Goddard Space Flight Center / Walt Feimer / Michael Lentz | [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) | 2880×1080 | 16.38 | [244 views](https://svs.gsfc.nasa.gov/api/search/?search=Space+Weather&limit=200&offset=800) |
+| [太阳喷流 / Solar Eruption](https://svs.gsfc.nasa.gov/20192/#media_group_348116) | NASA Goddard Space Flight Center / Walt Feimer / Michael Lentz | [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) | 2880×1080 | 11.47 | [244 views](https://svs.gsfc.nasa.gov/api/search/?search=Space+Weather&limit=200&offset=800) |
+| [蓝星磁幕 / Earth Magnetic Shield](https://svs.gsfc.nasa.gov/20192/#media_group_348119) | NASA Goddard Space Flight Center / Walt Feimer / Michael Lentz | [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) | 2880×1080 | 10.82 | [244 views](https://svs.gsfc.nasa.gov/api/search/?search=Space+Weather&limit=200&offset=800) |
+| [磁光流带 / Magnetic Ribbons](https://svs.gsfc.nasa.gov/20192/#media_group_348120) | NASA Goddard Space Flight Center / Walt Feimer / Michael Lentz | [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) | 2880×1080 | 7.39 | [244 views](https://svs.gsfc.nasa.gov/api/search/?search=Space+Weather&limit=200&offset=800) |
+
+友链 / Source links: [CSU/CIRA Satellite Library](https://satlib.cira.colostate.edu/), [NOAA](https://www.noaa.gov/), [JMA](https://www.jma.go.jp/jma/indexe.html), [NASA SVS](https://svs.gsfc.nasa.gov/), [Wikimedia Commons](https://commons.wikimedia.org/).

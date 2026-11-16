@@ -24,7 +24,7 @@ static const Field options[]={
  F(1,organizer_view,"排列方式","Sort by",COMBO,0,2,"名称|修改时间|分组","Name|Modified time|Groups"),
  F(1,organizer_icon_size,"图标大小 · 小 / 中 / 大","Icon size · Small / Medium / Large",SLIDER,0,2,"",""),
  F(1,organizer_auto_collect,"一分钟后自动收纳新增内容","Collect new items after one minute",CHECK,0,1,"",""),
- F(1,organizer_glass,"磨砂玻璃背景","Frosted background",CHECK,0,1,"",""),
+ F(1,organizer_glass,"柔光玻璃质感","Soft glass material",CHECK,0,1,"",""),
  F(1,organizer_opacity,"背景不透明度","Background opacity",SLIDER,30,255,"",""),
  F(1,organizer_color,"收纳背景颜色","Organizer background",COLOR,0,0xffffff,"",""),
  F(1,icon_color,"图标底板颜色","Icon background",COLOR,0,0xffffff,"",""),

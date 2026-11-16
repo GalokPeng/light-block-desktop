@@ -9,6 +9,8 @@
 #include "organizer.hpp"
 #include "organizer_geometry.hpp"
 #include "window_shape.hpp"
+#include "desktop_surface.hpp"
+#include "ui_motion.hpp"
 bool settings_display_tests();
 bool settings_runtime_tests();
 bool settings_startup_tests();
@@ -66,7 +68,7 @@ int run_self_tests(const wchar_t *report) {
     const char *invalid_json[]={"{\"x\":1,}","[1,]","{\"x\":01}","{\"x\":1e}","true false","{\"x\":\"\\q\"}"};for(UINT n=0;n<ARRAYSIZE(invalid_json);++n) { BOOL accepted=json_parse(&json,invalid_json[n],strlen(invalid_json[n]));check(!accepted,L"json-invalid-rejected");if(accepted) json_free(&json); }
     check(safe_filename(L"合法 wallpaper.jpg") && !safe_filename(L"../bad.jpg") && !safe_filename(L"CON.txt") && !safe_filename(L"x.exe:stream") && !safe_filename(L"LPT1.jpg"),L"download-filename-boundary");
     check(safe_https_url(L"https://upload.wikimedia.org/example.jpg") && !safe_https_url(L"http://example.com/x") && !safe_https_url(L"https://user:password@example.com/x") && !safe_https_url(L"https://example.com/\r\n"),L"https-url-boundary");
-    check(online_catalog_test()==92,L"licensed-catalog-92-entries");
+    check(online_catalog_test()==105,L"licensed-catalog-105-entries");
     check(online_catalog_refresh_tests((std::filesystem::path(g_app.data)/L"catalog-refresh-fixture").c_str()),L"online-catalog-atomic-refresh");
     check(lb::organizer::model_tests((std::filesystem::path(g_app.data)/L"organizer-fixture").wstring()),L"organizer-model-group-sort-auto-collect");
     check(lb::organizer::transition_tests(),L"organizer-retiring-lease-keeps-new-intent");
@@ -119,6 +121,9 @@ int run_self_tests(const wchar_t *report) {
     check(lb::organizer::shelf_geometry_tests(),L"organizer-icon-size-hover-bounds-96-to-240-dpi");
     check(lb::organizer::shelf_taskbar_tests(),L"organizer-taskbar-reservation-reopen-resize-alignments-multimonitor");
     check(lb::window_shape::tests(),L"rounded-popup-corners-and-resize-regions-96-to-240-dpi");
+    check(lb::desktop_surface::tests(),L"organizer-alpha-corners-premultiplication-dpi-buffer-reuse");
+    check(lb::organizer::surface_tests((std::filesystem::path(g_app.data)/L"alpha-surface-fixture").wstring()),L"organizer-real-hwnd-alpha-resize-owned-search-unicode-cleanup");
+    check(lb::motion::tests(),L"interruptible-motion-retains-velocity-reduced-motion-idle-settle");
     check(settings_patch_test(),L"single-setting-commit-retains-unrelated-state-and-rolls-back-save-failure");
     check(lb::recording::export_test((std::filesystem::path(g_app.data)/L"recording-fixture").wstring()),L"bundled-video-trim-and-two-gif-export-modes");
     check(lb::recording::audio::tests(std::filesystem::path(g_app.data)/L"recording-audio-fixture"),L"wasapi-timestamp-silence-overlap-and-synthetic-single-dual-audio-mux");

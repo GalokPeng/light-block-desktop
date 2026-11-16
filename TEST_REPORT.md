@@ -1,3 +1,17 @@
+# v2.0.2 release verification
+
+Local Windows regression passed on 2026-11-16: 121 native checks; actual static/GIF/MP4 playback; 12 media switches with no failures or leftover children; Qt interface, note, capture/recording/scroll fixtures; and six isolated shutdown/session scenarios. Website checks (13), release-protocol checks (6) and the 105-entry catalog validation passed. The Qt fixture includes blocked-signal settings refresh, rapid toggle reversal and idle timer shutdown.
+
+The prior rounded-region fix did not remove the rectangular native acrylic composition layer. The organizer now owns an antialiased per-pixel alpha surface and disables native accent/backdrop blur. Its soft glass option is a painted translucent gradient, not live OS blur. A reusable DIB avoids per-frame bitmap allocation; coverage calculations are confined to corner regions. Tests cover alpha and premultiplication at 96–240 DPI, real hidden HWND resizes, anchored owned search input, Unicode and cleanup. Existing taskbar-clearance and geometry regressions remain passing.
+
+A visible synthetic organizer was checked for rounded edges, search expansion, English/Chinese filtering, Escape collapse and graceful exit. No actual desktop lease, real desktop files or personal screenshot was used in public evidence. This does not certify every graphics driver or multi-monitor compositor combination.
+
+The gallery now has 52 images, 20 GIFs and 33 videos. Nine added GIF originals were fully frame-decoded and hash checked; four added MP4 originals have no audio. All retain publisher bytes, meet native HD and the 20 MB cap, and have item-specific author/license links. New GIFs retain 16:9 and infinite-loop metadata. Public page-view evidence is recorded accurately, including low or zero counts; unpublished likes/favorites remain null. The older-client catalog is unchanged.
+
+Clean-checkout CI remains the release gate for final build, Qt/media checks, four localized isolated install/upgrade/uninstall cases, updater behavior, hashes and archived releases. The test artifacts record the exact published commit. Existing installation identity, v1.0.0 source branch and all historical release assets remain preserved.
+
+---
+
 # v2.0.1 release verification
 
 Local Windows build and 118 native checks passed on 2026-11-16. New geometry cases cover 96–240 DPI, negative-coordinate secondary displays, all four taskbar edges, auto-hidden taskbars, repeated icon-size/expanded-size changes, top/center/bottom alignment and custom-position clamping. Hidden test windows verify rounded-region corners and bounds across repeated resizes. Website checks (13) and release-protocol checks (6) passed.

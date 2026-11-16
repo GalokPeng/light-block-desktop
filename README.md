@@ -4,7 +4,7 @@
 <p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases"><strong>下载最新安装包</strong></a> · <a href="#功能展示">功能展示</a> · <a href="https://light-block-desktop.vercel.app/?lang=zh">产品官网</a> · <a href="README.en.md">English</a> · <a href="CHANGES.md">更新日志</a></p>
 
 
-**v2.0.1 正式版**：壁纸、截屏录屏、桌面美化和便签，集成所需播放与录制组件。
+**v2.0.2 正式版**：壁纸、截屏录屏、桌面美化和便签，集成所需播放与录制组件。
 
 ## 下载与安装
 
@@ -64,7 +64,9 @@
 
 功能示意包含历史版本画面，使用内置素材和虚构数据。设置和下载的壁纸保存在本机，无账户、广告或遥测。在线图库按需访问素材来源。「美化」提供流线、棱镜、像素三种原创指针，支持独立调色、75%～200% 大小；点点、飘落、光芒三种粒子可自由搭配并单独调色，静止后停绘。「设置」保留 Windows 夜间模式入口。更多功能包括快速启动、剪贴板历史、文件工作台和专注计时。[完整使用指南](docs/usage.zh-CN.md)
 
-「本地壁纸 / 在线壁纸」支持切换：当前静态 52 张、GIF 11 款、视频 29 段，仅按媒体类型筛选。10 款 GIF 按维护者确认保留，与本地复看版一致。所有来源文件至少 1920 × 1080，单项不超过 20 MB；GIF 要求原始 1080p、16:9 的完整循环场景。GIF 不以点赞／收藏作为门槛，公开热度如实记录；静图与原有视频参考公开支持票或收藏；新增 NASA 动态素材核验来源、画面、原文件和公开页面浏览数据，未公开的指标保留为空。沿用来源文件，不自行压缩、裁短或放大。支持中英文搜索、按需预览、下载进度与取消、已下载状态及应用。GitHub 只保存 URL 和授权目录。关闭设置时正式下载继续，退出软件会取消未完成下载。[评估与筛选记录](docs/wallpaper-evaluation.md)
+v2.0.2 采用逐像素透明的收纳圆角与自绘柔光材质，避免系统亚克力背景越界；展开收起可连续打断，图标悬停和开关反馈更自然，并跟随 Windows 减少动画设置。
+
+「本地壁纸 / 在线壁纸」支持切换：当前静态 52 张、GIF 20 款、视频 33 段，仅按媒体类型筛选。10 款 GIF 按维护者确认保留，与本地复看版一致。所有来源文件至少 1920 × 1080，单项不超过 20 MB；GIF 要求原始 1080p、16:9 的完整循环场景。GIF 不以点赞／收藏作为门槛，公开热度如实记录；静图与原有视频参考公开支持票或收藏；新增动态素材核验来源、画面、原文件和公开页面浏览数据，未公开的指标保留为空。沿用来源文件，不自行压缩、裁短或放大。支持中英文搜索、按需预览、下载进度与取消、已下载状态及应用。GitHub 只保存 URL 和授权目录。关闭设置时正式下载继续，退出软件会取消未完成下载。[评估与筛选记录](docs/wallpaper-evaluation.md)
 
 ![在线壁纸精选与来源信息](site/public/media/online-wallpaper-zh.webp)
 
@@ -93,5 +95,7 @@
 [Internet Archive](https://archive.org/) · [Jeffrey Beach / Beachfront Productions](https://beachfrontprod.blogspot.com/) — 原作者公开提供的 CC BY 3.0 高清视频、预览及浏览与收藏记录，软件保留来源和署名。
 
 [NASA Scientific Visualization Studio](https://svs.gsfc.nasa.gov/) — 极光、月夜、地球和黑洞等动态影像来源。按其[复用说明](https://svs.gsfc.nasa.gov/help/)及逐项署名使用；新增作品无音乐或音轨经核验为静音，不表示 NASA 为本软件背书。
+
+[CSU/CIRA Satellite Library](https://satlib.cira.colostate.edu/) · [NOAA](https://www.noaa.gov/) · [JMA](https://www.jma.go.jp/jma/indexe.html) — 卫星云图与地球动画的原始来源，使用 Commons 明确标注许可的原始副本，保留逐项作者和来源标识。
 
 [Linux Do](https://linux.do/)
