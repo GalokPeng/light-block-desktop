@@ -1,8 +1,8 @@
 # 在线壁纸来源 / Online wallpaper credits
 
-当前精选：静态 52、GIF 10、视频 20。旧 300 项目录已全部退下，不再按内容题材分组。
+当前精选：静态 52、GIF 11、视频 27。旧 300 项目录已全部退下，不再按内容题材分组。
 
-Current selection: 52 images, 10 GIFs and 20 videos. The former 300-item catalog was retired. Only the three media types remain.
+Current selection: 52 images, 11 GIFs and 27 videos. The former 300-item catalog was retired. Only the three media types remain.
 
 所有入选原文件宽度至少 1920、高度至少 1080，且不超过 20,000,000 字节（20 MB），不通过放大或软件转码凑数量。GitHub 与安装包只提供 URL 和署名元数据；正式下载保留发布者提供文件的原始字节。
 
@@ -12,14 +12,14 @@ Every source file is at least 1920 pixels wide and 1080 pixels high, and no larg
 
 - 静图以 Wikimedia Commons 2024 年度图片公开投票中的横向作品为候选，先检查授权、像素和画面，再在通过人工观感筛选的候选中按支持票降序选择 20 张。支持票不是点赞数或收藏数。
 - Images come from landscape-format candidates in the public Wikimedia Commons Picture of the Year 2024 results. License, dimensions and visual suitability are checked before selecting 20 by support votes within the visually approved pool. Votes are not likes or favorites.
-- 视频包含 7 段 Jeffrey Beach / Beachfront Productions 在 Internet Archive 公开上传的 1080p WMV，以及 13 段 Wikimedia Commons 评选视频；均在 20 MB 内。前者核对 CC BY 3.0、公开收藏与浏览，后者核对逐项许可、评选支持票及近 30 天文件页浏览。
-- Videos include seven creator-uploaded 1080p WMV files by Jeffrey Beach / Beachfront Productions on Internet Archive, and thirteen Wikimedia Commons reviewed videos, all within 20 MB. The first pool records CC BY 3.0, favorites and views; the second records per-work licenses, closed support votes and 30-day file-page views.
+- 原有 20 段视频包含 7 段 Jeffrey Beach / Beachfront Productions 在 Internet Archive 公开上传的 1080p WMV，以及 13 段 Wikimedia Commons 评选视频；均在 20 MB 内。前者核对 CC BY 3.0、公开收藏与浏览，后者核对逐项许可、评选支持票及近 30 天文件页浏览。
+- The original 20 videos include seven creator-uploaded 1080p WMV files by Jeffrey Beach / Beachfront Productions on Internet Archive, and thirteen Wikimedia Commons reviewed videos, all within 20 MB. The first pool records CC BY 3.0, favorites and views; the second records per-work licenses, closed support votes and 30-day file-page views.
 - 视频分别在同来源、同口径候选内按收藏或支持票排序，再结合画面合并，不把收藏数与评选票直接相加。沿用发布者提供的 WMV、WebM、OGV 格式，不自行压缩、裁短或改分辨率。
 - Videos are ranked within each source/metric pool, then combined after visual review; favorites and votes are never added together. Publisher-provided WMV, WebM and OGV files are preserved without app-side recompression, trimming or resolution changes.
 - 未公开的指标在目录里记为 null，不记成零、不推算点赞、不声称全网绝对排名；不同平台、不同统计期间的数值不能直接比较。热度是核对日期的快照，后续会变化。
 - Unavailable metrics are null, not zero or inferred likes. This is a reviewed candidate selection, not a claim of a worldwide top ranking. Different platforms and time windows are not directly comparable. Counts are dated snapshots and can change.
-- GIF 不以点赞／收藏作为入选门槛；维护者确认恢复之前复看的候选，当前录入 10 项；原始 1080p、16:9、20 MB 和明确开放授权的要求保持不变。
-- GIFs have no likes/favorites threshold. The maintainer restored the previously reviewed batch; 10 GIFs are currently admitted. Native 1080p, 16:9, 20 MB and explicit reusable licensing remain required.
+- GIF 不以点赞／收藏作为入选门槛；维护者确认恢复之前复看的候选，原有 10 项保留，本次增加 1 项极光实拍；原始 1080p、16:9、20 MB 和明确开放授权的要求保持不变。
+- GIFs have no likes/favorites threshold. The maintainer restored the previously reviewed batch; The ten restored GIFs remain, with one newly reviewed aurora GIF added. Native 1080p, 16:9, 20 MB and explicit reusable licensing remain required.
 - GIF 浏览量为官方 API 在所列日期区间内已公开日期的合计；未公开的日期不作零次处理，点赞／收藏缺失时为 null。应用提示实际有统计数据的天数。
 - GIF views sum only dates exposed by the official API within the stated window; unavailable dates are not treated as zero, and unpublished likes/favorites remain null. The app reports the number of dates with available counts.
 
@@ -123,3 +123,24 @@ The app's MIT license does not replace the media licenses. Details, adjacent ori
 | [马德拉花坡 / Madeira Wildflowers](https://commons.wikimedia.org/wiki/File:Echium_candicans_at_Montado_do_Pared%C3%A3o_in_Curral_das_Freiras,_C%C3%A2mara_de_Lobos,_Madeira,_2023_May.jpg) | [Simo Räsänen](https://commons.wikimedia.org/wiki/User:Ximonic) | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0) | [52 · POTY 2023](https://commons.wikimedia.org/wiki/Commons:Picture_of_the_Year/2023/Results/All) | 5000 × 3225 · 16,356,462 B |
 | [落日草穗 / Grass in the Sunset](https://commons.wikimedia.org/wiki/File:Nottuln,_Gladbeck,_Grashalm_--_2024_--_4342.jpg) | [Dietmar Rabich](https://www.wikidata.org/wiki/Q34788025) | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0) | [46 · POTY 2024](https://commons.wikimedia.org/wiki/Commons:Picture_of_the_Year/2024/Results/All) | 6720 × 4480 · 17,847,781 B |
 | [曼哈顿暮色 / Lower Manhattan at Dusk](https://commons.wikimedia.org/wiki/File:2024-11-17-Lower_Manhattan-0593.jpg) | [Superbass](https://commons.wikimedia.org/wiki/User:Superbass) | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0) | [44 · POTY 2024](https://commons.wikimedia.org/wiki/Commons:Picture_of_the_Year/2024/Results/All) | 6595 × 4397 · 17,343,227 B |
+
+## 2026-11-16 动态素材扩充 / Motion additions
+
+新增 1 GIF、7 视频，均从 NASA SVS 的公开 HTTPS 地址直接预览/下载。GIF 为原始 1920×1080、13.95 MB 的极光实拍；视频 1.73–13.49 MB，全部选用作者提供的原生 1920×1080 素材。保留原文件，不上传素材二进制到本仓库。
+
+One GIF and seven videos are added from NASA SVS HTTPS URLs. Videos range from 1.73 to 13.49 MB; every new entry uses a publisher-provided native 1080p original. Original bytes are preserved; only metadata is bundled.
+
+依据 [SVS 复用说明](https://svs.gsfc.nasa.gov/help/)，逐项检查独立素材及署名，排除带授权音乐的主宣传片。两段黑洞动画含音轨，但全轨解码为 PCM 后样本峰值为 0；其余新增文件无音轨。公开浏览数为 [SVS API](https://svs.gsfc.nasa.gov/help/#apis) 所报过去 10 天页面浏览，不是单个文件下载量；同一页面的多个作品共享该数值，不能累加。未公开数据为空；这些素材不宣称为全网热度榜。
+
+| 标题 / Title | 作者 / Author | 许可 / License | 近 10 天页面浏览 / Page views | 原始尺寸 / Size |
+| --- | --- | --- | --- | --- |
+| [萨瓦尔巴极光 / Aurora over Svalbard](https://svs.gsfc.nasa.gov/13167/#media_group_323723) | NASA / Joy Ng | [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) | [103](https://svs.gsfc.nasa.gov/api/search/?search=VISIONS-2+Aurora+Imagery&limit=50) | 1920 × 1080 · 13,949,107 B |
+| [耀光吸积盘 / Radiant Accretion Disk](https://svs.gsfc.nasa.gov/12854/#media_group_324369) | Aurore Simonnet / NASA Goddard Space Flight Center | [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) | [109](https://svs.gsfc.nasa.gov/api/search/?search=NICER+Charts+the+Area+Around+a+New+Black+Hole&limit=50) | 1920 × 1080 · 2,682,078 B |
+| [月面地升 / Earthrise over the Moon](https://svs.gsfc.nasa.gov/4129/#media_group_345033) | NASA Goddard Space Flight Center / Ernie Wright | [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) | [2839](https://svs.gsfc.nasa.gov/api/search/?search=Earthrise+in+4K&limit=50) | 1920 × 1080 · 13,493,018 B |
+| [薄云弯月 / Crescent Moon through Clouds](https://svs.gsfc.nasa.gov/4129/#media_group_345041) | NASA Goddard Space Flight Center / Ernie Wright | [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) | [2839](https://svs.gsfc.nasa.gov/api/search/?search=Earthrise+in+4K&limit=50) | 1920 × 1080 · 1,733,312 B |
+| [绕月航行 / Orbiting the Moon](https://svs.gsfc.nasa.gov/4129/#media_group_345040) | NASA Goddard Space Flight Center / Ernie Wright | [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) | [2839](https://svs.gsfc.nasa.gov/api/search/?search=Earthrise+in+4K&limit=50) | 1920 × 1080 · 2,264,754 B |
+| [蓝星流转 / Turning Blue Earth](https://svs.gsfc.nasa.gov/12312/#media_group_333418) | NASA Goddard Space Flight Center / DSCOVR EPIC | [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) | [未公开 / unavailable](https://svs.gsfc.nasa.gov/api/search/?search=One+Year+In+The+Life+of+Earth&limit=50) | 1920 × 1080 · 3,071,982 B |
+| [炽红光环 / Ember Ring](https://svs.gsfc.nasa.gov/13326/#media_group_322616) | NASA Goddard Space Flight Center / Jeremy Schnittman | [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) | [4041](https://svs.gsfc.nasa.gov/api/search/?search=Black+Hole+Accretion+Disk+Visualization&limit=50) | 1920 × 1080 · 12,492,579 B |
+| [黑洞环游 / Around a Black Hole](https://svs.gsfc.nasa.gov/13326/#media_group_322612) | NASA Goddard Space Flight Center / Jeremy Schnittman | [Public domain (NASA SVS)](https://svs.gsfc.nasa.gov/help/#faq) | [4041](https://svs.gsfc.nasa.gov/api/search/?search=Black+Hole+Accretion+Disk+Visualization&limit=50) | 1920 × 1080 · 1,878,127 B |
+
+新客户端使用 `assets/online-wallpapers-v2.json`（schema 4，revision 3）。`assets/online-wallpapers.json` 保持原有 82 项，供不支持 NASA 主机的 beta.1/beta.2 客户端刷新；不得向该旧入口加入新主机。两条目录都只属于测试分支，正式 Python v1.0.0 的目录、下载与更新不受影响。

@@ -63,7 +63,7 @@ int run_self_tests(const wchar_t *report) {
     const char *invalid_json[]={"{\"x\":1,}","[1,]","{\"x\":01}","{\"x\":1e}","true false","{\"x\":\"\\q\"}"};for(UINT n=0;n<ARRAYSIZE(invalid_json);++n) { BOOL accepted=json_parse(&json,invalid_json[n],strlen(invalid_json[n]));check(!accepted,L"json-invalid-rejected");if(accepted) json_free(&json); }
     check(safe_filename(L"合法 wallpaper.jpg") && !safe_filename(L"../bad.jpg") && !safe_filename(L"CON.txt") && !safe_filename(L"x.exe:stream") && !safe_filename(L"LPT1.jpg"),L"download-filename-boundary");
     check(safe_https_url(L"https://upload.wikimedia.org/example.jpg") && !safe_https_url(L"http://example.com/x") && !safe_https_url(L"https://user:password@example.com/x") && !safe_https_url(L"https://example.com/\r\n"),L"https-url-boundary");
-    check(online_catalog_test()==82,L"licensed-catalog-82-entries");
+    check(online_catalog_test()==90,L"licensed-catalog-90-entries");
     check(online_catalog_refresh_tests((std::filesystem::path(g_app.data)/L"catalog-refresh-fixture").c_str()),L"online-catalog-atomic-refresh");
     check(lb::organizer::model_tests((std::filesystem::path(g_app.data)/L"organizer-fixture").wstring()),L"organizer-model-group-sort-auto-collect");
     check(lb::organizer::transition_tests(),L"organizer-retiring-lease-keeps-new-intent");

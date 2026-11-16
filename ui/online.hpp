@@ -67,7 +67,7 @@ class OnlinePage:public QWidget {
     QString path(QJsonObject const& item)const{return s(state.data)+"/online/"+item["filename"].toString();}
     QString cover_path(QJsonObject const& item)const{return s(state.data)+"/online/covers/"+QString::fromLatin1(QCryptographicHash::hash(item["thumbnail_url"].toString().toUtf8(),QCryptographicHash::Sha256).toHex())+".png";}
     static bool allowed_cover(QUrl const& url) {
-        static QStringList const hosts{"upload.wikimedia.org","thumb.wikimedia.org","commons.wikimedia.org","archive.org","images.unsplash.com"};
+        static QStringList const hosts{"upload.wikimedia.org","thumb.wikimedia.org","commons.wikimedia.org","archive.org","images.unsplash.com","svs.gsfc.nasa.gov"};
         return url.isValid()&&url.scheme()=="https"&&url.userInfo().isEmpty()&&(url.port(-1)==-1||url.port()==443)&&hosts.contains(url.host().toLower())&&url.toString().size()<=4096;
     }
     bool downloaded(QJsonObject const& item)const {
@@ -124,7 +124,7 @@ class OnlinePage:public QWidget {
         auto catalog_api=api.extension?static_cast<UiCatalogApi const*>(api.extension(6)):nullptr;
         if(!catalog_api||catalog_api->version!=LB_ONLINE_CATALOG_ABI||catalog_api->size!=sizeof(UiCatalogApi)){status_->setText(ui::tr("目录组件未就绪。","Catalog service is unavailable."));return;}
         refresh_button_->setEnabled(false);status_->setText(ui::tr("正在获取在线目录…","Fetching the online catalog…"));
-        QNetworkRequest request(QUrl("https://raw.githubusercontent.com/GalokPeng/light-block-desktop/cpp-preview/assets/online-wallpapers.json"));request.setTransferTimeout(15000);request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,QNetworkRequest::ManualRedirectPolicy);request.setRawHeader("User-Agent","Light-Block-Desktop/" LB_VERSION_UTF8);
+        QNetworkRequest request(QUrl("https://raw.githubusercontent.com/GalokPeng/light-block-desktop/cpp-preview/assets/online-wallpapers-v2.json"));request.setTransferTimeout(15000);request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,QNetworkRequest::ManualRedirectPolicy);request.setRawHeader("User-Agent","Light-Block-Desktop/" LB_VERSION_UTF8);
         auto reply=network_->get(request);reply->setReadBufferSize(64*1024);auto bytes=std::make_shared<QByteArray>();
         connect(reply,&QNetworkReply::metaDataChanged,this,[reply]{if(reply->header(QNetworkRequest::ContentLengthHeader).toLongLong()>2*1024*1024)reply->abort();});
         connect(reply,&QNetworkReply::readyRead,this,[reply,bytes]{*bytes+=reply->readAll();if(bytes->size()>2*1024*1024)reply->abort();});
@@ -135,7 +135,7 @@ class OnlinePage:public QWidget {
             close_preview();pause_covers();selected_=-1;covers_.clear();cover_failed_.clear();load_catalog();QStringList kinds{"image","gif","video"};for(int n=0;n<3;++n){int count=0;for(auto item:entries_)if(item.toObject()["kind"]==kinds[n])++count;filters_[n]->setText(kind_name(kinds[n])+"  "+QString::number(count));}filter_entries();status_->setText(ui::tr("在线目录已更新。","Online catalog updated."));
         });
     }
-    void load_catalog(){auto catalog_api=api.extension?static_cast<UiCatalogApi const*>(api.extension(6)):nullptr;QString path=catalog_api&&catalog_api->version==LB_ONLINE_CATALOG_ABI&&catalog_api->size==sizeof(UiCatalogApi)?s(catalog_api->path()):QString{};QFile catalog(path.isEmpty()?s(state.directory)+"/assets/online-wallpapers.json":path);if(catalog.open(QIODevice::ReadOnly)&&catalog.size()<=2*1024*1024){auto object=QJsonDocument::fromJson(catalog.readAll()).object();if(object["schema_version"].toInt()==4&&object["entries"].toArray().size()<=120)entries_=object["entries"].toArray();}}
+    void load_catalog(){auto catalog_api=api.extension?static_cast<UiCatalogApi const*>(api.extension(6)):nullptr;QString path=catalog_api&&catalog_api->version==LB_ONLINE_CATALOG_ABI&&catalog_api->size==sizeof(UiCatalogApi)?s(catalog_api->path()):QString{};QFile catalog(path.isEmpty()?s(state.directory)+"/assets/online-wallpapers-v2.json":path);if(catalog.open(QIODevice::ReadOnly)&&catalog.size()<=2*1024*1024){auto object=QJsonDocument::fromJson(catalog.readAll()).object();if(object["schema_version"].toInt()==4&&object["entries"].toArray().size()<=120)entries_=object["entries"].toArray();}}
     void filter_entries() {
         int keep=selected_;close_preview();QString query=search_->text().trimmed();QStringList kinds{"image","gif","video"};QVector<int> rows;
         for(int n=0;n<entries_.size();++n){auto item=entries_[n].toObject();if(item["kind"].toString()!=kinds[kind_])continue;QStringList words{item["author"].toString(),item["search_text"].toString()};for(auto value:item["title"].toObject())words<<value.toString();for(auto value:item["tags"].toArray())words<<value.toString();if(query.isEmpty()||words.join(' ').contains(query,Qt::CaseInsensitive))rows<<n;}
@@ -213,6 +213,7 @@ public:
         if(completed||changed){update_details();view_->viewport()->update();}
     }
     bool fixture_tests(QString const& directory) {
+        if(!allowed_cover(QUrl("https://svs.gsfc.nasa.gov/vis/cover.jpg"))||allowed_cover(QUrl("https://svs.gsfc.nasa.gov.evil.example/cover.jpg"))||allowed_cover(QUrl("https://user@svs.gsfc.nasa.gov/cover.jpg"))||allowed_cover(QUrl("http://svs.gsfc.nasa.gov/cover.jpg")))return false;
         QJsonArray fixtures;for(int n=0;n<8;++n){QString kind=n<4?"image":n<6?"gif":"video";fixtures.append(QJsonObject{{"id",QString("fixture-%1").arg(n)},{"title",QJsonObject{{"zh",QString("测试风景 %1").arg(n+1)},{"en",QString("Fixture landscape %1").arg(n+1)}}},{"kind",kind},{"filename",QString("fixture-%1.jpg").arg(n)},{"thumbnail_url",QString("https://thumb.wikimedia.org/fixture-%1.png").arg(n)},{"width",1920},{"height",1080},{"bytes",1200000+n*500000},{"author","Local UI fixture"},{"license","CC0"},{"source_url","https://example.org/source"},{"license_url","https://creativecommons.org/publicdomain/zero/1.0/"},{"tags",QJsonArray{"fixture-tag"}},{"fixture_downloaded",n==0}});}
         OnlinePage fixture(nullptr,false,fixtures);fixture.setObjectName("root");fixture.setAttribute(Qt::WA_StyledBackground);fixture.setStyleSheet(window()->styleSheet());fixture.resize(1000,660);
         for(int n=0;n<8;++n){QImage cover(480,270,QImage::Format_RGB32);QPainter p(&cover);QLinearGradient gradient(0,0,480,270);gradient.setColorAt(0,QColor::fromHsv((n*41+190)%360,130,95));gradient.setColorAt(1,QColor::fromHsv((n*41+225)%360,110,210));p.fillRect(cover.rect(),gradient);p.setPen(QColor("#d5e9e0"));p.setFont(QFont("Segoe UI",16));p.drawText(cover.rect(),Qt::AlignCenter,QString("LOCAL FIXTURE %1").arg(n+1));p.end();fixture.covers_.insert(n,new QImage(cover));}

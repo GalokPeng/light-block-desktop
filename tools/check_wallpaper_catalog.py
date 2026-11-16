@@ -7,7 +7,7 @@ import re
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
-MEDIA_HOSTS = {'upload.wikimedia.org', 'commons.wikimedia.org', 'thumb.wikimedia.org', 'archive.org', 'images.unsplash.com'}
+MEDIA_HOSTS = {'upload.wikimedia.org', 'commons.wikimedia.org', 'thumb.wikimedia.org', 'archive.org', 'images.unsplash.com', 'svs.gsfc.nasa.gov'}
 
 
 def validate(path):
@@ -56,6 +56,6 @@ def validate(path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--catalog', type=Path, default=ROOT / 'assets/online-wallpapers.json')
+    parser.add_argument('--catalog', type=Path, default=ROOT / 'assets/online-wallpapers-v2.json')
     args = parser.parse_args()
     print(json.dumps({'passed': True, 'counts': validate(args.catalog), 'network_requests': 0}, ensure_ascii=False))

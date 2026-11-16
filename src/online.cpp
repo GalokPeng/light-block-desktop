@@ -46,7 +46,7 @@ static BOOL downloaded(OnlineItem const& item,wchar_t const* file=nullptr) {
 static BOOL catalog_host(const wchar_t *url) {
     if(!safe_https_url(url)) return FALSE;
     const wchar_t *host=url+8,*end=wcschr(host,L'/');size_t length=end?(size_t)(end-host):wcslen(host);
-    const wchar_t *allowed[]={L"upload.wikimedia.org",L"commons.wikimedia.org",L"thumb.wikimedia.org",L"archive.org",L"images.unsplash.com"};
+    const wchar_t *allowed[]={L"upload.wikimedia.org",L"commons.wikimedia.org",L"thumb.wikimedia.org",L"archive.org",L"images.unsplash.com",L"svs.gsfc.nasa.gov"};
     for(UINT n=0;n<ARRAYSIZE(allowed);++n) if(wcslen(allowed[n])==length && !_wcsnicmp(host,allowed[n],length)) return TRUE;
     return FALSE;
 }
@@ -82,7 +82,7 @@ static bool set_catalog(std::vector<OnlineItem> const& items,std::filesystem::pa
 }
 static BOOL load_catalog(void){
     if(online.thread)return online.items&&online.count;std::vector<OnlineItem> items;auto cached=std::filesystem::path(g_app.data)/L"online"/L"catalog-v4.json";
-    auto seed=std::filesystem::path(g_app.directory)/L"assets"/L"online-wallpapers.json";
+    auto seed=std::filesystem::path(g_app.directory)/L"assets"/L"online-wallpapers-v2.json";
     if(catalog_revision(cached)>=catalog_revision(seed)&&parse_catalog(cached.c_str(),items))return set_catalog(items,cached);
     return parse_catalog(seed.c_str(),items)&&set_catalog(items,seed);
 }
@@ -91,7 +91,7 @@ static int install_catalog(wchar_t const* file){
     if(!file||online.thread)return 0;
     try{
         std::vector<OnlineItem> items;if(!parse_catalog(file,items))return 0;
-        auto seed=std::filesystem::path(g_app.directory)/L"assets"/L"online-wallpapers.json";if(catalog_revision(file)<std::max(catalog_revision(seed),catalog_revision(catalog_loaded_path)))return 0;
+        auto seed=std::filesystem::path(g_app.directory)/L"assets"/L"online-wallpapers-v2.json";if(catalog_revision(file)<std::max(catalog_revision(seed),catalog_revision(catalog_loaded_path)))return 0;
         // Allocate before committing; a memory failure must not replace a usable catalog.
         if(!reserve_items(items.size()))return 0;
         auto directory=std::filesystem::path(g_app.data)/L"online";if(!ensure_directory(directory.c_str()))return 0;auto target=directory/L"catalog-v4.json",part=directory/(L"catalog-"+std::to_wstring(GetTickCount64())+L".partial");lb::scope_exit cleanup([&]{DeleteFileW(part.c_str());});
@@ -102,7 +102,8 @@ static int install_catalog(wchar_t const* file){
 UiCatalogApi const* online_catalog_api(){static UiCatalogApi api{LB_ONLINE_CATALOG_ABI,sizeof(UiCatalogApi),active_catalog_path,install_catalog};return &api;}
 bool online_catalog_refresh_tests(wchar_t const* directory){
     try{
-        std::filesystem::path root(directory);if(!ensure_directory(root.c_str()))return false;auto seed=std::filesystem::path(g_app.directory)/L"assets"/L"online-wallpapers.json";auto valid=root/L"valid.json";if(!CopyFileW(seed.c_str(),valid.c_str(),TRUE))return false;
+        if(!catalog_host(L"https://svs.gsfc.nasa.gov/vis/aurora.gif")||!catalog_host(L"https://SVS.GSFC.NASA.GOV/vis/moon.mp4")||catalog_host(L"https://svs.gsfc.nasa.gov.evil.example/a.gif")||catalog_host(L"https://svs.gsfc.nasa.gov@evil.example/a.gif")||catalog_host(L"http://svs.gsfc.nasa.gov/a.gif"))return false;
+        std::filesystem::path root(directory);if(!ensure_directory(root.c_str()))return false;auto seed=std::filesystem::path(g_app.directory)/L"assets"/L"online-wallpapers-v2.json";auto valid=root/L"valid.json";if(!CopyFileW(seed.c_str(),valid.c_str(),TRUE))return false;
         std::vector<OnlineItem> expected;if(!parse_catalog(seed.c_str(),expected)||!install_catalog(valid.c_str())||online.count!=expected.size())return false;auto before=catalog_loaded_path;auto count=online.count;wchar_t digest[65]{},after[65]{};if(!hash_file(before.c_str(),L"SHA256",digest,65))return false;
         auto bad=root/L"invalid.json";if(!write_utf8_atomic(bad.c_str(),L"{\"schema_version\":4,\"entries\":[]}")||install_catalog(bad.c_str())||online.count!=count||before!=catalog_loaded_path)return false;
         if(!hash_file(before.c_str(),L"SHA256",after,65)||wcscmp(digest,after))return false;
