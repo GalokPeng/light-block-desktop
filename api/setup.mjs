@@ -10,10 +10,10 @@ const mirrors = downloadSources.filter(source => source.id !== 'github').map(sou
 const maxInstallerBytes = 128 * 1024 * 1024;
 let cachedRelease;
 
-async function fetchAsset(url, allowed, signal) {
+async function fetchAsset(url, allowed, signal, method = 'GET') {
   for (let redirect = 0; redirect < 5; redirect++) {
     if (!allowed.has(url.origin)) throw new Error('Unexpected asset host');
-    const response = await fetch(url, { redirect: 'manual', signal });
+    const response = await fetch(url, { method, redirect: 'manual', signal });
     if (![301, 302, 303, 307, 308].includes(response.status)) return response;
     await response.body?.cancel();
     url = new URL(response.headers.get('location'), url);
@@ -44,7 +44,19 @@ async function releaseFromChecksums() {
   if (response.status !== 302 || asset.origin !== github || !match) throw new Error('Release unavailable');
   const [, version] = match;
   const sums = new URL(releases + '/download/' + version + '/Qingkuai-' + version + '-SHA256SUMS.txt', github);
-  const checksum = await fetchAsset(sums, officialOrigins, AbortSignal.timeout(8000));
+  // Older installed clients require size even when the checksum fallback is used.
+  // HEAD follows only official asset hosts and never downloads the installer.
+  const [checksum, installer] = await Promise.all([
+    fetchAsset(sums, officialOrigins, AbortSignal.timeout(8000)),
+    fetchAsset(asset, officialOrigins, AbortSignal.timeout(8000), 'HEAD'),
+  ]);
+  const sizeText = installer.headers.get('content-length');
+  const size = sizeText && /^\d+$/.test(sizeText) ? Number(sizeText) : NaN;
+  await installer.body?.cancel();
+  if (!installer.ok || !Number.isSafeInteger(size) || size < 2 || size > maxInstallerBytes) {
+    await checksum.body?.cancel();
+    throw new Error('Official Setup size unavailable');
+  }
   const { chunks } = await readBody(checksum, 16 * 1024);
   const entries = new Map();
   for (const line of Buffer.concat(chunks).toString('ascii').split(/\r?\n/)) {
@@ -53,7 +65,7 @@ async function releaseFromChecksums() {
   }
   const sha256 = entries.get(setupName) || entries.get('Qingkuai-' + version + '-Setup-x64.exe');
   if (!sha256) throw new Error('Official Setup checksum unavailable');
-  return { version, asset, sha256, size: null };
+  return { version, asset, sha256, size };
 }
 
 async function releaseFromApi() {
@@ -65,10 +77,12 @@ async function releaseFromApi() {
   if (release.draft || release.prerelease || typeof version !== 'string' || !/^v\d{1,5}\.\d{1,5}\.\d{1,5}$/.test(version)) {
     throw new Error('Release unavailable');
   }
-  const installer = release.assets.find(asset => asset.name === setupName && asset.state === 'uploaded');
+  const installers = (release.assets || []).filter(asset => asset.name === setupName && asset.state === 'uploaded');
+  const installer = installers.length === 1 ? installers[0] : null;
   const digest = /^sha256:([a-f0-9]{64})$/.exec(installer?.digest);
-  if (!digest) throw new Error('Official Setup checksum unavailable');
   const asset = new URL(releases + '/download/' + version + '/' + setupName, github);
+  if (!digest || !Number.isSafeInteger(installer.size) || installer.size < 2 || installer.size > maxInstallerBytes ||
+      installer.browser_download_url !== asset.href) throw new Error('Official Setup metadata unavailable');
   return { version, asset, sha256: digest[1], size: installer.size };
 }
 

@@ -5,10 +5,12 @@
 - 美化开启前检查上次布局会话，关闭时等待还原确认；超时保留记录并重试恢复，不直接丢弃会话。此修复不重启 Explorer，也不结束用户的其他应用。
 - 最近 30 秒内在桌面右键后新增的内容优先显示在点击附近，并限制在显示器工作区内；没有有效位置时保留默认排布。气泡悬停显示“点击直接收纳”，点击立即收纳；拖出气泡释放会取消点击。一分钟自动收纳与原文件均保留。
 - 自定义鼠标设计仅提供后续方案，不包含在本版功能中。
+- 修复“检查更新 · 重试”：官网校验清单回退同时提供真实安装包大小，兼容已安装版本；客户端兼容旧接口的空大小，依次尝试两个官网域名及 GitHub，并限制请求总时长、记录失败原因。下载仍受大小上限、官方地址与 SHA-256 校验保护。
 - Restores full taskbar visibility using current dimensions instead of replaying a stale pixel region after display/DPI changes. Toggle checks repair legacy rectangular clipping while preserving offset/complex regions.
 - Repairs transient zero-sized, hidden or transparent trays without saving the broken state as the native restoration baseline. Partial column rebuilds cannot replace a valid baseline; layout restoration completes before Stop is acknowledged.
 - Styling toggles recover recorded sessions and retain unacknowledged restoration for retry, without restarting Explorer or other applications.
 - New items use a recent desktop right-click position (30 seconds), clamped to the work area, with the existing fallback otherwise. Hover the one-minute hint to collect immediately; release outside to cancel. Automatic collection and original files are preserved.
+- Fixes update checks that repeatedly offered Retry: the official checksum feed now supplies the real installer size for existing clients. New clients accept the legacy unknown-size feed, try both official website domains and GitHub, bound request duration and retain failure details. Installer origin, size limits and SHA-256 verification remain enforced.
 
 # v2.0.3 · 新增内容收纳与工具体验 / Desktop arrivals and tools
 

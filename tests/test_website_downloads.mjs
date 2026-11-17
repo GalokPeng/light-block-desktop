@@ -9,22 +9,36 @@ const binary = Buffer.from('MZ verified test setup');
 const digest = createHash('sha256').update(binary).digest('hex');
 let counter = 0;
 
-async function apiTest(path, { method = 'GET', corrupt = false } = {}) {
+async function apiTest(path, { method = 'GET', corrupt = false, headSize = String(binary.length), apiSize = binary.length, apiBlocked = false, headHost = '' } = {}) {
   const requests = [];
+  const methods = [];
   const original = globalThis.fetch;
   globalThis.fetch = async (input, options = {}) => {
     const url = String(input);
     requests.push(url);
+    methods.push(options.method || 'GET');
+    if (url === 'https://api.github.com/repos/GalokPeng/light-block-desktop/releases/latest') {
+      if (apiBlocked) return new Response('Rate limited', { status: 403 });
+      return Response.json({ tag_name: version, draft: false, prerelease: false, assets: [{
+        name: setupName, state: 'uploaded', size: apiSize, digest: 'sha256:' + digest, browser_download_url: setupUrl('github', version),
+      }] });
+    }
     if (url.endsWith('/latest/download/' + setupName)) {
       return new Response(null, { status: 302, headers: { Location: setupUrl('github', version) } });
     }
     if (url.endsWith('SHA256SUMS.txt')) return new Response(`${digest}  ${setupName}\n`);
-    if (url.endsWith('/' + setupName)) return new Response(corrupt && url.startsWith('https://github.com/') ? 'broken' : binary);
+    if (url.endsWith('/' + setupName)) {
+      if (options.method === 'HEAD') {
+        if (headHost) return new Response(null, { status: 302, headers: { Location: headHost + '/setup.exe' } });
+        return new Response(null, { headers: headSize === null ? {} : { 'Content-Length': headSize } });
+      }
+      return new Response(corrupt && url.startsWith('https://github.com/') ? 'broken' : binary);
+    }
     throw new Error('Unexpected request ' + url);
   };
   try {
     const { default: handler } = await import('../api/setup.mjs?test=' + counter++);
-    return { response: await handler.fetch(new Request('https://example.test/download/' + path, { method })), requests };
+    return { response: await handler.fetch(new Request('https://example.test/download/' + path, { method })), requests, methods };
   } finally { globalThis.fetch = original; }
 }
 
@@ -75,13 +89,16 @@ test('offline metadata and blocked browser storage retain working default links'
 });
 
 test('metadata and HEAD expose official hashes without downloading Setup', async () => {
-  const { response, requests } = await apiTest('?format=json');
+  const { response, requests, methods } = await apiTest('?format=json', { apiBlocked: true });
   const body = await response.json();
   assert.equal(body.sha256, digest);
   assert.equal(body.version, version);
   assert.equal(body.url, setupUrl('github', version));
   assert.equal(body.sources.length, 3);
-  assert.equal(requests.length, 2);
+  // This is also the contract required by the already-installed v2.0.0–2.0.3 client.
+  assert.equal(body.size, binary.length);
+  assert.equal(requests.length, 3);
+  assert.ok(requests.every((url, index) => !url.endsWith('.exe') || methods[index] === 'HEAD'));
   const head = await apiTest('', { method: 'HEAD' });
   assert.equal(head.response.headers.get('X-Qingkuai-SHA256'), digest);
   assert.equal(await head.response.text(), '');
@@ -92,8 +109,26 @@ test('explicit language routes redirect to versioned sources without proxying Se
     const { response, requests } = await apiTest(query);
     assert.equal(response.status, 302);
     assert.equal(response.headers.get('Location'), setupUrl(source, version));
-    assert.equal(requests.length, 2);
+    assert.equal(requests.length, 3);
   }
+});
+
+test('metadata recovers via the official API when asset HEAD has no usable size', async () => {
+  for (const headSize of [null, '0', '-1', '4096.5', '999999999999999999999']) {
+    const { response, requests } = await apiTest('?format=json', { headSize });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).size, binary.length);
+    assert.ok(requests.some(url => url.startsWith('https://api.github.com/')));
+  }
+});
+
+test('metadata does not advertise unusable lengths or follow foreign asset hosts', async () => {
+  for (const apiSize of [null, 0, -1, 4096.5, 128 * 1024 * 1024 + 1, '4096']) {
+    assert.equal((await apiTest('?format=json', { headSize: null, apiSize })).response.status, 503);
+  }
+  const result = await apiTest('?format=json', { headHost: 'https://foreign.example', apiBlocked: true });
+  assert.equal(result.response.status, 503);
+  assert.ok(!result.requests.some(url => url.startsWith('https://foreign.example')));
 });
 
 test('legacy downloads still verify the full file and reject a corrupt upstream', async () => {
