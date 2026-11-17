@@ -11,6 +11,9 @@
 #include "window_shape.hpp"
 #include "desktop_surface.hpp"
 #include "ui_motion.hpp"
+#include "shell_menu.hpp"
+#include "directory_watch_tests.hpp"
+#include "icon_cache.hpp"
 bool settings_display_tests();
 bool settings_runtime_tests();
 bool settings_startup_tests();
@@ -46,6 +49,10 @@ static void check(BOOL result,const wchar_t *name) {
 static uint32_t hash_image(const Image *i) { uint32_t h=2166136261u;for(size_t n=0;n<i->bytes/4;n+=17) h=(h^i->pixels[n])*16777619u;return h; }
 int run_self_tests(const wchar_t *report) {
     passes=failures=0;checks[0]=0;
+    check(lb::icon_cache_tests(),L"native-icons-physical-pixel-sizes-cache-stop-release");
+    check(lb::organizer::arrival_tests((std::filesystem::path(g_app.data)/L"arrival-fixture").wstring()),L"desktop-arrival-visible-layer-due-time-disable-enable-reflow");
+    check(lb::shell_menu::tests(std::filesystem::path(g_app.data)/L"shell-menu-fixture"),L"native-file-menu-properties-delete-rename-and-command-isolation");
+    check(lb::directory_watch_tests(std::filesystem::path(g_app.data)/L"directory-watch-fixture"),L"desktop-watch-immediate-create-and-missing-root-recovery");
     check(player_release_tests((std::filesystem::path(g_app.data)/L"release-fixture").c_str()),L"safe-wallpaper-release-before-delete");
     check(player_result_tests(),L"independent-recording-result-player-tokens-and-decoder-limit");
     check(lb::taskbar::recovery_tests((std::filesystem::path(g_app.data)/L"taskbar-recovery-fixture").wstring()),L"taskbar-persistent-recovery-ownership");

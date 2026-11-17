@@ -28,7 +28,7 @@ bool client_open{},index_english{};uint64_t next_id{1};uint32_t revision{1};ULON
 std::optional<std::wstring> result;
 lb::DirectoryWatch watcher;
 constexpr uint64_t command_id=uint64_t(1)<<63;
-void ensure_window();
+void ensure_window(bool legacy=false);
 int px(int value) { return MulDiv(value,int(g_app.dpi),96); }
 std::wstring lower(std::wstring value) { if(!value.empty()) CharLowerBuffW(value.data(),DWORD(value.size()));return value; }
 template<size_t N> void copy(wchar_t(&destination)[N],std::wstring const& source) { StringCchCopyNW(destination,N,source.c_str(),N-1); }
@@ -105,7 +105,7 @@ void begin_index() {
     auto roots=state->desktop;roots.insert(roots.end(),state->menus.begin(),state->menus.end());watcher.start(roots,window,WM_APP+135,0,true);
 }
 void refresh() {
-    if(!window) return;wchar_t text[512];GetWindowTextW(search,text,512);result=lb::calculate(text);displayed.clear();SendMessageW(list,WM_SETREDRAW,FALSE,0);ListView_DeleteAllItems(list);
+    if(!window||!search||!list) return;wchar_t text[512];GetWindowTextW(search,text,512);result=lb::calculate(text);displayed.clear();SendMessageW(list,WM_SETREDRAW,FALSE,0);ListView_DeleteAllItems(list);
     if(result) displayed.push_back({*result,std::wstring(text)+L" = "+*result,tr(L"回车复制结果",L"Enter to copy result"),-1});
     auto commands=tools(g_app.english);for(auto const* entry:ranked(lower(trim(text)),entries,commands))displayed.push_back(*entry);
     for(size_t n=0;n<displayed.size();++n) { auto &entry=displayed[n];LVITEMW item{};item.mask=LVIF_TEXT;item.iItem=int(n);item.pszText=entry.name.data();int at=ListView_InsertItem(list,&item);ListView_SetItemText(list,at,1,entry.kind.data()); }
@@ -129,7 +129,7 @@ LRESULT CALLBACK key_proc(HWND control,UINT message,WPARAM wp,LPARAM lp,UINT_PTR
 LRESULT CALLBACK proc(HWND owner,UINT message,WPARAM wp,LPARAM lp) {
     switch(message) {
     case WM_CREATE: {
-        window=owner;search=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,0,0,1,1,owner,reinterpret_cast<HMENU>(1),g_app.instance,nullptr);SendMessageW(search,EM_SETCUEBANNER,TRUE,LPARAM(tr(L"搜索应用、收纳内容，或输入 24 × 60",L"Find apps and desktop items, or enter 24 * 60")));SendMessageW(search,WM_SETFONT,WPARAM(g_app.heading),TRUE);SetWindowSubclass(search,key_proc,1,0);
+        window=owner;if(reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams){begin_index();return 0;}search=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL,0,0,1,1,owner,reinterpret_cast<HMENU>(1),g_app.instance,nullptr);SendMessageW(search,EM_SETCUEBANNER,TRUE,LPARAM(tr(L"搜索应用、收纳内容，或输入 24 × 60",L"Find apps and desktop items, or enter 24 * 60")));SendMessageW(search,WM_SETFONT,WPARAM(g_app.heading),TRUE);SetWindowSubclass(search,key_proc,1,0);
         list=CreateWindowExW(0,WC_LISTVIEWW,L"",WS_CHILD|WS_VISIBLE|LVS_REPORT|LVS_SINGLESEL|LVS_SHOWSELALWAYS|LVS_NOCOLUMNHEADER,0,0,1,1,owner,reinterpret_cast<HMENU>(2),g_app.instance,nullptr);ListView_SetExtendedListViewStyle(list,LVS_EX_FULLROWSELECT|LVS_EX_DOUBLEBUFFER);SendMessageW(list,WM_SETFONT,WPARAM(g_app.font),TRUE);SetWindowSubclass(list,key_proc,1,0);
         for(int n=0;n<2;++n) { LVCOLUMNW column{};column.mask=LVCF_WIDTH;column.cx=px(n?140:450);ListView_InsertColumn(list,n,&column); }
         ListView_SetBkColor(list,g_app.dark?RGB(26,33,45):RGB(255,255,255));ListView_SetTextBkColor(list,CLR_NONE);ListView_SetTextColor(list,g_app.dark?RGB(235,240,249):RGB(29,38,49));
@@ -137,7 +137,7 @@ LRESULT CALLBACK proc(HWND owner,UINT message,WPARAM wp,LPARAM lp) {
     }
     case WM_SIZE:MoveWindow(search,px(18),px(18),LOWORD(lp)-px(36),px(46),TRUE);MoveWindow(list,px(18),px(80),LOWORD(lp)-px(36),std::max(px(60),int(HIWORD(lp))-px(132)),TRUE);MoveWindow(status,px(18),HIWORD(lp)-px(36),LOWORD(lp)-px(36),px(28),TRUE);ListView_SetColumnWidth(list,0,std::max(px(200),int(LOWORD(lp))-px(210)));return 0;
     case WM_COMMAND:if(LOWORD(wp)==1&&HIWORD(wp)==EN_CHANGE) SetTimer(owner,1,65,nullptr);return 0;
-    case WM_TIMER:KillTimer(owner,UINT_PTR(wp));if(wp==1) refresh();else if(wp==2) begin_index();return 0;
+    case WM_TIMER:KillTimer(owner,UINT_PTR(wp));if(wp==1) refresh();else if(wp==2) begin_index();else if(wp==3&&!client_open&&!IsWindowVisible(owner)){watcher.stop();end_index();end_icons();std::vector<Entry>().swap(entries);std::vector<Entry>().swap(displayed);indexed=false;dirty=true;result.reset();++revision;}return 0;
     case WM_APP+134:if(index&&index->done) { if(index_thread.joinable()) index_thread.join();entries=std::move(index->entries);index_english=index->english;for(auto &entry:entries)entry.id=next_id++;index.reset();indexed=true;indexed_at=GetTickCount64();++revision;if(IsWindowVisible(owner))refresh();if(dirty&&(client_open||IsWindowVisible(owner)))SetTimer(owner,2,350,nullptr); }return 0;
     case WM_APP+135:dirty=true;if(client_open||IsWindowVisible(owner)) SetTimer(owner,2,350,nullptr);return 0;
     case WM_NOTIFY:if(reinterpret_cast<NMHDR*>(lp)->code==NM_DBLCLK) activate();return 0;
@@ -147,15 +147,16 @@ LRESULT CALLBACK proc(HWND owner,UINT message,WPARAM wp,LPARAM lp) {
     case WM_DESTROY:watcher.stop();end_index();window=search=list=status=nullptr;return 0;
     }return DefWindowProcW(owner,message,wp,lp);
 }
-void ensure_window() {
-    if(window)return;
+void ensure_window(bool legacy) {
+    if(window&&(!legacy||search))return;if(window){DestroyWindow(window);window=nullptr;}
     WNDCLASSW cls{};cls.lpfnWndProc=proc;cls.hInstance=g_app.instance;cls.lpszClassName=L"LightBlockDesktopNative.Launcher";cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);RegisterClassW(&cls);
+    if(!legacy){CreateWindowExW(0,cls.lpszClassName,L"Launcher service",0,0,0,0,0,HWND_MESSAGE,nullptr,g_app.instance,reinterpret_cast<void*>(1));return;}
     POINT point;GetCursorPos(&point);MONITORINFO monitor{sizeof monitor};GetMonitorInfoW(MonitorFromPoint(point,MONITOR_DEFAULTTOPRIMARY),&monitor);int width=px(680),height=px(500);
     HWND owner=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_TOPMOST,cls.lpszClassName,tr(L"轻块桌面 · 快速启动",L"Light Block · Quick launcher"),WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,monitor.rcWork.left+(monitor.rcWork.right-monitor.rcWork.left-width)/2,monitor.rcWork.top+(monitor.rcWork.bottom-monitor.rcWork.top-height)/3,width,height,GetShellWindow(),nullptr,g_app.instance,nullptr);
     if(owner)theme_window(owner);
 }
-void service_open() { client_open=true;ensure_window();begin_icons();if(dirty||(indexed&&(g_app.english!=index_english||GetTickCount64()-indexed_at>2000)))begin_index(); }
-void service_close() { client_open=false; }
+void service_open() { client_open=true;ensure_window();if(window)KillTimer(window,3);begin_icons();if(dirty||(!indexed&&!index)||(indexed&&(g_app.english!=index_english||GetTickCount64()-indexed_at>60000)))begin_index(); }
+void service_close() { client_open=false;if(window)SetTimer(window,3,30000,nullptr); }
 void service_state(LauncherUiState* out) { if(out)*out={revision+(icons?icons->revision.load():0),int(entries.size()),int(bool(index)||!indexed)}; }
 int service_query(wchar_t const* text,LauncherUiResult* out,int capacity) {
     if(!out||capacity<=0)return 0;auto query=trim(text?text:L"");if(query.size()>512)query.resize(512);result=lb::calculate(query);int count{};
@@ -173,9 +174,10 @@ int service_activate(uint64_t id) {
     auto found=std::find_if(entries.begin(),entries.end(),[&](auto const& e){return e.id==id;});if(found==entries.end())return 0;return INT_PTR(ShellExecuteW(window,L"open",found->path.c_str(),nullptr,nullptr,SW_SHOWNORMAL))>32;
 }
 int service_tests() {
-    std::vector<Entry> sample;auto add=[&](wchar_t const* name,uint64_t id){Entry value;value.name=name;value.key=lower(name);value.id=id;sample.push_back(std::move(value));};add(L"Photo Studio",1);add(L"Studio Photo Editor",2);add(L"Photo Archive",3);auto match=ranked(L"photo studio",sample,{});if(match.size()!=2||match[0]->id!=1||match[1]->id!=2)return 0;if(ranked(L"missing",sample,{}).size())return 0;for(int n=0;n<30;++n){auto name=L"App "+std::to_wstring(n);add(name.c_str(),uint64_t(n+4));}if(ranked(L"",sample,{}).size()!=16)return 0;auto english=tools(true),chinese=tools(false);for(int command:{701,712,710,707,705,708,709})if(std::none_of(english.begin(),english.end(),[&](auto const& e){return e.command==command&&e.id==(command_id|uint64_t(command));}))return 0;if(ranked(L"gif",{},english).size()!=1||ranked(L"录屏",{},chinese).size()!=1)return 0;auto calculated=lb::calculate(L"24 × 60");return calculated&&*calculated==L"1440"&&!lb::calculate(L"1/0");
+    std::vector<Entry> sample;auto add=[&](wchar_t const* name,uint64_t id){Entry value;value.name=name;value.key=lower(name);value.id=id;sample.push_back(std::move(value));};add(L"Photo Studio",1);add(L"Studio Photo Editor",2);add(L"Photo Archive",3);auto match=ranked(L"photo studio",sample,{});if(match.size()!=2||match[0]->id!=1||match[1]->id!=2)return 0;if(ranked(L"missing",sample,{}).size())return 0;for(int n=0;n<30;++n){auto name=L"App "+std::to_wstring(n);add(name.c_str(),uint64_t(n+4));}if(ranked(L"",sample,{}).size()!=16)return 0;auto english=tools(true),chinese=tools(false);for(int command:{701,712,710,707,705,708,709})if(std::none_of(english.begin(),english.end(),[&](auto const& e){return e.command==command&&e.id==(command_id|uint64_t(command));}))return 0;if(ranked(L"gif",{},english).size()!=1||ranked(L"录屏",{},chinese).size()!=1)return 0;auto calculated=lb::calculate(L"24 × 60");if(!calculated||*calculated!=L"1440"||lb::calculate(L"1/0"))return 0;
+    if(!window){service_open();bool lightweight=window&&!search&&!list&&!status&&!IsWindowVisible(window)&&icons;service_close();SendMessageW(window,WM_TIMER,3,0);bool released=!index&&!icons&&!index_thread.joinable()&&entries.empty()&&displayed.empty()&&!indexed;DestroyWindow(window);if(!lightweight||!released)return 0;}return 1;
 }
 }
 LauncherUiApi const* launcher_ui_api() { static LauncherUiApi const api{LB_LAUNCHER_UI_ABI,sizeof(LauncherUiApi),service_open,service_close,service_state,service_query,service_icon,service_activate,service_tests};return &api; }
-void launcher_show(HWND) { if(lb::frontend::launcher_show())return;ensure_window();if(window){if(dirty)begin_index();refresh();ShowWindow(window,SW_RESTORE);SetForegroundWindow(window);SetFocus(search);} }
+void launcher_show(HWND) { if(lb::frontend::launcher_show())return;ensure_window(true);if(window){if(dirty)begin_index();refresh();ShowWindow(window,SW_RESTORE);SetForegroundWindow(window);SetFocus(search);} }
 void launcher_shutdown() { if(window) DestroyWindow(window);else { watcher.stop();end_index(); }end_icons();entries.clear();displayed.clear();indexed=false;dirty=false;client_open=false; }

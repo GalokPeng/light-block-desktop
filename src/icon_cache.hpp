@@ -10,8 +10,9 @@
 #include <array>
 
 namespace lb {
+bool icon_cache_tests();
 class IconCache {
-    struct Request { std::wstring key,path;bool folder{},system{}; };
+    struct Request { std::wstring key,path;bool folder{},system{};int size{128}; };
     struct Reply { std::wstring key;HICON icon{};~Reply(){if(icon) DestroyIcon(icon);} };
     struct State {
         std::mutex mutex;std::condition_variable condition;
@@ -30,7 +31,7 @@ public:
     ~IconCache();
     void start(HWND window,UINT message,size_t pending_limit=512,bool resolve_metadata=false);
     void stop(DWORD wait_ms=1000) noexcept;
-    HICON get(std::wstring const& key,std::wstring const& path,bool folder,bool system);
+    HICON get(std::wstring const& key,std::wstring const& path,bool folder,bool system,int size=128);
     void receive();
 };
 }

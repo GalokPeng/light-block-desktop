@@ -48,7 +48,7 @@ void start() {
         }
     });
 }
-void request(std::wstring path) { if(!queue) return;{ std::lock_guard lock(queue->mutex);if(queue->stop||queue->pending.size()>=cache_limit||failed.contains(path)||!queue->pending.insert(path).second) return;queue->requests.push_back(std::move(path)); }queue->changed.notify_one(); }
+void request(std::wstring path) { if(!queue) start();{ std::lock_guard lock(queue->mutex);if(queue->stop||queue->pending.size()>=cache_limit||failed.contains(path)||!queue->pending.insert(path).second) return;queue->requests.push_back(std::move(path)); }queue->changed.notify_one(); }
 void receive() {
     if(!queue) return;std::vector<Reply> replies;{ std::lock_guard lock(queue->mutex);replies=std::move(queue->replies);for(auto const& reply:replies) queue->pending.erase(reply.path); }
     for(auto& reply:replies){if(!reply.bitmap){failed.insert(reply.path);continue;}for(auto& item:g_app.items)if(reply.path==item.path){if(item.thumb)DeleteObject(item.thumb);item.thumb=reply.bitmap.release();touch(reply.path);++g_app.thumbnail_revision;break;}}

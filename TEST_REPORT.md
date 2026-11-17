@@ -1,3 +1,17 @@
+# v2.0.3 release verification
+
+Local Windows regression passed on 2026-11-17: 125 native checks, actual static/GIF/MP4 playback, 12 media switches with no failures or remaining children, Qt settings/capture/recording/scroll/note fixtures and six isolated shutdown/session scenarios. The final local executable hash is `5316dd8bf56833c1e314b7b94f244cd68fb3d9bcfd021b592644b2f6800da758`; CI rebuilds independently and publishes its own hashes. Website checks (13), release protocol checks (6) and the unchanged 105-entry catalog passed.
+
+New coverage exercises directory creation immediately after watcher startup, recovery of an initially missing root, actual organizer notification/debounce processing, preservation of the one-minute deadline, disabled/enabled collection, manual restore, layout reflow and stale-target safety. Real native Shell menus are queried for Properties/Delete/Rename with isolated test files; custom command IDs remain separate. Icon checks cover physical sizes from 24 to 256 pixels, resolution-specific cache entries and release on stop. Launcher checks cover an embedded child without an extra window, Escape navigation, balanced service open/close, and idle index/icon-worker release.
+
+Visible testing used synthetic desktops only. A new item was discovered in 0.31 s and collected after 60.36 s; three simultaneous additions were discovered in 0.41 s and collected after 60.48 s. Original files remained present. The one-minute bubble, native context menu and Properties dialog were inspected. Shell property sheets on another thread initially bypassed owner checks; the fix was retested with a property sheet still open after 80.8 s, then collection after closing it. The embedded launcher search/calculator and Esc return were also checked. No real desktop lease, taskbar takeover or personal screenshot was used, so this does not certify every Explorer/OneDrive/display setup.
+
+Startup and memory checks use an isolated Qt application/tray with **no Main settings window** and native static/GIF/Media Foundation video workers. The v2.0.2 baseline held 8.54 MiB parent private memory at idle; the final v2.0.3 sample held 6.13 MiB initially and 6.15 MiB after twelve media switches, with zero remaining children. A preceding candidate measured 5.18 MiB. These are scoped samples, not a whole-app or universal RAM promise; total peak memory and CPU varied with decoder/environment activity. No working-set trimming is used. Unshown thumbnails are no longer prewarmed; the launcher creates a message-only service on demand, stops UI refresh when hidden and drops its index/watch/icon resources after 30 s idle.
+
+Clean-checkout CI remains the final release gate for the exact commit: native/media/UI checks, bundled recording runtime, localized isolated install/upgrade/uninstall, updater behavior, archive compatibility and asset hashes. Existing AppId, executable/profile/autorun identities and all earlier releases remain unchanged. The website retains v1.0.0 downloads.
+
+---
+
 # v2.0.2 release verification
 
 Local Windows regression passed on 2026-11-16: 121 native checks; actual static/GIF/MP4 playback; 12 media switches with no failures or leftover children; Qt interface, note, capture/recording/scroll fixtures; and six isolated shutdown/session scenarios. Website checks (13), release-protocol checks (6) and the 105-entry catalog validation passed. The Qt fixture includes blocked-signal settings refresh, rapid toggle reversal and idle timer shutdown.

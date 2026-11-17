@@ -1,3 +1,15 @@
+# v2.0.3 · 新增内容收纳与工具体验 / Desktop arrivals and tools
+
+- 修复桌面主动新建、下载或复制新增内容的发现与显示：先显示临时桌面图标和“1 分钟后自动收纳”气泡，到时加入收纳框并更新布局。自动收纳默认开启，可在美化设置关闭；手动还原到桌面的项目不会被计时收回。菜单、拖动和属性对话框操作期间延后收纳。
+- 收纳图标与临时桌面图标右键接入 Windows 原生菜单，支持属性、删除、重命名、剪切、复制及已安装的 Shell 扩展；保留分组和放入收纳操作。原生删除遵循 Windows 自身的确认与回收站行为。
+- 按 DPI 和实际显示尺寸缓存高分辨率图标，改善系统图标、缩放与悬停时的清晰度。第三方文件仍受其原始图标分辨率限制。
+- 快速启动直接嵌入工具页面，新增明显的返回按钮和 Esc 返回。修复失焦后独立小窗口难关闭的问题。
+- 目录监听先就绪再接收变化，缺失目录可恢复监听；连续新增采用有上限的合并刷新。后台启动不预热未显示的缩略图；快速启动按需索引，返回后停刷，闲置 30 秒释放索引、监听与图标缓存。
+- Fixes manually created, downloaded and copied desktop items: show temporary icons with a one-minute collection hint, then update the organizer layout. Automatic collection remains optional; explicitly restored items stay on the desktop. Menus, dragging and owned dialogs defer collection safely.
+- Organizer and temporary-item menus expose native Windows shell actions, including Properties, Delete, Rename, Cut, Copy and installed shell extensions, alongside grouping and collection actions.
+- DPI-aware icon caching improves system icons and hover sharpness. Third-party icons remain limited by their source resolution.
+- Embeds the launcher in Tools with a clear Back button and Esc navigation. Watches are armed before accepting changes and recover missing roots; bursts use bounded debounce. Background startup avoids unused thumbnail prewarming, and idle launcher resources are released after 30 seconds.
+
 # v2.0.2 · 透明圆角、交互动画与在线图库 / Rounded surfaces, motion and wallpapers
 
 - 重新处理收纳外框：移除会产生矩形残影的整窗系统亚克力层，改为逐像素透明的抗锯齿圆角和自绘柔光材质；保留颜色、透明度与任务栏避让。柔光为半透明渐变，不再使用系统实时背景模糊。
