@@ -38,7 +38,7 @@ unique_gdi<HBITMAP> load(std::wstring const& path,media::Control &control) {
 }
 }
 void start() {
-    if(queue) return;queue=std::make_unique<Queue>();auto state=queue.get();state->thread=std::thread([state] {
+    if(queue||g_app.close_requested) return;queue=std::make_unique<Queue>();auto state=queue.get();state->thread=std::thread([state] {
         com_apartment apartment(COINIT_MULTITHREADED);scope_exit done([&]{state->done=true;});
         for(;;) {
             std::wstring path;{ std::unique_lock lock(state->mutex);state->changed.wait(lock,[&]{return state->stop||!state->requests.empty();});if(state->stop) return;path=std::move(state->requests.front());state->requests.pop_front();state->control.cancel=false; }
@@ -48,7 +48,7 @@ void start() {
         }
     });
 }
-void request(std::wstring path) { if(!queue) start();{ std::lock_guard lock(queue->mutex);if(queue->stop||queue->pending.size()>=cache_limit||failed.contains(path)||!queue->pending.insert(path).second) return;queue->requests.push_back(std::move(path)); }queue->changed.notify_one(); }
+void request(std::wstring path) { if(g_app.close_requested)return;if(!queue) start();if(!queue)return;{ std::lock_guard lock(queue->mutex);if(queue->stop||queue->pending.size()>=cache_limit||failed.contains(path)||!queue->pending.insert(path).second) return;queue->requests.push_back(std::move(path)); }queue->changed.notify_one(); }
 void receive() {
     if(!queue) return;std::vector<Reply> replies;{ std::lock_guard lock(queue->mutex);replies=std::move(queue->replies);for(auto const& reply:replies) queue->pending.erase(reply.path); }
     for(auto& reply:replies){if(!reply.bitmap){failed.insert(reply.path);continue;}for(auto& item:g_app.items)if(reply.path==item.path){if(item.thumb)DeleteObject(item.thumb);item.thumb=reply.bitmap.release();touch(reply.path);++g_app.thumbnail_revision;break;}}
@@ -56,7 +56,7 @@ void receive() {
     InvalidateRect(g_app.window,nullptr,FALSE);
 }
 HBITMAP get(int index){if(index<0||index>=int(g_app.count))return nullptr;auto& item=g_app.items[index];if(item.thumb){touch(item.path);return item.thumb;}request(item.path);return nullptr;}
-bool cache_tests(){if(queue||!g_app.items.empty())return false;auto count=g_app.count;auto revision=g_app.thumbnail_revision;scope_exit restore([&]{for(auto& item:g_app.items)if(item.thumb)DeleteObject(item.thumb);g_app.items.clear();g_app.count=count;g_app.thumbnail_revision=revision;recent.clear();});for(int n=0;n<140;++n){Item item{};StringCchPrintfW(item.path,LB_PATH,L"cache-fixture-%d",n);item.thumb=CreateBitmap(1,1,1,32,nullptr);if(!item.thumb)return false;g_app.items.push_back(item);++g_app.count;if(!get(n))return false;}size_t held=0;for(auto& item:g_app.items)held+=item.thumb!=nullptr;return held==cache_limit&&!g_app.items.front().thumb&&g_app.items.back().thumb&&recent.size()==cache_limit;}
+bool cache_tests(){if(queue||!g_app.items.empty())return false;auto closing=g_app.close_requested;g_app.close_requested=TRUE;request(L"late-shutdown-request.png");start();g_app.close_requested=closing;if(queue)return false;auto count=g_app.count;auto revision=g_app.thumbnail_revision;scope_exit restore([&]{for(auto& item:g_app.items)if(item.thumb)DeleteObject(item.thumb);g_app.items.clear();g_app.count=count;g_app.thumbnail_revision=revision;recent.clear();});for(int n=0;n<140;++n){Item item{};StringCchPrintfW(item.path,LB_PATH,L"cache-fixture-%d",n);item.thumb=CreateBitmap(1,1,1,32,nullptr);if(!item.thumb)return false;g_app.items.push_back(item);++g_app.count;if(!get(n))return false;}size_t held=0;for(auto& item:g_app.items)held+=item.thumb!=nullptr;return held==cache_limit&&!g_app.items.front().thumb&&g_app.items.back().thumb&&recent.size()==cache_limit;}
 bool shutdown() {
     if(!queue) return true;{ std::lock_guard lock(queue->mutex);queue->stop=true;queue->control.cancel=true; }queue->changed.notify_all();if(!queue->done) return false;if(queue->thread.joinable()) queue->thread.join();queue.reset();recent.clear();failed.clear();return true;
 }

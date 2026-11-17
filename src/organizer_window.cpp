@@ -6,6 +6,8 @@
 #include "directory_watch.hpp"
 #include "icon_cache.hpp"
 #include "shell_menu.hpp"
+#include "rename.hpp"
+#include "network.h"
 #include "desktop_layer.hpp"
 #include "ui_api.h"
 #include <commdlg.h>
@@ -17,9 +19,11 @@ constexpr UINT changed_message=WM_APP+92;
 auto popup_menu=&TrackPopupMenu;
 struct Tile { RECT bounds;size_t index;bool group; };
 struct Loose { HWND window{};std::wstring path;POINT position{},pressed{};bool dragging{},hint{true}; };
+struct RenameJob {std::thread worker;std::atomic_bool done{};bool ok{};std::wstring source,target;};
 struct Shelf {
     std::unique_ptr<Model> model;
-    HWND window{},search{},editor{};
+    HWND window{},search{},editor{},editor_anchor{};
+    bool editing_file{};std::unique_ptr<RenameJob> rename;
     std::vector<Tile> tiles;
     std::vector<std::wstring> roots;
     IconCache icons;
@@ -48,11 +52,13 @@ LRESULT CALLBACK edit_keys(HWND,UINT,WPARAM,LPARAM,UINT_PTR,DWORD_PTR);
 void schedule_collect();
 void position_edits();
 void paint(HWND);
+void rebuild_loose();
+void reflow();
 // Shell property sheets can run on a different thread without retaining our
 // icon HWND as their owner. Check only when collection is due, not on paints.
 bool native_dialog_open(){bool found=false;EnumWindows([](HWND window,LPARAM value)->BOOL{DWORD pid{};GetWindowThreadProcessId(window,&pid);if(pid!=GetCurrentProcessId()||!IsWindowVisible(window))return TRUE;wchar_t name[32]{};GetClassNameW(window,name,32);if(wcscmp(name,L"#32770"))return TRUE;*reinterpret_cast<bool*>(value)=true;return FALSE;},LPARAM(&found));return found;}
 bool owned_dialog(HWND window){auto popup=window?GetLastActivePopup(window):nullptr;return popup&&popup!=window&&popup!=shelf.search&&IsWindowVisible(popup);}
-bool interaction_busy() { return owned_dialog(shelf.window)||shelf.menu||shelf.dragging||!shelf.drag_group.empty()||!shelf.drag_entry.empty()||shelf.editor||std::any_of(shelf.loose.begin(),shelf.loose.end(),[](auto const& item){return item->dragging||owned_dialog(item->window);}); }
+bool interaction_busy() { return shelf.rename||owned_dialog(shelf.window)||shelf.menu||shelf.dragging||!shelf.drag_group.empty()||!shelf.drag_entry.empty()||shelf.editor||std::any_of(shelf.loose.begin(),shelf.loose.end(),[](auto const& item){return item->dragging||owned_dialog(item->window);}); }
 struct MenuGuard {
     bool previous=shelf.menu;uint64_t generation=shelf.generation;
     MenuGuard(){shelf.menu=true;}
@@ -158,22 +164,36 @@ void synchronize() {
     if(interaction_busy()){if(shelf.window)SetTimer(shelf.window,2,200,nullptr);return;}
     if(shelf.model && shelf.model->synchronize(shelf.roots,true)) { rebuild_loose();schedule_collect();reflow(); }
 }
+bool finish_file_rename(){
+    if(!shelf.rename)return true;if(!shelf.rename->done)return false;
+    auto job=std::move(shelf.rename);if(job->worker.joinable())job->worker.join();
+    if(job->ok&&shelf.model){for(auto& e:shelf.model->entries)if(e.path==job->source){e.path=job->target;if(!e.custom_name){auto path=std::filesystem::path(e.path);e.name=!e.directory&&!_wcsicmp(path.extension().c_str(),L".lnk")?path.stem().wstring():path.filename().wstring();}break;}model_result(shelf.model->save());}
+    else if(!job->ok&&!shelf.fixture&&!g_app.close_requested)error_box(shelf.window,tr(L"无法重命名：请检查文件是否被占用、名称是否合法或目标是否已存在。原文件已保留。",L"Cannot rename: check the name, file permissions and whether the target exists. Existing files were preserved."),E_FAIL);
+    if(shelf.window){KillTimer(shelf.window,8);rebuild_loose();schedule_collect();reflow();desktop_changed();}return true;
+}
+bool start_file_rename(std::wstring const& path,std::wstring const& name){
+    if(shelf.rename||!safe_filename(name.c_str()))return false;auto target=(std::filesystem::path(path).parent_path()/name).wstring();if(path==target)return true;
+    auto job=std::make_unique<RenameJob>();job->source=path;job->target=target;auto raw=job.get();auto data=std::filesystem::path(g_app.data);
+    try{job->worker=std::thread([raw,data]{try{com_apartment apartment(COINIT_MULTITHREADED);auto plan=lb::files::preview({raw->source},L"{name}{ext}");plan.front().target=raw->target;lb::files::Journal journal(data/L"file-journal.db");journal.apply(plan);raw->ok=true;}catch(...){raw->ok=false;}raw->done=true;});}catch(...){return false;}
+    shelf.rename=std::move(job);if(shelf.window)SetTimer(shelf.window,8,50,nullptr);return true;
+}
 void rename_group(size_t index) {
     if(index>=shelf.model->groups.size()) return;auto &group=shelf.model->groups[index];shelf.group=group.id;
-    if(shelf.editor)DestroyWindow(std::exchange(shelf.editor,nullptr));shelf.editing_entry.clear();shelf.editor_bounds={scaled(22),scaled(10),scaled(282),scaled(42)};shelf.editor=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_CLIENTEDGE,L"EDIT",group.name.c_str(),WS_POPUP|ES_AUTOHSCROLL,0,0,scaled(260),scaled(32),shelf.window,nullptr,g_app.instance,nullptr);SetWindowLongPtrW(shelf.editor,GWLP_ID,2);lb::window_shape::own_frame(shelf.editor);SendMessageW(shelf.editor,WM_SETFONT,WPARAM(shelf.font),TRUE);SendMessageW(shelf.editor,EM_SETLIMITTEXT,120,0);SetWindowSubclass(shelf.editor,edit_keys,1,0);position_edits();ShowWindow(shelf.editor,SW_SHOWNOACTIVATE);SetFocus(shelf.editor);SendMessageW(shelf.editor,EM_SETSEL,0,-1);
+    if(shelf.editor)DestroyWindow(std::exchange(shelf.editor,nullptr));shelf.editing_entry.clear();shelf.editing_file=false;shelf.editor_anchor=shelf.window;shelf.editor_bounds={scaled(22),scaled(10),scaled(282),scaled(42)};shelf.editor=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_CLIENTEDGE,L"EDIT",group.name.c_str(),WS_POPUP|ES_AUTOHSCROLL,0,0,scaled(260),scaled(32),shelf.window,nullptr,g_app.instance,nullptr);SetWindowLongPtrW(shelf.editor,GWLP_ID,2);lb::window_shape::own_frame(shelf.editor);SendMessageW(shelf.editor,WM_SETFONT,WPARAM(shelf.font),TRUE);SendMessageW(shelf.editor,EM_SETLIMITTEXT,120,0);SetWindowSubclass(shelf.editor,edit_keys,1,0);position_edits();ShowWindow(shelf.editor,SW_SHOWNOACTIVATE);SetForegroundWindow(shelf.editor);SetFocus(shelf.editor);SendMessageW(shelf.editor,EM_SETSEL,0,-1);
 }
-void rename_entry(std::wstring const& path,RECT bounds) {
+void rename_entry(std::wstring const& path,RECT bounds,bool file=false,HWND anchor=nullptr) {
     auto found=std::find_if(shelf.model->entries.begin(),shelf.model->entries.end(),[&](auto const& e){return e.path==path;});if(found==shelf.model->entries.end())return;
-    if(shelf.editor)DestroyWindow(std::exchange(shelf.editor,nullptr));shelf.editing_entry=path;RECT client{};GetClientRect(shelf.window,&client);int w=std::min(scaled(260),int(client.right)-scaled(24)),x=std::clamp(int(bounds.left),scaled(12),int(client.right)-w-scaled(12)),y=std::max(scaled(10),int(bounds.bottom)-metrics().label);
-    shelf.editor_bounds={x,y,x+w,y+scaled(30)};shelf.editor=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_CLIENTEDGE,L"EDIT",found->name.c_str(),WS_POPUP|ES_AUTOHSCROLL,0,0,w,scaled(30),shelf.window,nullptr,g_app.instance,nullptr);SetWindowLongPtrW(shelf.editor,GWLP_ID,2);lb::window_shape::own_frame(shelf.editor);SendMessageW(shelf.editor,WM_SETFONT,WPARAM(shelf.font),TRUE);SendMessageW(shelf.editor,EM_SETLIMITTEXT,240,0);SetWindowSubclass(shelf.editor,edit_keys,1,0);position_edits();ShowWindow(shelf.editor,SW_SHOWNOACTIVATE);SetFocus(shelf.editor);SendMessageW(shelf.editor,EM_SETSEL,0,-1);
+    if(shelf.rename)return;if(shelf.editor)DestroyWindow(std::exchange(shelf.editor,nullptr));shelf.editing_entry=path;shelf.editing_file=file&&!found->system;shelf.editor_anchor=anchor?anchor:shelf.window;auto text=shelf.editing_file?std::filesystem::path(path).filename().wstring():found->name;RECT client{};GetClientRect(shelf.editor_anchor,&client);int w=std::min(scaled(260),int(client.right)-scaled(24)),x=std::clamp(int(bounds.left),scaled(12),int(client.right)-w-scaled(12)),y=std::max(scaled(10),int(bounds.bottom)-metrics().label);
+    shelf.editor_bounds={x,y,x+w,y+scaled(30)};shelf.editor=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_CLIENTEDGE,L"EDIT",text.c_str(),WS_POPUP|ES_AUTOHSCROLL,0,0,w,scaled(30),shelf.editor_anchor,nullptr,g_app.instance,nullptr);SetWindowLongPtrW(shelf.editor,GWLP_ID,2);lb::window_shape::own_frame(shelf.editor);SendMessageW(shelf.editor,WM_SETFONT,WPARAM(shelf.font),TRUE);SendMessageW(shelf.editor,EM_SETLIMITTEXT,240,0);SetWindowSubclass(shelf.editor,edit_keys,1,0);position_edits();ShowWindow(shelf.editor,SW_SHOWNOACTIVATE);SetForegroundWindow(shelf.editor);SetFocus(shelf.editor);SendMessageW(shelf.editor,EM_SETSEL,0,-1);
 }
 void commit_title() {
-    if(!shelf.editor)return;auto edit=std::exchange(shelf.editor,nullptr);wchar_t title[242]{};GetWindowTextW(edit,title,242);auto path=std::exchange(shelf.editing_entry,{});
+    if(!shelf.editor)return;auto edit=std::exchange(shelf.editor,nullptr);wchar_t title[242]{};GetWindowTextW(edit,title,242);auto path=std::exchange(shelf.editing_entry,{});bool file=std::exchange(shelf.editing_file,false);shelf.editor_anchor=nullptr;log_line(L"organizer title commit file=%d length=%u",file,unsigned(wcslen(title)));
+    if(file){DestroyWindow(edit);if(!start_file_rename(path,title)&&!shelf.fixture)error_box(shelf.window,tr(L"文件名无效，原文件未更改。",L"Invalid filename; the original file was not changed."),E_INVALIDARG);schedule_collect();return;}
     if(shelf.model){if(!path.empty())model_result(shelf.model->rename_entry(path,title));else {auto found=std::find_if(shelf.model->groups.begin(),shelf.model->groups.end(),[](auto const& group){return group.id==shelf.group;});if(found!=shelf.model->groups.end()){auto before=*found;found->name=title;found->automatic=false;if(!model_result(shelf.model->save()))*found=std::move(before);}}}
     DestroyWindow(edit);if(shelf.window){InvalidateRect(shelf.window,nullptr,FALSE);schedule_collect();}
 }
 void context_menu(POINT point,int tile) {
-    MenuGuard guard;HMENU menu=CreatePopupMenu();scope_exit destroy([&]{DestroyMenu(menu);});std::wstring group_id,path;RECT bounds{};bool system=false,external=false;std::vector<std::wstring> targets;
+    if(shelf.rename)return;MenuGuard guard;HMENU menu=CreatePopupMenu();scope_exit destroy([&]{DestroyMenu(menu);});std::wstring group_id,path;RECT bounds{};bool system=false,external=false;std::vector<std::wstring> targets;
     // The popup pumps messages. Retain identifiers, never tile indices or Entry
     // references, across that nested loop (refresh/disable can replace either).
     if(tile>=0&&size_t(tile)<shelf.tiles.size()){auto item=shelf.tiles[size_t(tile)];bounds=item.bounds;if(item.group&&item.index<shelf.model->groups.size())group_id=shelf.model->groups[item.index].id;else if(item.index<shelf.model->entries.size()){auto const& entry=shelf.model->entries[item.index];path=entry.path;group_id=entry.group;system=entry.system;external=entry.external;}}
@@ -186,7 +206,7 @@ void context_menu(POINT point,int tile) {
     if(path.empty()){AppendMenuW(menu,MF_STRING,10,tr(L"添加新分组",L"New group"));AppendMenuW(menu,MF_STRING,11,tr(L"按名称排列",L"Sort by name"));AppendMenuW(menu,MF_STRING,12,tr(L"按修改时间排列",L"Sort by modified time"));AppendMenuW(menu,MF_STRING,13,tr(L"按分组排列",L"Group view"));AppendMenuW(menu,MF_STRING,14,tr(L"移动位置",L"Move shelf"));AppendMenuW(menu,MF_STRING,15,tr(L"重新同步桌面",L"Refresh desktop"));AppendMenuW(menu,MF_STRING,16,tr(L"新建便签",L"New note"));AppendMenuW(menu,MF_STRING,17,tr(L"收纳设置…",L"Organizer settings…"));AppendMenuW(menu,MF_STRING,18,tr(L"关闭并恢复原生桌面",L"Disable and restore desktop"));}
     if(!shelf.fixture)SetForegroundWindow(shelf.window);int id=popup_menu(menu,TPM_RETURNCMD|TPM_RIGHTBUTTON,point.x,point.y,0,shelf.window,nullptr);
     if(!guard.alive())return;
-    if(native.owns(UINT(id))){native.invoke(UINT(id),point);if(guard.alive())desktop_changed();return;}
+    if(native.owns(UINT(id))){log_line(L"organizer shell rename=%d",native.is_verb(UINT(id),"rename"));if(native.is_verb(UINT(id),"rename"))rename_entry(path,bounds,true);else {native.invoke(UINT(id),point);if(guard.alive())desktop_changed();}return;}
     auto group_index=[&]{auto found=std::find_if(shelf.model->groups.begin(),shelf.model->groups.end(),[&](auto const& g){return g.id==group_id;});return size_t(found-shelf.model->groups.begin());};
     if(!path.empty()&&id>=100&&size_t(id-100)<targets.size()){model_result(shelf.model->collect(path,targets[size_t(id-100)]));reflow();}
     else if(!path.empty()&&id==20){auto found=std::find_if(shelf.model->entries.begin(),shelf.model->entries.end(),[&](auto const& e){return e.path==path;});if(found!=shelf.model->entries.end())launch(*found);}
@@ -225,12 +245,12 @@ void position_edits(){
     if(!shelf.window)return;RECT bounds{};GetWindowRect(shelf.window,&bounds);int width=bounds.right-bounds.left;
     int edit_width=std::min(scaled(360),std::max(scaled(100),width-scaled(48)));
     if(shelf.search){SetWindowPos(shelf.search,nullptr,bounds.right-scaled(24)-edit_width,bounds.top+scaled(13),edit_width,scaled(32),SWP_NOACTIVATE|SWP_NOZORDER);SetLayeredWindowAttributes(shelf.search,0,BYTE(std::clamp(shelf.header_motion.value/std::max(1,scaled(48))*255,1.,255.)),LWA_ALPHA);}
-    if(shelf.editor){auto r=shelf.editor_bounds;SetWindowPos(shelf.editor,nullptr,bounds.left+r.left,bounds.top+r.top,r.right-r.left,r.bottom-r.top,SWP_NOACTIVATE|SWP_NOZORDER);}
+    if(shelf.editor){if(IsWindow(shelf.editor_anchor))GetWindowRect(shelf.editor_anchor,&bounds);auto r=shelf.editor_bounds;SetWindowPos(shelf.editor,nullptr,bounds.left+r.left,bounds.top+r.top,r.right-r.left,r.bottom-r.top,SWP_NOACTIVATE|SWP_NOZORDER);}
 }
 LRESULT CALLBACK edit_keys(HWND window,UINT message,WPARAM wp,LPARAM lp,UINT_PTR id,DWORD_PTR data) {
     if(message==WM_NCPAINT){HDC dc=GetWindowDC(window);RECT rect{};GetWindowRect(window,&rect);OffsetRect(&rect,-rect.left,-rect.top);unique_gdi<HBRUSH> edge(CreateSolidBrush(mixed(g_app.settings.organizer_color,foreground(g_app.settings.organizer_color),190)));FrameRect(dc,&rect,edge.get());InflateRect(&rect,-1,-1);unique_gdi<HBRUSH> inside(CreateSolidBrush(g_app.settings.organizer_color));FrameRect(dc,&rect,inside.get());ReleaseDC(window,dc);return 0;}
     if(message==WM_MOUSEMOVE&&!shelf.mouse_inside)hover_opacity(true);
-    (void)data;if(message==WM_KEYDOWN&&(wp==VK_RETURN||wp==VK_ESCAPE)) { if(id==1) { if(wp==VK_RETURN) commit_title();else { auto edit=std::exchange(shelf.editor,nullptr);shelf.editing_entry.clear();DestroyWindow(edit);schedule_collect(); } }else if(wp==VK_ESCAPE) animate(false);return 0; }
+    (void)data;if(message==WM_KEYDOWN&&(wp==VK_RETURN||wp==VK_ESCAPE)) { if(id==1) { if(wp==VK_RETURN) commit_title();else { auto edit=std::exchange(shelf.editor,nullptr);shelf.editing_entry.clear();shelf.editing_file=false;shelf.editor_anchor=nullptr;DestroyWindow(edit);schedule_collect(); } }else if(wp==VK_ESCAPE) animate(false);return 0; }
     if(message==WM_NCDESTROY) RemoveWindowSubclass(window,edit_keys,id);
     if(message==WM_KILLFOCUS&&id==1&&shelf.editor==window&&shelf.window)PostMessageW(shelf.window,WM_COMMAND,MAKEWPARAM(2,EN_KILLFOCUS),LPARAM(window));
     auto result=DefSubclassProc(window,message,wp,lp);
@@ -259,7 +279,7 @@ LRESULT CALLBACK loose_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
     case WM_MOUSEMOVE:if(item->dragging) { POINT point;GetCursorPos(&point);RECT rect{};GetWindowRect(window,&rect);SetWindowPos(window,nullptr,rect.left+point.x-item->pressed.x,rect.top+point.y-item->pressed.y,0,0,SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);item->pressed=point; }return 0;
     case WM_LBUTTONUP:{auto path=item->path;item->dragging=false;RECT rect{};GetWindowRect(window,&rect);ReleaseCapture();POINT point{};GetCursorPos(&point);ScreenToClient(shelf.window,&point);int target=hit(point);if(target>=0&&shelf.tiles[size_t(target)].group){model_result(shelf.model->collect(path,shelf.model->groups[shelf.tiles[size_t(target)].index].id));PostMessageW(shelf.window,WM_APP+95,0,0);}else model_result(shelf.model->position_entry(path,POINT{rect.left,rect.top}));schedule_collect();return 0;}
     case WM_CAPTURECHANGED:item->dragging=false;schedule_collect();return 0;
-    case WM_CONTEXTMENU: { MenuGuard guard;auto path=item->path;std::vector<std::wstring> targets;HMENU menu=CreatePopupMenu();scope_exit destroy([&]{DestroyMenu(menu);});lb::shell_menu::Menu native;if(native.append(window,menu,path,GetKeyState(VK_SHIFT)<0))AppendMenuW(menu,MF_SEPARATOR,0,nullptr);AppendMenuW(menu,MF_STRING,1,tr(L"放入收纳",L"Collect"));for(auto const& group:shelf.model->groups) { targets.push_back(group.id);auto label=std::wstring(tr(L"放入分组：",L"Move to: "))+(group.name.empty()?tr(L"未命名分组",L"Untitled group"):group.name.c_str());AppendMenuW(menu,MF_STRING,99+targets.size(),label.c_str()); }POINT point;GetCursorPos(&point);if(!shelf.fixture)SetForegroundWindow(window);int selected=popup_menu(menu,TPM_RETURNCMD|TPM_RIGHTBUTTON,point.x,point.y,0,window,nullptr);if(!guard.alive()||!IsWindow(window)||GetWindowLongPtrW(window,GWLP_USERDATA)!=LPARAM(item))return 0;if(native.owns(UINT(selected))){native.invoke(UINT(selected),point);if(guard.alive())desktop_changed();return 0;}if(selected==1||(selected>=100&&size_t(selected-100)<targets.size())) { auto group=selected>=100?targets[size_t(selected-100)]:L"";model_result(shelf.model->collect(path,group));PostMessageW(shelf.window,WM_APP+95,0,0); }return 0; }
+    case WM_CONTEXTMENU: { if(shelf.rename)return 0;MenuGuard guard;auto path=item->path;std::vector<std::wstring> targets;HMENU menu=CreatePopupMenu();scope_exit destroy([&]{DestroyMenu(menu);});lb::shell_menu::Menu native;if(native.append(window,menu,path,GetKeyState(VK_SHIFT)<0))AppendMenuW(menu,MF_SEPARATOR,0,nullptr);AppendMenuW(menu,MF_STRING,1,tr(L"放入收纳",L"Collect"));for(auto const& group:shelf.model->groups) { targets.push_back(group.id);auto label=std::wstring(tr(L"放入分组：",L"Move to: "))+(group.name.empty()?tr(L"未命名分组",L"Untitled group"):group.name.c_str());AppendMenuW(menu,MF_STRING,99+targets.size(),label.c_str()); }POINT point;GetCursorPos(&point);if(!shelf.fixture)SetForegroundWindow(window);int selected=popup_menu(menu,TPM_RETURNCMD|TPM_RIGHTBUTTON,point.x,point.y,0,window,nullptr);if(!guard.alive()||!IsWindow(window)||GetWindowLongPtrW(window,GWLP_USERDATA)!=LPARAM(item))return 0;if(native.owns(UINT(selected))){log_line(L"organizer shell rename=%d",native.is_verb(UINT(selected),"rename"));if(native.is_verb(UINT(selected),"rename")){RECT bounds{};GetClientRect(window,&bounds);bounds.bottom=row_size();rename_entry(path,bounds,true,window);}else {native.invoke(UINT(selected),point);if(guard.alive())desktop_changed();}return 0;}if(selected==1||(selected>=100&&size_t(selected-100)<targets.size())) { auto group=selected>=100?targets[size_t(selected-100)]:L"";model_result(shelf.model->collect(path,group));PostMessageW(shelf.window,WM_APP+95,0,0); }return 0; }
     case WM_DESTROY:KillTimer(window,1);return 0;
     case WM_NCDESTROY:SetWindowLongPtrW(window,GWLP_USERDATA,0);return DefWindowProcW(window,message,wp,lp);
     }return DefWindowProcW(window,message,wp,lp);
@@ -299,6 +319,7 @@ LRESULT CALLBACK shelf_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
         else if(wp==4){float t=std::min(1.f,float(GetTickCount64()-shelf.hover_started)/135.f),ease=1-std::pow(1-t,3);for(auto it=shelf.hovers.begin();it!=shelf.hovers.end();){auto& value=it->second;value.value=value.from+(value.target-value.from)*ease;if(t>=1&&value.target==0)it=shelf.hovers.erase(it);else ++it;}InvalidateRect(window,nullptr,FALSE);if(t>=1)KillTimer(window,4);}
         else if(wp==2) { KillTimer(window,2);shelf.change_started=0;synchronize(); }
         else if(wp==3) { KillTimer(window,3);if(interaction_busy()||native_dialog_open()){SetTimer(window,3,500,nullptr);return 0;}if(g_app.settings.organizer_auto_collect){auto now=std::chrono::steady_clock::now();bool due=std::any_of(shelf.model->entries.begin(),shelf.model->entries.end(),[&](auto const& entry){return entry.loose&&!entry.manual_loose&&entry.due<=now;});if(shelf.model->collect_due(now)){rebuild_loose();reflow();}else if(due){SetTimer(window,3,2000,nullptr);return 0;}}schedule_collect(); }
+        else if(wp==8){if(finish_file_rename()&&shelf.stopping)shutdown();}
         else if(wp==5){KillTimer(window,5);if(interaction_busy())SetTimer(window,5,200,nullptr);else {rebuild_loose();schedule_collect();reflow();}}
         else if(wp==6&&!interaction_busy()){auto work=monitor_work();if(!EqualRect(&work,&shelf.layout_work))reflow();if(!shelf.fixture&&!shelf.preview){lb::desktop_layer::maintain(window);for(auto const& item:shelf.loose)lb::desktop_layer::maintain(item->window);}}return 0;
     case changed_message:if(wp==shelf.token)desktop_changed();return 0;
@@ -309,7 +330,7 @@ LRESULT CALLBACK shelf_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
     case WM_DISPLAYCHANGE:reflow();return 0;
     case WM_SETTINGCHANGE:if(wp==SPI_SETWORKAREA)reflow();else{appearance(window,scaled(36));if(shelf.reduced_motion){KillTimer(window,1);KillTimer(window,4);KillTimer(window,7);shelf.height_motion.reset(shelf.target);shelf.header_motion.reset(shelf.expanded?scaled(48):0);place(shelf.target);}}return 0;
     case WM_CLOSE:if(shelf.preview) shutdown();return 0;
-    case WM_DESTROY:for(auto timer:{1,2,3,4,5,6,7})KillTimer(window,timer);if(shelf.search)DestroyWindow(std::exchange(shelf.search,nullptr));if(shelf.editor)DestroyWindow(std::exchange(shelf.editor,nullptr));shelf.surface.clear();if(shelf.edit_brush)DeleteObject(std::exchange(shelf.edit_brush,nullptr));shelf.icons.stop();if(shelf.outside) UnhookWindowsHookEx(std::exchange(shelf.outside,nullptr));shelf.window=nullptr;shelf.search=nullptr;shelf.editor=nullptr;shelf.editing_entry.clear();shelf.drag_entry.clear();shelf.drag_group.clear();shelf.drag_groups=shelf.drag_started=shelf.dragging=shelf.menu=false;for(auto font:{shelf.font,shelf.small,shelf.heading})if(font)DeleteObject(font);shelf.font=shelf.small=shelf.heading=nullptr;shelf.hovers.clear();return 0;
+    case WM_DESTROY:for(auto timer:{1,2,3,4,5,6,7,8})KillTimer(window,timer);if(shelf.search)DestroyWindow(std::exchange(shelf.search,nullptr));if(shelf.editor)DestroyWindow(std::exchange(shelf.editor,nullptr));shelf.surface.clear();if(shelf.edit_brush)DeleteObject(std::exchange(shelf.edit_brush,nullptr));shelf.icons.stop();if(shelf.outside) UnhookWindowsHookEx(std::exchange(shelf.outside,nullptr));shelf.window=nullptr;shelf.search=nullptr;shelf.editor=nullptr;shelf.editor_anchor=nullptr;shelf.editing_file=false;shelf.editing_entry.clear();shelf.drag_entry.clear();shelf.drag_group.clear();shelf.drag_groups=shelf.drag_started=shelf.dragging=shelf.menu=false;for(auto font:{shelf.font,shelf.small,shelf.heading})if(font)DeleteObject(font);shelf.font=shelf.small=shelf.heading=nullptr;shelf.hovers.clear();return 0;
     }return DefWindowProcW(window,message,wp,lp);
 }
 bool show_shelf() {
@@ -341,6 +362,7 @@ bool configure(bool preview) {
 }
 bool has_session() { return bool(shelf.lease); }
 bool shutdown() {
+    commit_title();if(!finish_file_rename()){shelf.stopping=true;return false;}
     ++shelf.generation;
     shelf.stopping=true;shelf.enabled=false;commit_title();shelf.watcher.stop();for(auto &item:shelf.loose) if(item->window) DestroyWindow(item->window);shelf.loose.clear();if(shelf.window) DestroyWindow(shelf.window);shelf.window=nullptr;shelf.search=nullptr;shelf.editor=nullptr;if(shelf.stop) SetEvent(shelf.stop.get());
     if(shelf.lease&&WaitForSingleObject(shelf.lease.get(),0)!=WAIT_OBJECT_0) { if(g_app.window) SetTimer(g_app.window,17,100,nullptr);return false; }shelf.lease.reset();shelf.stop.reset();return true;
@@ -462,7 +484,12 @@ bool arrival_tests(std::wstring const& directory){
     g_app.settings.organizer_auto_collect=1;schedule_collect();shelf_proc(window,WM_TIMER,3,0);
     RECT after{};GetWindowRect(window,&after);if(find()->loose||!shelf.loose.empty()||after.right-after.left<=before.right-before.left)return false;
     if(!shelf.model->restore_entry(file.wstring()))return false;rebuild_loose();shelf_proc(window,WM_TIMER,3,0);
-    return find()->loose&&find()->manual_loose&&shelf.loose.size()==1&&std::filesystem::exists(file);
+    if(!find()->loose||!find()->manual_loose||shelf.loose.size()!=1||!std::filesystem::exists(file))return false;
+    auto prior=*find();if(!start_file_rename(file.wstring(),L"Renamed document.txt"))return false;
+    while(shelf.rename&&!shelf.rename->done)Sleep(5);if(!finish_file_rename())return false;file=desktop/L"Renamed document.txt";
+    if(!find()||find()->group!=prior.group||!find()->manual_loose||!std::filesystem::exists(file)||std::filesystem::exists(desktop/L"New document.txt"))return false;
+    auto collision=desktop/L"Existing.txt";if(!write_utf8_atomic(collision.c_str(),L"keep"))return false;if(!start_file_rename(file.wstring(),L"Existing.txt"))return false;
+    while(shelf.rename&&!shelf.rename->done)Sleep(5);bool rejected=!shelf.rename->ok;finish_file_rename();return rejected&&std::filesystem::exists(file)&&std::filesystem::exists(collision)&&!start_file_rename(file.wstring(),L"../outside.txt");
 }
 bool transition_tests() {
     if(shelf.lease||shelf.window||shelf.stop) return false;auto wanted=g_app.settings.organizer_enabled;bool prior=shelf.stopping;auto token=shelf.token;

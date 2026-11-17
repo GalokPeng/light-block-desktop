@@ -127,7 +127,9 @@ def run(executable, root):
             controller = None
             seen_children = set()
             try:
-                controller = wait_until(lambda: next((h for h, name, _ in windows(proc.pid) if name == "LightBlockDesktopNative.Main.v1"), None))
+                # The HWND is published by CreateWindow before main sets its fixture
+                # property. Wait for both; never send messages to an untagged HWND.
+                controller = wait_until(lambda: next((h for h, name, _ in windows(proc.pid) if name == "LightBlockDesktopNative.Main.v1" and user.GetPropW(h, "LB.LifecycleFixture")), None))
                 assert user.GetPropW(controller, "LB.LifecycleFixture"), "Refusing to test a non-fixture window"
                 log = profile / "native.log"
                 # The constructor creates the HWND before the Qt library is ready.

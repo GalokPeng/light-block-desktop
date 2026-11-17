@@ -45,6 +45,7 @@ public:
         info.hwnd=owner_;info.lpVerb=MAKEINTRESOURCEA(command-first_id);info.lpVerbW=MAKEINTRESOURCEW(command-first_id);info.nShow=SW_SHOWNORMAL;info.ptInvoke=point;
         return SUCCEEDED(menu_->InvokeCommand(reinterpret_cast<CMINVOKECOMMANDINFO*>(&info)));
     }
+    bool is_verb(UINT command,char const* name)const{char verb[128]{};return owns(command)&&SUCCEEDED(menu_->GetCommandString(command-first_id,GCS_VERBA,nullptr,verb,sizeof verb))&&!_stricmp(verb,name);}
     bool has_verb(char const* name)const{
         for(UINT offset=0;menu_&&offset<count_;++offset){char verb[128]{};if(SUCCEEDED(menu_->GetCommandString(offset,GCS_VERBA,nullptr,verb,sizeof verb))&&!_stricmp(verb,name))return true;}return false;
     }
