@@ -4,7 +4,7 @@
 <p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases"><strong>Download latest release</strong></a> · <a href="#feature-preview">Feature preview</a> · <a href="https://light-block-desktop.vercel.app/en/">Website</a> · <a href="README.md">简体中文</a> · <a href="CHANGES.md">Changelog</a></p>
 
 
-**v2.0.4 stable**: wallpapers, screen capture, recording, desktop styling and notes, with playback and recording components included.
+**v2.0.5 stable**: wallpapers, screen capture, recording, desktop styling and notes, with playback and recording components included.
 
 ## Download and install
 
@@ -64,7 +64,7 @@ Right-click the desktop background to create and pin a note. On Windows 11, star
 
 Settings and downloaded wallpapers stay on your device. The online gallery contacts media sources on demand. No account, ads or telemetry. Appearance offers three original silhouettes—Stream, Prism and Pixel—with custom colors and 75%–200% sizing. Mix them with independently colored Dots, Falling or Glow effects, which stop painting when idle. Settings retains the native Windows Night light entry. The app also includes a launcher, clipboard history, a file workbench and focus timers. [User guide](docs/usage.en.md)
 
-v2.0.4 improves taskbar recovery after display changes and delayed tray rebuilds, with acknowledged restoration when styling is toggled. New desktop items appear near a recent desktop context-menu position; hover over the one-minute hint and click to collect immediately. Automatic collection after one minute remains available.
+v2.0.5 keeps organizer icons and labels opaque while adjusting only the background. Taskbar reveal handles quick edge gestures and minimize transitions, and work-area reconciliation supports maximized or borderless windows that cache the old desktop bounds. Disabling styling restores the original work area and preserves native auto-hide settings.
 
 Update checks no longer reject the official legacy metadata feed. The website supplies the installer size required by existing clients; new clients also use both official domains with bounded timeouts and diagnostic details. Downloads still require SHA-256 verification before closing the app and starting Setup.
 

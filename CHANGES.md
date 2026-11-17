@@ -1,3 +1,15 @@
+# v2.0.5 · 背景透明度与全屏任务栏 / Background opacity and fullscreen taskbar
+
+- 收纳背景使用独立透明度合成，图标、图标底板与文字保持清晰；抗锯齿圆角继续使用逐像素透明，收起后缩减绘制缓冲区。
+- 触底唤出以显示器实际底边为准，并检查最近 350 毫秒的有限鼠标轨迹，避免快速移动在轮询间隙被漏掉；前台窗口切换后重新核对任务栏层级。
+- 持续检查后来打开的最大化和贴满旧工作区的无边框窗口，补齐底部空间；通知应用更新工作区时避开 Explorer，防止它立刻重新占回任务栏预留区域。对拒绝调整的窗口限制重试次数，关闭美化时恢复工作区。
+- 修复启动恢复便签和收纳时短暂遮挡其他应用：在首次显示前固定桌面层级，不激活窗口；主动打开设置与编辑便签仍按正常交互置前。
+- 官网保留 v1.0.0 下载，并说明 v2.0.0 起采用 C++ 重构。没有同场景完整对照数据，未宣传普遍“内存减半”。
+- Restored notes and the organizer are placed in the desktop layer before their first frame, without stealing focus. Explicitly opened settings and note editing retain normal foreground behavior.
+- Organizer background opacity no longer fades icons, icon plates or labels. Antialiased corners retain per-pixel transparency; collapsed panels trim their drawing buffers.
+- Taskbar reveal uses the physical monitor edge and a bounded 350 ms mouse history, with z-order rechecked across foreground transitions.
+- Late maximized and work-area-filling borderless windows are reconciled with the expanded desktop. Notifications exclude Explorer to avoid immediately re-reserving the strip. Resize retries are bounded, and disabling styling restores the work area.
+
 # v2.0.4 · 任务栏恢复与快捷收纳 / Taskbar recovery and quick collection
 
 - 修复隐藏期间显示器/DPI 尺寸变化后，旧窗口裁剪矩形可能截掉任务栏右侧。恢复时解除本组件的整窗裁剪，开关时检查遗留的过期矩形；保留非本组件的偏移或复杂裁剪。

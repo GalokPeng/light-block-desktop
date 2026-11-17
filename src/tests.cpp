@@ -10,6 +10,7 @@
 #include "organizer_geometry.hpp"
 #include "window_shape.hpp"
 #include "desktop_surface.hpp"
+#include "desktop_layer.hpp"
 #include "ui_motion.hpp"
 #include "shell_menu.hpp"
 #include "directory_watch_tests.hpp"
@@ -40,6 +41,27 @@ bool player_result_tests();
 #include "capture_gate.hpp"
 #include <psapi.h>
 static UINT passes,failures;
+static bool desktop_layer_tests(){
+    // Private offscreen windows exercise the actual first-show z-order, without
+    // moving Explorer or using a user's application as a test target.
+    auto make=[](){return CreateWindowExW(WS_EX_TOOLWINDOW,L"STATIC",L"Layer fixture",WS_POPUP,-24000,-24000,100,100,nullptr,nullptr,g_app.instance,nullptr);};
+    HWND desktop=make(),application=make(),widget=make(),foreground=GetForegroundWindow();
+    if(!desktop||!application||!widget){for(auto h:{widget,application,desktop})if(h)DestroyWindow(h);return false;}
+    SetWindowPos(desktop,HWND_BOTTOM,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+    SetWindowPos(application,GetWindow(desktop,GW_HWNDPREV),0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+    bool ok=true;
+    for(int n=0;n<3;++n){
+        WINDOWPOS pos{widget,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_SHOWWINDOW|SWP_NOZORDER};
+        lb::desktop_layer::protect_show(pos,desktop);
+        ok=ok&&(pos.flags&SWP_NOACTIVATE)&&!(pos.flags&SWP_NOZORDER);
+        SetWindowPos(widget,pos.hwndInsertAfter,0,0,0,0,pos.flags);
+        ok=ok&&GetWindow(widget,GW_HWNDPREV)==application&&GetWindow(widget,GW_HWNDNEXT)==desktop&&GetForegroundWindow()==foreground&&!(GetWindowLongPtrW(widget,GWL_EXSTYLE)&WS_EX_TOPMOST);
+        ShowWindow(widget,SW_HIDE);
+    }
+    WINDOWPOS ordinary{widget,HWND_TOP,0,0,0,0,0};lb::desktop_layer::protect_show(ordinary,desktop);
+    ok=ok&&ordinary.flags==0&&ordinary.hwndInsertAfter==HWND_TOP&&lb::desktop_layer::anchor(widget,nullptr)==HWND_BOTTOM;
+    for(auto h:{widget,application,desktop})DestroyWindow(h);return ok;
+}
 static wchar_t checks[12000];
 static void check(BOOL result,const wchar_t *name) {
     if(passes+failures) StringCchCatW(checks,ARRAYSIZE(checks),L",\n");
@@ -87,6 +109,8 @@ int run_self_tests(const wchar_t *report) {
     check(lb::taskbar::shutdown_tests(),L"taskbar-exit-poll-reaps-without-starving-timer");
     check(lb::taskbar::transition_tests(),L"taskbar-reenable-waits-for-restoration");
     check(lb::taskbar::visibility_tests(),L"taskbar-shell-region-workarea-drift-and-edge-reveal");
+    check(desktop_layer_tests(),L"desktop-first-show-restored-without-activation-or-raising");
+    check(lb::taskbar::fullscreen_tests(),L"taskbar-quick-edge-minimize-frameless-cached-workarea-restore");
     check(lb::taskbar::layout_recovery_tests(),L"taskbar-toggle-restoration-ack-and-timeout-retry");
     check(lb::pointer::transition_tests(),L"pointer-retiring-result-keeps-new-intent");
     check(lb::capture::annotation_tests(),L"annotation-render-hit-move-undo");

@@ -1,8 +1,10 @@
 #include "taskbar.hpp"
 #include "taskbar_recovery.hpp"
+#include "taskbar_policy.hpp"
 #include <sddl.h>
 #include <fstream>
 #include <filesystem>
+#include <unordered_map>
 
 namespace lb::taskbar {
 namespace {
@@ -107,9 +109,16 @@ public:
 };
 struct WorkArea {
     RECT before{},after{},footprint{};bool owned{};ULONGLONG next_check{};
+    struct Attempt {RECT frame{};DWORD pid{};int count{};};std::unordered_map<HWND,Attempt> attempts;
     static BOOL CALLBACK resize(HWND window,LPARAM context) {
-        auto self=reinterpret_cast<WorkArea*>(context);if(!IsWindowVisible(window)||!IsZoomed(window)) return TRUE;
-        RECT frame{};if(SUCCEEDED(DwmGetWindowAttribute(window,9,&frame,sizeof frame)) && abs(frame.bottom-self->before.bottom)<=2 && frame.left>=self->before.left-2 && frame.right<=self->before.right+2) { RECT rect{};GetWindowRect(window,&rect);SetWindowPos(window,nullptr,0,0,rect.right-rect.left,rect.bottom-rect.top+self->after.bottom-frame.bottom,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOSENDCHANGING|SWP_ASYNCWINDOWPOS); }return TRUE;
+        auto self=reinterpret_cast<WorkArea*>(context);if(!IsWindowVisible(window)||IsIconic(window)||GetWindow(window,GW_OWNER)==GetShellWindow()||GetWindowLongPtrW(window,GWL_EXSTYLE)&(WS_EX_TOOLWINDOW|WS_EX_TRANSPARENT)){self->attempts.erase(window);return TRUE;}
+        DWORD cloaked=0;DwmGetWindowAttribute(window,DWMWA_CLOAKED,&cloaked,sizeof cloaked);if(cloaked)return TRUE;
+        RECT frame{};if(SUCCEEDED(DwmGetWindowAttribute(window,DWMWA_EXTENDED_FRAME_BOUNDS,&frame,sizeof frame))&&work_area_frame(frame,IsZoomed(window)!=FALSE,self->before,self->after)) {
+            if(self->attempts.size()>=256&&!self->attempts.contains(window))return TRUE;
+            auto& attempt=self->attempts[window];auto pid=window_pid(window);if(!EqualRect(&attempt.frame,&frame)||attempt.pid!=pid)attempt={frame,pid,0};
+            if(attempt.count++>=3)return TRUE; // Do not fight an app enforcing its own fixed size forever.
+            RECT rect{};GetWindowRect(window,&rect);SetWindowPos(window,nullptr,0,0,rect.right-rect.left,rect.bottom-rect.top+self->after.bottom-frame.bottom,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOSENDCHANGING|SWP_ASYNCWINDOWPOS);
+        }else self->attempts.erase(window);return TRUE;
     }
     template<class Read,class Write,class Record,class Adjust>
     void reconcile(RECT const& bar,ULONGLONG now,Read read,Write write,Record record,Adjust adjust) {
@@ -119,7 +128,10 @@ struct WorkArea {
             // Explorer can restore its reserved strip without replacing HWND.
             // Reclaim only our exact previous area and unchanged display geometry;
             // another app bar or a changed monitor layout belongs to its new owner.
-            if(rect_equal(bar,footprint)&&rect_equal(current,before)&&write(after)) adjust();
+            if(rect_equal(bar,footprint)){
+                if(rect_equal(current,before)){if(write(after))adjust();}
+                else if(rect_equal(current,after))adjust(); // Newly opened/maximized windows may still cache the old work area.
+            }
             return;
         }
         if(current.bottom!=bar.top||bar.bottom<=bar.top||current.left<bar.left||current.right>bar.right) return;
@@ -129,12 +141,12 @@ struct WorkArea {
     }
     void expand(HWND window,RECT const& bar,RecoveryLease& recovery) {
         reconcile(bar,GetTickCount64(),[](RECT& area){return SystemParametersInfoW(SPI_GETWORKAREA,0,&area,0)!=FALSE;},
-            [](RECT area){return SystemParametersInfoW(SPI_SETWORKAREA,0,&area,0)!=FALSE;},
+            [](RECT area){return write_work_area(area);},
             [&](RECT old_area,RECT new_area){return recovery.work(window,old_area,new_area);},
-            [&]{EnumWindows(resize,reinterpret_cast<LPARAM>(this));});
+            [&]{std::erase_if(attempts,[](auto const& item){return !IsWindow(item.first);});EnumWindows(resize,reinterpret_cast<LPARAM>(this));});
     }
     void restore() noexcept {
-        if(!owned) return;RECT current{};if(SystemParametersInfoW(SPI_GETWORKAREA,0,&current,0) && rect_equal(current,after)&&SystemParametersInfoW(SPI_SETWORKAREA,0,&before,0)) {std::swap(before,after);EnumWindows(resize,reinterpret_cast<LPARAM>(this)); }owned=false;next_check=0;
+        if(!owned) return;RECT current{};if(SystemParametersInfoW(SPI_GETWORKAREA,0,&current,0) && rect_equal(current,after)&&write_work_area(before)) {std::swap(before,after);attempts.clear();EnumWindows(resize,reinterpret_cast<LPARAM>(this)); }owned=false;next_check=0;attempts.clear();
     }
     ~WorkArea() { restore(); }
 };
@@ -184,7 +196,7 @@ bool reveal_at_edge(bool covered,bool edge,bool hover,bool previously_revealed) 
     return covered&&(edge||(previously_revealed&&hover));
 }
 struct Visibility {
-    HWND bar{};DWORD pid{};bool revealed{},topmost_changed{};HiddenRegion region;WorkArea work;
+    HWND bar{},foreground{};DWORD pid{};bool revealed{},topmost_changed{};HiddenRegion region;WorkArea work;
     RecoveryLease recovery;
     bool same() const { return IsWindow(bar)&&window_pid(bar)==pid && FindWindowW(L"Shell_TrayWnd",nullptr)==bar; }
     void restore_region() {
@@ -195,10 +207,16 @@ struct Visibility {
     }
     void update(HWND current,RECT const& bounds,bool hide,bool reveal) {
         if(current!=bar || window_pid(current)!=pid) { restore();bar=current;pid=window_pid(current); }
-        APPBARDATA data{sizeof data};if(SHAppBarMessage(ABM_GETSTATE,&data)&ABS_AUTOHIDE) { restore();return; }work.expand(bar,bounds,recovery);
+        APPBARDATA data{sizeof data};if(SHAppBarMessage(ABM_GETSTATE,&data)&ABS_AUTOHIDE) { restore();return; }
+        auto active=GetForegroundWindow();bool focus_changed=active!=foreground;foreground=active;if(focus_changed)work.next_check=0;
+        work.expand(bar,bounds,recovery);
+        bool was_revealed=revealed;
         bool applied=region.apply(bar,bounds,hide,[&](int kind,RECT area){return recovery.region(bar,kind,area);});
         revealed=reveal&&applied;
-        if(reveal && !(GetWindowLongPtrW(bar,GWL_EXSTYLE)&WS_EX_TOPMOST)) { if(recovery.topmost(bar)&&SetWindowPos(bar,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)) topmost_changed=true; }
+        if(revealed){
+            bool topmost=(GetWindowLongPtrW(bar,GWL_EXSTYLE)&WS_EX_TOPMOST)!=0;
+            if((topmost||recovery.topmost(bar))&&(!topmost||!was_revealed||focus_changed)&&SetWindowPos(bar,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)&&!topmost)topmost_changed=true;
+        }
         else if(!reveal && topmost_changed) { SetWindowPos(bar,HWND_NOTOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);topmost_changed=false; }
     }
     ~Visibility() { restore(); }
@@ -300,7 +318,28 @@ bool visibility_tests() {
     area={0,0,400,1000};step(101001,bar);if(writes!=101||area.bottom!=1000) return false;
     area=work.before;RECT moved=bar;moved.right=500;step(102001,moved);if(writes!=101) return false;
     fail=true;step(103001,bar);if(writes!=101||area.bottom!=1032) return false;
-    fail=false;step(104001,bar);return writes==102&&area.bottom==1080&&records==1;
+    fail=false;step(104001,bar);if(writes!=102||area.bottom!=1080||records!=1)return false;
+    int previous=adjustments;step(105001,bar);return writes==102&&adjustments==previous+1; // Reconcile a late cached-size window without another system write.
+}
+bool fullscreen_tests(){
+    RECT full{0,0,1920,1080},work{0,0,1920,1032};
+    if(!work_area_frame(work,true,work,full)||!work_area_frame(work,false,work,full)||!work_area_frame(full,false,full,work))return false;
+    if(work_area_frame({100,100,1000,1032},false,work,full)||work_area_frame({0,0,960,1032},false,work,full)||work_area_frame(full,true,work,full)||work_area_frame({1920,0,3840,1032},true,work,full))return false;
+    MOUSEMOVEPOINT points[]={{700,1060,1000,0},{700,1079,940,0},{700,1050,920,0}};
+    if(!recent_edge(points,3,1050,full)||recent_edge(points,3,1400,full)||!bottom_edge({0,1079},full)||bottom_edge({1920,1079},full))return false;
+    RECT negative{-1920,-1080,0,0};MOUSEMOVEPOINT negative_point{(-800)&0xffff,(-1)&0xffff,0xfffffff0u,0};
+    if(!recent_edge(&negative_point,1,50,negative)||recent_edge(&negative_point,1,500,negative))return false;
+    // Minimize A -> transient desktop -> fullscreen B: preserve a genuine
+    // recent edge gesture, while an unrelated screenshot/hover stays hidden.
+    if(reveal_at_edge(false,true,true,false)||!reveal_at_edge(true,recent_edge(points,3,1080,full),true,false)||reveal_at_edge(true,false,true,false))return false;
+    WorkArea area;area.before={-20000,-20000,-19400,-19600};area.after=area.before;area.after.bottom+=48;
+    HWND owner=CreateWindowExW(WS_EX_TOOLWINDOW,L"STATIC",L"Work-area owner fixture",WS_POPUP,0,0,1,1,nullptr,nullptr,g_app.instance,nullptr);if(!owner)return false;
+    scope_exit close_owner([&]{DestroyWindow(owner);});
+    HWND window=CreateWindowExW(WS_EX_NOACTIVATE,L"STATIC",L"Frameless cached-work-area fixture",WS_POPUP|WS_VISIBLE,area.before.left,area.before.top,600,400,owner,nullptr,g_app.instance,nullptr);if(!window)return false;
+    scope_exit close([&]{DestroyWindow(window);});
+    WorkArea::resize(window,LPARAM(&area));RECT rect{};GetWindowRect(window,&rect);if(rect.bottom!=area.after.bottom)return false;
+    std::swap(area.before,area.after);area.attempts.clear();WorkArea::resize(window,LPARAM(&area));GetWindowRect(window,&rect);
+    return rect.bottom==area.after.bottom;
 }
 bool transition_tests() {
     if(client.process||client.control||client.mapping) return false;
@@ -383,13 +422,21 @@ int helper_main(int argc,wchar_t **argv) {
         // Layout reconstruction may briefly stop publishing geometry. Continue
         // visibility checks using the last layout instead of freezing hidden state.
         status=last_layout;RECT bounds{};if(!GetWindowRect(bar,&bounds)||bounds.right<=bounds.left||bounds.bottom<=bounds.top) continue;
+        MONITORINFO monitor{sizeof monitor};RECT screen=bounds;
+        if(GetMonitorInfoW(MonitorFromWindow(bar,MONITOR_DEFAULTTOPRIMARY),&monitor)){
+            screen=monitor.rcMonitor;LONG height=bounds.bottom-bounds.top;
+            if(std::abs(bounds.bottom-screen.bottom)<=height){bounds.top=screen.bottom-height;bounds.bottom=screen.bottom;}
+        }
         RECT strip=bounds;
         if(status.host_width>0&&status.group_left>=0&&status.group_right>status.group_left&&status.group_right<=status.host_width) {
             double scale=double(bounds.right-bounds.left)/status.host_width;strip.left=bounds.left+LONG(std::lround(status.group_left*scale));strip.right=bounds.left+LONG(std::lround(status.group_right*scale));
         }
         Coverage coverage{strip,bar};EnumWindows(covered_window,reinterpret_cast<LPARAM>(&coverage));POINT cursor{};GetCursorPos(&cursor);
-        bool edge=cursor.y>=bounds.bottom-2&&cursor.y<bounds.bottom&&cursor.x>=bounds.left&&cursor.x<bounds.right;RECT hover=strip;InflateRect(&hover,5,6);
-        bool reveal=reveal_at_edge(coverage.covered,edge,PtInRect(&hover,cursor)!=FALSE,visibility.revealed&&visibility.bar==bar);
+        bool edge=bottom_edge(cursor,screen);RECT hover=strip;InflateRect(&hover,5,6);bool hovering=PtInRect(&hover,cursor)!=FALSE;
+        // Sample the OS's bounded mouse history only in the strip. A quick
+        // bottom-edge gesture can otherwise fall entirely between 120 ms ticks.
+        if(!edge&&hovering&&!visibility.revealed)edge=recent_edge(cursor,screen);
+        bool reveal=reveal_at_edge(coverage.covered,edge,hovering,visibility.revealed&&visibility.bar==bar);
         visibility.update(bar,bounds,coverage.covered&&!reveal,reveal);
     }
     return 0;

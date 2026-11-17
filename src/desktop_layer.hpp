@@ -1,5 +1,5 @@
 #pragma once
-#include "lb.h"
+#include <windows.h>
 namespace lb::desktop_layer {
 inline HWND host(){
     HWND result{};EnumWindows([](HWND window,LPARAM parameter)->BOOL{
@@ -8,10 +8,20 @@ inline HWND host(){
 }
 // HWND_BOTTOM can be *below* Explorer's WorkerW. Place desktop tools directly
 // above the icon host, while retaining normal application windows above them.
+inline HWND anchor(HWND window,HWND desktop){
+    if(!desktop)return HWND_BOTTOM;
+    HWND after=GetWindow(desktop,GW_HWNDPREV);
+    if(after==window)after=GetWindow(window,GW_HWNDPREV);
+    if(after&&(GetWindowLongPtrW(after,GWL_EXSTYLE)&WS_EX_TOPMOST))return HWND_NOTOPMOST;
+    return after?after:HWND_TOP;
+}
+inline void protect_show(WINDOWPOS& position,HWND desktop){
+    if(!(position.flags&SWP_SHOWWINDOW))return;
+    position.hwndInsertAfter=anchor(position.hwnd,desktop);
+    position.flags=(position.flags&~SWP_NOZORDER)|SWP_NOACTIVATE;
+}
 inline void place(HWND window,int x,int y,int width,int height,UINT flags){
-    HWND desktop=host(),after=desktop?GetWindow(desktop,GW_HWNDPREV):HWND_BOTTOM;
-    if(after==window)flags|=SWP_NOZORDER;
-    SetWindowPos(window,after?after:HWND_TOP,x,y,width,height,flags|SWP_NOACTIVATE);
+    SetWindowPos(window,anchor(window,host()),x,y,width,height,flags|SWP_NOACTIVATE);
 }
 inline void maintain(HWND window){
     if(!IsWindowVisible(window))return;HWND desktop=host();if(!desktop)return;

@@ -14,12 +14,22 @@ inline BYTE coverage(int x,int y,int w,int h,float radius) {
     float dy=std::max(std::abs(float(y)+.5f-h*.5f)-(h*.5f-radius),0.f);
     return BYTE(std::lround(std::clamp(radius+.5f-std::sqrt(dx*dx+dy*dy),0.f,1.f)*255.f));
 }
-inline void mask(uint32_t* pixels,int stride,int w,int h,float radius) {
+inline void mask(uint32_t* pixels,int stride,int w,int h,float radius,bool opaque=true) {
     // Only the small corner squares need distance/coverage calculations.
-    for(int y=0;y<h;++y)for(int x=0;x<w;++x)pixels[size_t(y)*stride+x]|=0xff000000u;
+    if(opaque)for(int y=0;y<h;++y)for(int x=0;x<w;++x)pixels[size_t(y)*stride+x]|=0xff000000u;
     int corner=int(std::ceil(std::clamp(radius,0.f,float(std::min(w,h))/2.f)));
     for(int y=0;y<corner;++y)for(int x=0;x<corner;++x){BYTE a=coverage(x,y,w,h,radius);if(a==255)continue;
-        for(int yy:{y,h-1-y})for(int xx:{x,w-1-x}){auto& p=pixels[size_t(yy)*stride+xx];if(!a)p=0;else p=uint32_t(a)<<24|(((p>>16)&255)*a/255)<<16|(((p>>8)&255)*a/255)<<8|(p&255)*a/255;}}
+        for(int yy:{y,h-1-y})for(int xx:{x,w-1-x}){auto& p=pixels[size_t(yy)*stride+xx];if(!a)p=0;else p=((p>>24)*a/255)<<24|(((p>>16)&255)*a/255)<<16|(((p>>8)&255)*a/255)<<8|(p&255)*a/255;}}
+}
+// Recover GDI glyph/icon coverage from black/white passes. GDI itself does not
+// consistently write alpha. Keep foreground opacity independent of the panel.
+inline uint32_t composite(uint32_t background,uint32_t black,uint32_t white,BYTE opacity){
+    unsigned remaining=255,largest=0;
+    for(int shift:{0,8,16}){unsigned b=(black>>shift)&255,w=(white>>shift)&255;remaining=std::min(remaining,w>=b?w-b:0);largest=std::max(largest,b);}
+    unsigned alpha=std::max(255-remaining,largest),back=unsigned(opacity)*(255-alpha)/255;
+    uint32_t result=(alpha+back)<<24;
+    for(int shift:{0,8,16})result|=std::min(255u,((black>>shift)&255)+((background>>shift)&255)*back/255)<<shift;
+    return result;
 }
 class Buffer {
     HDC dc_{};HBITMAP bitmap_{};HGDIOBJ old_{};uint32_t* pixels_{};int width_{},height_{};
@@ -38,13 +48,21 @@ public:
         if(!bitmap){DeleteDC(dc);return false;}clear();dc_=dc;bitmap_=bitmap;pixels_=static_cast<uint32_t*>(bits);width_=nw;height_=nh;old_=SelectObject(dc_,bitmap_);return true;
     }
     HDC dc()const{return dc_;}uint32_t* pixels()const{return pixels_;}int stride()const{return width_;}
-    bool present(HWND window,int w,int h,BYTE opacity,float radius){
-        if(!dc_||w>width_||h>height_)return false;mask(pixels_,width_,w,h,radius);
+    void trim(int w,int h){if(dc_&&(width_>(w+127)/128*128||height_>(h+127)/128*128)){clear();reserve(w,h);}}
+    bool present(HWND window,int w,int h,BYTE opacity,float radius,bool opaque=true){
+        if(!dc_||w>width_||h>height_)return false;GdiFlush();mask(pixels_,width_,w,h,radius,opaque);
         POINT source{};SIZE size{w,h};BLENDFUNCTION blend{AC_SRC_OVER,0,opacity,AC_SRC_ALPHA};
         return UpdateLayeredWindow(window,nullptr,nullptr,&size,dc_,&source,0,&blend,ULW_ALPHA)!=FALSE;
     }
 };
 inline bool tests(){
+    for(BYTE opacity:{BYTE(0),BYTE(25),BYTE(128),BYTE(255)}){
+        if(composite(0x00123456,0x00000000,0x00000000,opacity)!=0xff000000u||composite(0x00123456,0x00ffffff,0x00ffffff,opacity)!=0xffffffffu)return false;
+        if((composite(0x00123456,0,0xffffff,opacity)>>24)!=opacity)return false;
+        if(composite(0,0x00408020,0x00408020,opacity)!=0xff408020u)return false;
+        auto partial=composite(0x00123456,0x00404040,0x00bfbfbf,opacity);auto a=partial>>24;
+        if(a<128||(partial&255)>a||((partial>>8)&255)>a||((partial>>16)&255)>a)return false;
+    }
     for(int dpi:{96,120,144,192,240}){
         int w=MulDiv(900,dpi,96),h=MulDiv(124,dpi,96);float r=18.f*dpi/96.f;Buffer b;if(!b.reserve(w,h))return false;
         auto prior=b.dc();if(!b.reserve(w-1,h-1)||prior!=b.dc())return false;

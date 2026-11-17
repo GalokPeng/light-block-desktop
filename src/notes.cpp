@@ -1,5 +1,6 @@
 #include "lb.h"
 #include "frontend.hpp"
+#include "desktop_layer.hpp"
 #include <commdlg.h>
 
 struct Note { HWND window,edit; COLORREF color; wchar_t file[LB_PATH]; HBRUSH brush; BOOL dirty,loading; };
@@ -69,14 +70,14 @@ static LRESULT CALLBACK note_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) 
 }
 void note_open_saved(const wchar_t *file,BOOL activate) {
     if(lb::frontend::note_open(file,activate!=FALSE)) return;
-    Note *n=NULL;for(UINT i=0;i<ARRAYSIZE(notes);++i) { if(notes[i].window && !_wcsicmp(notes[i].file,file)) { ShowWindow(notes[i].window,SW_SHOW);if(activate) SetForegroundWindow(notes[i].window);return; }if(!notes[i].window && !n) n=&notes[i]; }
+    Note *n=NULL;for(UINT i=0;i<ARRAYSIZE(notes);++i) { if(notes[i].window && !_wcsicmp(notes[i].file,file)) { if(activate) { ShowWindow(notes[i].window,SW_SHOW);SetForegroundWindow(notes[i].window); }else lb::desktop_layer::place(notes[i].window,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_SHOWWINDOW);return; }if(!notes[i].window && !n) n=&notes[i]; }
     if(!n) return;
     WNDCLASSW cls={};cls.lpfnWndProc=note_proc;cls.hInstance=g_app.instance;cls.lpszClassName=L"LightBlockDesktopNative.Note";cls.hCursor=LoadCursorW(NULL,IDC_ARROW);RegisterClassW(&cls);
     StringCchCopyW(n->file,LB_PATH,file);n->color=(COLORREF)note_meta_get(file,L"color",(int)RGB(255,234,176));
     int x=note_meta_get(file,L"x",180),y=note_meta_get(file,L"y",160),width=LB_MAX(230,LB_MIN(1800,note_meta_get(file,L"width",370))),height=LB_MAX(160,LB_MIN(1400,note_meta_get(file,L"height",300)));
     RECT rect={x,y,x+width,y+height};MONITORINFO info={sizeof info};GetMonitorInfoW(MonitorFromRect(&rect,MONITOR_DEFAULTTONEAREST),&info);x=LB_MAX(info.rcWork.left,LB_MIN(x,info.rcWork.right-100));y=LB_MAX(info.rcWork.top,LB_MIN(y,info.rcWork.bottom-80));
     HWND window=CreateWindowExW(WS_EX_TOOLWINDOW,L"LightBlockDesktopNative.Note",L"轻块桌面 · 便签",WS_POPUP|WS_THICKFRAME,x,y,width,height,GetShellWindow(),NULL,g_app.instance,n);
-    if(window) { wchar_t *text=read_utf8_file(file,1024*1024);if(!text) { log_line(L"note cannot be decoded; leaving file unchanged");DestroyWindow(window);return; }SetWindowTextW(n->edit,text);free(text);n->loading=FALSE;n->dirty=FALSE;note_meta_set(file,L"pinned",1);theme_window(window);ShowWindow(window,activate?SW_SHOW:SW_SHOWNOACTIVATE);if(activate) SetFocus(n->edit); }
+    if(window) { wchar_t *text=read_utf8_file(file,1024*1024);if(!text) { log_line(L"note cannot be decoded; leaving file unchanged");DestroyWindow(window);return; }SetWindowTextW(n->edit,text);free(text);n->loading=FALSE;n->dirty=FALSE;note_meta_set(file,L"pinned",1);theme_window(window);if(activate) { ShowWindow(window,SW_SHOW);SetFocus(n->edit); }else lb::desktop_layer::place(window,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_SHOWWINDOW); }
 }
 void note_create(HWND owner) {
     (void)owner;wchar_t directory[LB_PATH],file[LB_PATH],name[80];path_join(directory,LB_PATH,g_app.data,L"notes");if(!ensure_directory(directory)) return;

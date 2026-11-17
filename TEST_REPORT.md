@@ -1,3 +1,19 @@
+# v2.0.5 release verification
+
+Local Windows regression passed on 2026-11-17: **128 native checks**, static/GIF/MP4 playback, 12 media switches without failures or remaining children, Qt interface/note/capture/recording fixtures and six isolated lifecycle scenarios. The 14 isolated native taskbar layout checks, including 20 damaged-tray enable/rebuild/disable cycles, passed. Website checks (15) and release protocol checks (6) passed.
+
+Organizer tests exercise the real layered surface at all three icon sizes, all three alignments and three background opacities. Opaque icon/text pixels remain unchanged, background alpha follows the setting, corners remain transparent and all pixels satisfy premultiplied-alpha bounds. Black/white foreground coverage passes avoid relying on undefined GDI alpha; retained buffers are trimmed after collapse.
+
+Taskbar coverage includes quick bottom-edge history, negative-coordinate displays, timestamp wrap, minimizing a foreground fullscreen window, late cached-work-area frames, excluded snapped/partial windows, bounded resize attempts and restoration. On this Windows desktop a separate synthetic document created with the previous work area expanded to the 2160 px monitor bottom. An initial real test caught Explorer re-reserving the strip after broadcast notification; notifications now exclude the shell. Subsequent two- and six-minute sessions kept the work area at 2160 px and restored its original value on normal exit. During the latter session the upper test window was minimized and the helper log recorded bottom-edge reveal (empty region to unrestricted region). Coordinate automation initially could not focus the test; keyboard activation resolved it. The inspected fullscreen surface contained no bottom reserved strip. This does not certify every WeChat document version or third-party window manager, nor an exact sub-frame input latency.
+
+Startup layering: private offscreen Win32 windows verify first-show ordering below an application and above a desktop host, unchanged focus and no topmost promotion over repeated shows. The actual Qt note native-event handler passes its pre-show desktop-placement check. Organizer and restored note paths avoid a deferred raise-then-lower frame. Explicit settings/note editing retains foreground behavior. These automated checks are not a claim of frame-by-frame startup testing on every Explorer build.
+
+Real system tests used generated solid-color windows; the installed app was gracefully stopped and restarted, with its installation and profile unchanged. Test helpers exited and the work area restoration was confirmed. Computer-use capture was released after inspection. No personal screenshots were added to the repository or website.
+
+The site retains v1.0.0 downloads and explains the C++ rewrite from v2.0.0. It does not promise universal memory halving without a comparable whole-application measurement. Installer identity and archived releases remain unchanged. Final clean-checkout CI, isolated Setup/updater tests and public asset/download verification gate publication.
+
+---
+
 # v2.0.4 release verification
 
 Local Windows regression on 2026-11-17 passed 126 native checks, actual static/GIF/video decoding, 12 media switches, Qt interface fixtures and six lifecycle/session scenarios. Website tests (15) and release protocol tests (6) passed. Local installation/updater checks passed against the v2.0.4 application files; CI verifies the final committed package before publication, recording exact hashes. The XAML fixture now embeds a Windows 10 1903 compatibility manifest: an initial hosted run rejected its former Windows 11-only maximum target before tests could start. The embedded resource and the full taskbar suite were rechecked locally; no application runtime files changed for that fixture fix.

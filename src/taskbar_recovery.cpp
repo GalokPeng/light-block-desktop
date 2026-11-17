@@ -1,4 +1,5 @@
 #include "taskbar_recovery.hpp"
+#include "taskbar_policy.hpp"
 #include "json.h"
 #include <functional>
 
@@ -60,8 +61,8 @@ bool recover(Record const& record,Backend const& backend) {
 }
 struct AreaChange {RECT before,after;};
 BOOL CALLBACK adjust_maximized(HWND window,LPARAM value) {
-    if(!IsWindowVisible(window)||!IsZoomed(window)) return TRUE;auto change=reinterpret_cast<AreaChange*>(value);RECT frame{};
-    if(SUCCEEDED(DwmGetWindowAttribute(window,9,&frame,sizeof frame))&&abs(frame.bottom-change->before.bottom)<=2&&frame.left>=change->before.left-2&&frame.right<=change->before.right+2) {RECT bounds{};GetWindowRect(window,&bounds);SetWindowPos(window,nullptr,0,0,bounds.right-bounds.left,bounds.bottom-bounds.top+change->after.bottom-frame.bottom,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOSENDCHANGING|SWP_ASYNCWINDOWPOS);}
+    if(!IsWindowVisible(window)||IsIconic(window)||GetWindowLongPtrW(window,GWL_EXSTYLE)&(WS_EX_TOOLWINDOW|WS_EX_TRANSPARENT))return TRUE;auto change=reinterpret_cast<AreaChange*>(value);RECT frame{};
+    if(SUCCEEDED(DwmGetWindowAttribute(window,9,&frame,sizeof frame))&&work_area_frame(frame,IsZoomed(window)!=FALSE,change->before,change->after)) {RECT bounds{};GetWindowRect(window,&bounds);SetWindowPos(window,nullptr,0,0,bounds.right-bounds.left,bounds.bottom-bounds.top+change->after.bottom-frame.bottom,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOSENDCHANGING|SWP_ASYNCWINDOWPOS);}
     return TRUE;
 }
 Backend system_backend(Record const& record,bool allow_current) {
@@ -70,7 +71,7 @@ Backend system_backend(Record const& record,bool allow_current) {
         [](Record const& r){HWND window=HWND(uintptr_t(r.window));DWORD pid{};GetWindowThreadProcessId(window,&pid);return IsWindow(window)&&FindWindowW(L"Shell_TrayWnd",nullptr)==window&&pid==r.shell&&created(pid)==r.shell_created;},
         [allow_current](Record const& r){if(allow_current&&r.owner==GetCurrentProcessId()&&created(r.owner)==r.owner_created) return false;unique_handle process(OpenProcess(SYNCHRONIZE|PROCESS_QUERY_LIMITED_INFORMATION,FALSE,r.owner));if(!process) return GetLastError()==ERROR_ACCESS_DENIED;return created(r.owner)==r.owner_created&&WaitForSingleObject(process.get(),0)==WAIT_TIMEOUT;},
         [](RECT& area){return SystemParametersInfoW(SPI_GETWORKAREA,0,&area,0)!=FALSE;},
-        [](RECT before,RECT after){if(!SystemParametersInfoW(SPI_SETWORKAREA,0,&after,0)) return false;AreaChange change{before,after};EnumWindows(adjust_maximized,LPARAM(&change));return true;},
+        [](RECT before,RECT after){if(!write_work_area(after)) return false;AreaChange change{before,after};EnumWindows(adjust_maximized,LPARAM(&change));return true;},
         [bar](){unique_gdi<HRGN> region(CreateRectRgn(0,0,0,0));if(!region) return -1;int type=GetWindowRgn(bar,region.get());if(type==ERROR) return 0;return type==NULLREGION?1:0;},
         // Only full-window regions are leased. A stale pixel-size snapshot can
         // permanently cut off the tray after the monitor changes dimensions.

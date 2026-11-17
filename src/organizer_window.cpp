@@ -45,7 +45,7 @@ struct Shelf {
     RECT layout_work{};
     ULONGLONG animation{},opacity_tick{},change_started{};
     lb::motion::Spring height_motion,header_motion,opacity_motion;
-    lb::desktop_surface::Buffer surface;
+    lb::desktop_surface::Buffer surface,content_black,content_white;
     RECT editor_bounds{};
     HBRUSH edit_brush{};
     HHOOK outside{};UINT dpi{};HFONT font{},small{},heading{};
@@ -98,7 +98,7 @@ void place(int height) {
     if(changed){if(shelf.preview||shelf.fixture)SetWindowPos(shelf.window,HWND_TOP,bounds.left,bounds.top,bounds.right-bounds.left,bounds.bottom-bounds.top,SWP_NOACTIVATE|SWP_NOREDRAW);else lb::desktop_layer::place(shelf.window,bounds.left,bounds.top,bounds.right-bounds.left,bounds.bottom-bounds.top,SWP_NOREDRAW);}
     shelf.height=bounds.bottom-bounds.top;shelf.layout_work=work;position_edits();
     if(changed)RedrawWindow(shelf.window,nullptr,nullptr,RDW_INVALIDATE|RDW_UPDATENOW);
-    if(!shelf.fixture&&!IsWindowVisible(shelf.window))ShowWindow(shelf.window,SW_SHOWNOACTIVATE);
+    if(!shelf.fixture&&!IsWindowVisible(shelf.window))ShowWindow(shelf.window,SW_SHOWNA);
 }
 LRESULT CALLBACK outside_click(int code,WPARAM wp,LPARAM lp) {
     // Reuse one event-driven hook. No mouse polling and no Shell IPC on moves.
@@ -149,10 +149,11 @@ void paint(HWND window) {
     HDC dc=shelf.surface.dc();COLORREF background=g_app.settings.organizer_color;
     unique_gdi<HBRUSH> brush(CreateSolidBrush(background));FillRect(dc,&client,brush.get());
     if(g_app.settings.organizer_glass){COLORREF top=mixed(background,RGB(226,242,247),230),bottom=mixed(background,RGB(18,27,37),235);TRIVERTEX vertices[]={{0,0,COLOR16(GetRValue(top)<<8),COLOR16(GetGValue(top)<<8),COLOR16(GetBValue(top)<<8),0},{client.right,client.bottom,COLOR16(GetRValue(bottom)<<8),COLOR16(GetGValue(bottom)<<8),COLOR16(GetBValue(bottom)<<8),0}};GRADIENT_RECT mesh{0,1};GradientFill(dc,vertices,2,&mesh,1,GRADIENT_FILL_RECT_V);}
-    {unique_gdi<HPEN> edge(CreatePen(PS_SOLID,1,mixed(background,RGB(225,242,250),220)));auto pen=SelectObject(dc,edge.get()),fill=SelectObject(dc,GetStockObject(NULL_BRUSH));RoundRect(dc,1,1,client.right-1,client.bottom-1,scaled(36),scaled(36));SelectObject(dc,pen);SelectObject(dc,fill);}shelf.tiles.clear();
+    {unique_gdi<HPEN> edge(CreatePen(PS_SOLID,1,mixed(background,RGB(225,242,250),220)));auto pen=SelectObject(dc,edge.get()),fill=SelectObject(dc,GetStockObject(NULL_BRUSH));RoundRect(dc,1,1,client.right-1,client.bottom-1,scaled(36),scaled(36));SelectObject(dc,pen);SelectObject(dc,fill);}
     int cell=cell_size(),row=row_size(),columns=metrics().columns(client.right);wchar_t query[260]{};GetWindowTextW(shelf.search,query,260);
     bool groups=show_groups(query);auto entries=shelf.model->view(g_app.settings.organizer_view,query,shelf.group);size_t count=groups?shelf.model->groups.size():entries.size();
     int top=scaled(10)+int(std::lround(shelf.header_motion.value)),limit=shelf.expanded?columns*std::max(1,int(client.bottom-top-scaled(6))/row):std::min(10,columns-1);size_t first=shelf.expanded?size_t(std::max(0,shelf.scroll))*size_t(columns):0;
+    auto content=[&](HDC dc){shelf.tiles.clear();
     for(size_t n=first;n<count&&n<first+size_t(limit);++n) {
         size_t at=n-first;int x=scaled(12)+int(at%size_t(columns))*cell,y=top+int(at/size_t(columns))*row;RECT bounds{x,y,x+cell,y+row};
         auto hover_it=shelf.hovers.find(int(shelf.tiles.size()));float hover=hover_it==shelf.hovers.end()?0.f:hover_it->second.value;
@@ -166,7 +167,19 @@ void paint(HWND window) {
     }
     if(!shelf.expanded) { RECT search{client.right-cell-scaled(12),scaled(10),client.right-scaled(12),scaled(10)+row};int cx=(search.left+search.right)/2,cy=search.top+scaled(5)+metrics().tile/2,r=scaled(10);unique_gdi<HPEN> pen(CreatePen(PS_SOLID,scaled(2),foreground(background)));auto prior=SelectObject(dc,pen.get()),prior_brush=SelectObject(dc,GetStockObject(NULL_BRUSH));Ellipse(dc,cx-r,cy-r,cx+r,cy+r);MoveToEx(dc,cx+scaled(7),cy+scaled(7),nullptr);LineTo(dc,cx+scaled(15),cy+scaled(15));SelectObject(dc,prior_brush);SelectObject(dc,prior);draw_text(dc,tr(L"搜索",L"Search"),RECT{search.left,search.bottom-metrics().label,search.right,search.bottom-scaled(2)},shelf.small,foreground(background),DT_CENTER|DT_SINGLELINE);shelf.tiles.push_back({search,SIZE_MAX,false}); }
     if(shelf.expanded&&!shelf.group.empty()) { auto found=std::find_if(shelf.model->groups.begin(),shelf.model->groups.end(),[](auto const& group){return group.id==shelf.group;});if(found!=shelf.model->groups.end()) draw_text(dc,found->name.c_str(),RECT{scaled(24),scaled(12),client.right-scaled(360),scaled(48)},shelf.heading,mixed(foreground(background),background,int(std::clamp(shelf.header_motion.value/std::max(1,scaled(48)),0.,1.)*255)),DT_SINGLELINE|DT_VCENTER); }
-    shelf.surface.present(window,client.right,client.bottom,BYTE(std::clamp(shelf.opacity_motion.value,0.,255.)),float(scaled(18)));EndPaint(window,&ps);
+    };
+    BYTE opacity=BYTE(std::clamp(shelf.opacity_motion.value,0.,255.));
+    bool separate=opacity<255&&shelf.content_black.reserve(client.right,client.bottom)&&shelf.content_white.reserve(client.right,client.bottom);
+    if(separate){
+        FillRect(shelf.content_black.dc(),&client,HBRUSH(GetStockObject(BLACK_BRUSH)));
+        FillRect(shelf.content_white.dc(),&client,HBRUSH(GetStockObject(WHITE_BRUSH)));
+        content(shelf.content_black.dc());content(shelf.content_white.dc());GdiFlush();
+        for(int y=0;y<client.bottom;++y)for(int x=0;x<client.right;++x){
+            auto& pixel=shelf.surface.pixels()[size_t(y)*shelf.surface.stride()+x];
+            pixel=lb::desktop_surface::composite(pixel,shelf.content_black.pixels()[size_t(y)*shelf.content_black.stride()+x],shelf.content_white.pixels()[size_t(y)*shelf.content_white.stride()+x],opacity);
+        }
+    }else content(dc);
+    shelf.surface.present(window,client.right,client.bottom,255,float(scaled(18)),!separate);EndPaint(window,&ps);
 }
 int hit(POINT point) { for(size_t n=0;n<shelf.tiles.size();++n) if(PtInRect(&shelf.tiles[n].bounds,point)) return int(n);return -1; }
 bool model_result(bool ok) { if(!ok)set_status(L"收纳更改未能保存，已恢复原状态；原文件未改动。",L"Organizer changes could not be saved and were reverted. Files are untouched.");return ok; }
@@ -295,6 +308,7 @@ LRESULT CALLBACK loose_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
     auto item=reinterpret_cast<Loose*>(GetWindowLongPtrW(window,GWLP_USERDATA));if(message==WM_NCCREATE) { item=static_cast<Loose*>(reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams);SetWindowLongPtrW(window,GWLP_USERDATA,LPARAM(item)); }
     if(!item) return DefWindowProcW(window,message,wp,lp);
     switch(message) {
+    case WM_WINDOWPOSCHANGING:if(!shelf.fixture&&!shelf.preview)lb::desktop_layer::protect_show(*reinterpret_cast<WINDOWPOS*>(lp),lb::desktop_layer::host());break;
     case WM_ERASEBKGND:return 1;
     case WM_SIZE:lb::window_shape::clip(window,scaled(18));return 0;
     case WM_PAINT: {
@@ -323,6 +337,7 @@ LRESULT CALLBACK loose_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
 }
 LRESULT CALLBACK shelf_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
     switch(message) {
+    case WM_WINDOWPOSCHANGING:if(!shelf.fixture&&!shelf.preview)lb::desktop_layer::protect_show(*reinterpret_cast<WINDOWPOS*>(lp),lb::desktop_layer::host());break;
     case WM_CREATE:shelf.window=window;DragAcceptFiles(window,TRUE);shelf.search=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_LAYERED|WS_EX_CLIENTEDGE,L"EDIT",L"",WS_POPUP|ES_AUTOHSCROLL|WS_TABSTOP,0,0,scaled(360),scaled(32),window,nullptr,g_app.instance,nullptr);SetWindowLongPtrW(shelf.search,GWLP_ID,1);lb::window_shape::own_frame(shelf.search);SendMessageW(shelf.search,WM_SETFONT,WPARAM(shelf.font),TRUE);SendMessageW(shelf.search,EM_SETCUEBANNER,TRUE,LPARAM(tr(L"搜索桌面与分组",L"Search desktop and groups")));SetWindowSubclass(shelf.search,edit_keys,2,0);shelf.icons.start(window,WM_APP+93);return 0;
     case WM_ERASEBKGND:return 1;
     case WM_PAINT:paint(window);return 0;
@@ -351,7 +366,7 @@ LRESULT CALLBACK shelf_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
     case WM_KEYDOWN:if(wp==VK_ESCAPE) { if(GetCapture()==window){ReleaseCapture();return 0;}shelf.moving=false;animate(false); }return 0;
     case WM_MOUSEWHEEL:if(shelf.expanded) { int columns=std::max(1,(width()-scaled(24))/cell_size());wchar_t query[260]{};GetWindowTextW(shelf.search,query,260);size_t count=g_app.settings.organizer_view==2&&shelf.group.empty()&&!*query?shelf.model->groups.size():shelf.model->view(g_app.settings.organizer_view,query,shelf.group).size();int max_rows=std::max(0,int((count+size_t(columns)-1)/size_t(columns))-std::max(1,(shelf.height-scaled(58)-scaled(6))/row_size()));shelf.scroll=std::clamp(shelf.scroll+(GET_WHEEL_DELTA_WPARAM(wp)>0?-1:1),0,max_rows);InvalidateRect(window,nullptr,FALSE); }return 0;
     case WM_TIMER:
-        if(wp==1) { auto now=GetTickCount64();double seconds=double(now-shelf.animation)/1000.;bool active=shelf.height_motion.step(seconds,shelf.reduced_motion);active=shelf.header_motion.step(seconds,shelf.reduced_motion)||active;shelf.animation=now;place(int(std::lround(shelf.height_motion.value)));InvalidateRect(window,nullptr,FALSE);if(!active)KillTimer(window,1); }
+        if(wp==1) { auto now=GetTickCount64();double seconds=double(now-shelf.animation)/1000.;bool active=shelf.height_motion.step(seconds,shelf.reduced_motion);active=shelf.header_motion.step(seconds,shelf.reduced_motion)||active;shelf.animation=now;place(int(std::lround(shelf.height_motion.value)));InvalidateRect(window,nullptr,FALSE);if(!active){KillTimer(window,1);if(!shelf.expanded){RECT r{};GetClientRect(window,&r);shelf.surface.trim(r.right,r.bottom);shelf.content_black.trim(r.right,r.bottom);shelf.content_white.trim(r.right,r.bottom);}} }
         else if(wp==7){auto now=GetTickCount64();bool active=shelf.opacity_motion.step(double(now-shelf.opacity_tick)/1000.,shelf.reduced_motion);shelf.opacity_tick=now;InvalidateRect(window,nullptr,FALSE);if(!active)KillTimer(window,7);}
         else if(wp==4){float t=std::min(1.f,float(GetTickCount64()-shelf.hover_started)/135.f),ease=1-std::pow(1-t,3);for(auto it=shelf.hovers.begin();it!=shelf.hovers.end();){auto& value=it->second;value.value=value.from+(value.target-value.from)*ease;if(t>=1&&value.target==0)it=shelf.hovers.erase(it);else ++it;}InvalidateRect(window,nullptr,FALSE);if(t>=1)KillTimer(window,4);}
         else if(wp==2) { KillTimer(window,2);shelf.change_started=0;synchronize(); }
@@ -367,7 +382,7 @@ LRESULT CALLBACK shelf_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
     case WM_DISPLAYCHANGE:reflow();return 0;
     case WM_SETTINGCHANGE:if(wp==SPI_SETWORKAREA)reflow();else{appearance(window,scaled(36));if(shelf.reduced_motion){KillTimer(window,1);KillTimer(window,4);KillTimer(window,7);shelf.height_motion.reset(shelf.target);shelf.header_motion.reset(shelf.expanded?scaled(48):0);place(shelf.target);}}return 0;
     case WM_CLOSE:if(shelf.preview) shutdown();return 0;
-    case WM_DESTROY:for(auto timer:{1,2,3,4,5,6,7,8})KillTimer(window,timer);if(shelf.search)DestroyWindow(std::exchange(shelf.search,nullptr));if(shelf.editor)DestroyWindow(std::exchange(shelf.editor,nullptr));shelf.surface.clear();if(shelf.edit_brush)DeleteObject(std::exchange(shelf.edit_brush,nullptr));shelf.icons.stop();if(shelf.outside) UnhookWindowsHookEx(std::exchange(shelf.outside,nullptr));shelf.window=nullptr;shelf.search=nullptr;shelf.editor=nullptr;shelf.editor_anchor=nullptr;shelf.editing_file=false;shelf.editing_entry.clear();shelf.drag_entry.clear();shelf.drag_group.clear();shelf.drag_groups=shelf.drag_started=shelf.dragging=shelf.menu=false;for(auto font:{shelf.font,shelf.small,shelf.heading})if(font)DeleteObject(font);shelf.font=shelf.small=shelf.heading=nullptr;shelf.hovers.clear();return 0;
+    case WM_DESTROY:for(auto timer:{1,2,3,4,5,6,7,8})KillTimer(window,timer);if(shelf.search)DestroyWindow(std::exchange(shelf.search,nullptr));if(shelf.editor)DestroyWindow(std::exchange(shelf.editor,nullptr));shelf.surface.clear();shelf.content_black.clear();shelf.content_white.clear();if(shelf.edit_brush)DeleteObject(std::exchange(shelf.edit_brush,nullptr));shelf.icons.stop();if(shelf.outside) UnhookWindowsHookEx(std::exchange(shelf.outside,nullptr));shelf.window=nullptr;shelf.search=nullptr;shelf.editor=nullptr;shelf.editor_anchor=nullptr;shelf.editing_file=false;shelf.editing_entry.clear();shelf.drag_entry.clear();shelf.drag_group.clear();shelf.drag_groups=shelf.drag_started=shelf.dragging=shelf.menu=false;for(auto font:{shelf.font,shelf.small,shelf.heading})if(font)DeleteObject(font);shelf.font=shelf.small=shelf.heading=nullptr;shelf.hovers.clear();return 0;
     }return DefWindowProcW(window,message,wp,lp);
 }
 bool show_shelf() {
@@ -488,10 +503,17 @@ bool surface_tests(std::wstring const& directory){
     g_app.settings.organizer_color=RGB(40,90,120);g_app.settings.organizer_opacity=210;appearance(window,36);
     for(int size:{0,1,2})for(int align:{0,1,2}){
         g_app.settings.organizer_icon_size=size;g_app.settings.organizer_alignment=align;
-        int height=base_height(),width=600;SetWindowPos(window,nullptr,-32000,-32000,width,height,SWP_NOACTIVATE|SWP_NOZORDER);paint(window);
+        int height=base_height(),width=600;SetWindowPos(window,nullptr,-32000,-32000,width,height,SWP_NOACTIVATE|SWP_NOZORDER);SetWindowTextW(shelf.search,L"");
+        for(int opacity:{40,160,255}){
+        shelf.opacity_motion.reset(opacity);paint(window);
         if(IsWindowVisible(window)||IsWindowVisible(shelf.search)||!shelf.surface.pixels())return false;
         auto p=shelf.surface.pixels();int stride=shelf.surface.stride();if(p[0]||p[width-1]||p[size_t(height-1)*stride]||p[size_t(height-1)*stride+width-1])return false;
-        if((p[size_t(height/2)*stride+width/2]>>24)!=255)return false;
+        if((p[size_t(height-3)*stride+width/2]>>24)!=unsigned(opacity))return false;
+        int solid=0;for(int y=0;y<height;++y){for(int x=0;x<width;++x){auto pixel=p[size_t(y)*stride+x],a=pixel>>24;if((pixel&255)>a||((pixel>>8)&255)>a||((pixel>>16)&255)>a)return false;
+            if(opacity<255&&lb::desktop_surface::coverage(x,y,width,height,float(scaled(18)))==255){auto b=shelf.content_black.pixels()[size_t(y)*shelf.content_black.stride()+x]&0xffffffu,w=shelf.content_white.pixels()[size_t(y)*shelf.content_white.stride()+x]&0xffffffu;if(b==w){++solid;if(pixel!=(b|0xff000000u))return false;}}
+        }}
+        if(opacity<255&&solid<100)return false;
+        }
         RECT owner{},edit{};GetWindowRect(window,&owner);GetWindowRect(shelf.search,&edit);if(edit.left<owner.left||edit.right>owner.right||edit.top<owner.top||edit.bottom>owner.bottom)return false;
         SetWindowTextW(shelf.search,L"中文 search");wchar_t text[40]{};GetWindowTextW(shelf.search,text,40);if(wcscmp(text,L"中文 search"))return false;
     }
