@@ -87,6 +87,7 @@ int run_self_tests(const wchar_t *report) {
     check(lb::taskbar::shutdown_tests(),L"taskbar-exit-poll-reaps-without-starving-timer");
     check(lb::taskbar::transition_tests(),L"taskbar-reenable-waits-for-restoration");
     check(lb::taskbar::visibility_tests(),L"taskbar-shell-region-workarea-drift-and-edge-reveal");
+    check(lb::taskbar::layout_recovery_tests(),L"taskbar-toggle-restoration-ack-and-timeout-retry");
     check(lb::pointer::transition_tests(),L"pointer-retiring-result-keeps-new-intent");
     check(lb::capture::annotation_tests(),L"annotation-render-hit-move-undo");
     check(lb::capture::visual_parity_tests(),L"annotation-python-fill-open-arrow-highlight-number-visuals");

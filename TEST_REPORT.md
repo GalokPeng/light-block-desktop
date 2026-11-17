@@ -1,3 +1,15 @@
+# v2.0.4 release verification
+
+Local Windows regression on 2026-11-17 passed 126 native checks, actual static/GIF/video decoding, 12 media switches, Qt interface fixtures and six lifecycle/session scenarios. Website tests (13) and release protocol tests (6) passed. Installer and updater checks run against the final committed source before publishing and again in CI; their artifacts record exact hashes.
+
+Taskbar regressions use real Win32 regions on private windows and isolated XAML islands, never the user's Explorer. Coverage includes 100 region resets, resizing while hidden, repair of legacy stale rectangular clips, preservation of foreign offset regions, zero-sized/hidden/transparent trays, partially replaced columns, 20 damage/enable/delayed-rebuild/disable cycles, native bindings and bounded conflicting writers. Layout stop tests reject stale acknowledgements, retain the receipt on timeout and retry successfully. XAML checks wait for measured layout completion rather than assuming a 100 ms timer is sufficient. These tests now also gate cloud releases.
+
+Arrival coverage checks the desktop-anchor age limit, stored placement, one-minute deadline, manual restore, hover/click state, release-outside cancellation and preserved original files. A visible synthetic icon showed the hover label and was collected by clicking its hint; its original file content remained unchanged. The installed application and real user desktop were not replaced. The reported remote machine's exact long-running Explorer failure was not reproduced directly; isolated tests demonstrate the concrete clipping and invalid-restoration defects addressed here, not compatibility with every Windows build or third-party customization.
+
+Custom cursor authoring is a documentation-only proposal in this release.
+
+---
+
 # v2.0.3 release verification
 
 Local Windows regression passed on 2026-11-17: 125 native checks, actual static/GIF/MP4 playback, 12 media switches with no failures or remaining children, Qt settings/capture/recording/scroll/note fixtures and six isolated shutdown/session scenarios. After the shutdown guard, these six scenarios were repeated three times (18 passes), with no leftover children. The lifecycle harness waits for the application fixture tag before sending messages, avoiding a race between HWND creation and fixture initialization. Final local and CI artifacts record the exact executable hashes; CI rebuilds independently and publishes its own hashes. Website checks (13), release protocol checks (6) and the unchanged 105-entry catalog passed.

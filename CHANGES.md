@@ -1,3 +1,15 @@
+# v2.0.4 · 任务栏恢复与快捷收纳 / Taskbar recovery and quick collection
+
+- 修复隐藏期间显示器/DPI 尺寸变化后，旧窗口裁剪矩形可能截掉任务栏右侧。恢复时解除本组件的整窗裁剪，开关时检查遗留的过期矩形；保留非本组件的偏移或复杂裁剪。
+- 托盘临时零宽度、最大宽度为零、隐藏或透明时恢复可用布局，不再把这些异常值保存为退出后的原生状态。部分重建的布局列不覆盖原生恢复基线；恢复列、属性与布局完成后才确认关闭。
+- 美化开启前检查上次布局会话，关闭时等待还原确认；超时保留记录并重试恢复，不直接丢弃会话。此修复不重启 Explorer，也不结束用户的其他应用。
+- 最近 30 秒内在桌面右键后新增的内容优先显示在点击附近，并限制在显示器工作区内；没有有效位置时保留默认排布。气泡悬停显示“点击直接收纳”，点击立即收纳；拖出气泡释放会取消点击。一分钟自动收纳与原文件均保留。
+- 自定义鼠标设计仅提供后续方案，不包含在本版功能中。
+- Restores full taskbar visibility using current dimensions instead of replaying a stale pixel region after display/DPI changes. Toggle checks repair legacy rectangular clipping while preserving offset/complex regions.
+- Repairs transient zero-sized, hidden or transparent trays without saving the broken state as the native restoration baseline. Partial column rebuilds cannot replace a valid baseline; layout restoration completes before Stop is acknowledged.
+- Styling toggles recover recorded sessions and retain unacknowledged restoration for retry, without restarting Explorer or other applications.
+- New items use a recent desktop right-click position (30 seconds), clamped to the work area, with the existing fallback otherwise. Hover the one-minute hint to collect immediately; release outside to cancel. Automatic collection and original files are preserved.
+
 # v2.0.3 · 新增内容收纳与工具体验 / Desktop arrivals and tools
 
 - 修复桌面主动新建、下载或复制新增内容的发现与显示：先显示临时桌面图标和“1 分钟后自动收纳”气泡，到时加入收纳框并更新布局。自动收纳默认开启，可在美化设置关闭；手动还原到桌面的项目不会被计时收回。菜单、拖动和属性对话框操作期间延后收纳。

@@ -84,7 +84,9 @@ jobs:
         shell: pwsh
         # Hosted workers have no guaranteed visible MF presentation surface.
         # Decode real frames through the shipped fallback; local tests keep MF.
-        run: ./tools/test.ps1 -SkipBuild -VideoProbeBackend qt-ffmpeg
+        run: |
+          ./tools/test_taskbar.ps1 -CompilerRoot "$PWD/build/native-toolchain/Compiler"
+          ./tools/test.ps1 -SkipBuild -VideoProbeBackend qt-ffmpeg
       - run: node --test tests/test_website_downloads.mjs tests/test_website_theme.mjs tests/test_preview_download.mjs
       - name: Verify curated wallpaper metadata
         run: python tools/check_wallpaper_catalog.py

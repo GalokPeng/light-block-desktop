@@ -206,11 +206,15 @@ struct Layout {
         Windows::Foundation::IInspectable original{nullptr}, wanted{nullptr};
         Data::BindingBase binding{nullptr};
         std::function<bool()> matches;
+        std::function<bool()> validRestore;
         int64_t token{};
         LONG mask{};
         bool watching{};
 
         void remember() {
+            // Explorer can publish zero sizing during a rebuild. Never turn
+            // that transient value into the state restored when disabling.
+            if (validRestore && !validRestore()) return;
             original = target.ReadLocalValue(id);
             binding = nullptr;
             if (auto element=target.try_as<FrameworkElement>()) {
@@ -280,6 +284,15 @@ struct Layout {
         lease->target=target;
         lease->id=property;
         lease->wanted=box_value(value);
+        if (fresh) {
+            lease->original=DependencyProperty::UnsetValue();
+            if (property==FrameworkElement::WidthProperty() || property==FrameworkElement::MaxWidthProperty())
+                lease->validRestore=[target,property] {auto v=unbox_value<double>(target.GetValue(property));return std::isnan(v)||v>0;};
+            else if (target==tray && property==UIElement::VisibilityProperty())
+                lease->validRestore=[target,property] {return unbox_value<Visibility>(target.GetValue(property))==Visibility::Visible;};
+            else if (target==tray && property==UIElement::OpacityProperty())
+                lease->validRestore=[target,property] {return unbox_value<double>(target.GetValue(property))>.01;};
+        }
         lease->matches=[target,property,value] {
             auto actual=unbox_value<Value>(target.GetValue(property));
             if constexpr (std::is_same_v<Value,double>) {
@@ -408,6 +421,9 @@ struct Layout {
         set(tray, Grid::ColumnProperty(), 2);
         set(tray, Grid::ColumnSpanProperty(), 1);
         set(tray, FrameworkElement::WidthProperty(), std::numeric_limits<double>::quiet_NaN());
+        set(tray, FrameworkElement::MaxWidthProperty(), std::numeric_limits<double>::infinity());
+        set(tray, UIElement::VisibilityProperty(), Visibility::Visible);
+        set(tray, UIElement::OpacityProperty(), 1.0);
         set(tray, FrameworkElement::HorizontalAlignmentProperty(), HorizontalAlignment::Left);
         set(tray, FrameworkElement::MarginProperty(), Thickness{0,0,0,0});
         set(repeater, FrameworkElement::WidthProperty(), std::numeric_limits<double>::quiet_NaN());
@@ -518,7 +534,11 @@ struct Layout {
             if (!columns_match()) {
                 bool foreign=columns.Size()!=ourColumns.size();
                 for (unsigned i=0; !foreign && i<columns.Size(); ++i) foreign=columns.GetAt(i)!=ourColumns[i];
-                if (foreign) {
+                // A partially rebuilt collection can still contain our own
+                // columns. It is not a safe native restoration baseline.
+                bool complete=foreign && columns.Size()>0;
+                for (auto column : columns) if (std::find(ourColumns.begin(),ourColumns.end(),column)!=ourColumns.end()) complete=false;
+                if (complete) {
                     originalColumns.clear();
                     for (auto column : columns) originalColumns.push_back(column);
                 }
@@ -603,7 +623,8 @@ struct Layout {
         }
         auto leftGutter=commandLeft-left;
         auto rightGutter=seam-sectionGap/2-controlsRight;
-        auto valid=origin>=-1 && trayX>=origin+contentRight-1 && end<=host.ActualWidth()+1 &&
+        auto valid=tray.ActualWidth()>1 && tray.ActualHeight()>1 && tray.Visibility()==Visibility::Visible && tray.Opacity()>.01 &&
+                   origin>=-1 && trayX>=origin+contentRight-1 && end<=host.ActualWidth()+1 &&
                    std::abs((origin+left+end)-host.ActualWidth())<=8 && controlsFit &&
                    leftGutter>=0 && leftGutter<=6 && rightGutter>=-3 && rightGutter<=6;
         LONG gutters=(static_cast<LONG>(std::clamp(std::round(rightGutter*100),0.,32767.))<<16) |
@@ -621,7 +642,6 @@ struct Layout {
             try { property->target.UnregisterPropertyChangedCallback(property->id,property->token); } catch (...) {}
         }
         for (auto it=undo.rbegin(); it!=undo.rend(); ++it) try { (*it)(); } catch (...) {}
-        for (auto it=properties.rbegin(); it!=properties.rend(); ++it) try { (*it)->restore(); } catch (...) {}
         if (host && !ourColumns.empty()) try {
             auto columns=host.ColumnDefinitions();
             // Leave an external replacement alone when it hasn't been repaired.
@@ -632,6 +652,10 @@ struct Layout {
                 for (auto column : originalColumns) columns.Append(column);
             }
         } catch (...) {}
+        // Restore columns before child placement/widths, then finish the layout
+        // transaction before acknowledging Stop to the controlling process.
+        for (auto it=properties.rbegin(); it!=properties.rend(); ++it) try { (*it)->restore(); } catch (...) {}
+        if (host) try {host.InvalidateMeasure();host.InvalidateArrange();host.UpdateLayout();} catch (...) {}
     }
 };
 

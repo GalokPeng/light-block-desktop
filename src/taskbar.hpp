@@ -14,6 +14,7 @@ bool has_session();
 bool transition_tests();
 bool shutdown_tests();
 bool visibility_tests();
+bool layout_recovery_tests();
 bool shutdown();
 void tick();
 int helper_main(int argc,wchar_t **argv);

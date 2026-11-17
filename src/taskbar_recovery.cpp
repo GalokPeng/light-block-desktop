@@ -72,7 +72,9 @@ Backend system_backend(Record const& record,bool allow_current) {
         [](RECT& area){return SystemParametersInfoW(SPI_GETWORKAREA,0,&area,0)!=FALSE;},
         [](RECT before,RECT after){if(!SystemParametersInfoW(SPI_SETWORKAREA,0,&after,0)) return false;AreaChange change{before,after};EnumWindows(adjust_maximized,LPARAM(&change));return true;},
         [bar](){unique_gdi<HRGN> region(CreateRectRgn(0,0,0,0));if(!region) return -1;int type=GetWindowRgn(bar,region.get());if(type==ERROR) return 0;return type==NULLREGION?1:0;},
-        [bar](bool present,RECT bounds){HRGN region=present?CreateRectRgn(0,0,bounds.right-bounds.left,bounds.bottom-bounds.top):nullptr;if(present&&!region) return false;if(!SetWindowRgn(bar,region,TRUE)) {if(region) DeleteObject(region);return false;}return true;},
+        // Only full-window regions are leased. A stale pixel-size snapshot can
+        // permanently cut off the tray after the monitor changes dimensions.
+        [bar](bool,RECT){return SetWindowRgn(bar,nullptr,TRUE)!=0;},
         [bar]{return (GetWindowLongPtrW(bar,GWL_EXSTYLE)&WS_EX_TOPMOST)!=0;},
         [bar]{return SetWindowPos(bar,HWND_NOTOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)!=FALSE;}
     };

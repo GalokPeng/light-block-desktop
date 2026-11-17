@@ -21,6 +21,11 @@ void pump(unsigned milliseconds) {
         Sleep(5);
     } while (GetTickCount64()<end);
 }
+template<class Predicate> bool settle(Predicate predicate) {
+    auto deadline=GetTickCount64()+2000;
+    do {pump(15);if(predicate())return true;}while(GetTickCount64()<deadline);
+    return false;
+}
 
 int main(int argc, char** argv) {
     try {
@@ -163,6 +168,17 @@ int main(int argc, char** argv) {
             }
             std::cout << "PASS five logical screen widths remain centered\n";
 
+            // Delayed Explorer rebuilds must not poison the restore baseline.
+            tray.Width(0);tray.MaxWidth(0);tray.Opacity(0);tray.Visibility(Visibility::Collapsed);
+            pump(250);
+            require(tray.ActualWidth()>300 && tray.Opacity()==1 && status.state==healthy,
+                    "zero-sized/hidden tray did not recover");
+            require(std::isnan(tray.Width()) && std::isinf(tray.MaxWidth()),"tray constraints stayed poisoned");
+            auto mixed=host.ColumnDefinitions();mixed.RemoveAtEnd();
+            pump(250);
+            require(layout.columns_match() && status.state==healthy,"partial column rebuild did not recover");
+            std::cout << "PASS missing tray and partial grid rebuild recover without saving invalid baselines\n";
+
             repeater.Children().RemoveAt(0);
             require(!layout.connected(),"replaced native Start button was not detected");
             repeater.Children().InsertAt(0,start);
@@ -184,6 +200,8 @@ int main(int argc, char** argv) {
         pump(100);
         require(frame.Width()>=1600 && original.Visibility()==Visibility::Visible,"native latest values were not restored");
         require(host.ColumnDefinitions().Size()==1,"latest external columns were not restored");
+        require(std::isnan(tray.Width()) && std::isinf(tray.MaxWidth()) && tray.Visibility()==Visibility::Visible && tray.Opacity()==1,
+                "disabling replayed the missing-tray state");
         require(start.Width()==44 && search.ReadLocalValue(UIElement::RenderTransformProperty())==DependencyProperty::UnsetValue(),
                 "native control size or transform was not restored");
         std::cout << "PASS disabling restores latest native values and removes subscriptions\n";
@@ -204,6 +222,19 @@ int main(int argc, char** argv) {
             require(start.Width()==44,"disabling lost the native Start width");
         }
         std::cout << "PASS repeated enable/restore ignores stale ActualWidth and never grows the power button\n";
+        for(int cycle=0;cycle<20;++cycle){
+            tray.Width(0);tray.MaxWidth(0);tray.Opacity(0);tray.Visibility(Visibility::Collapsed);
+            {
+                Layout next;next.host=host;next.frame=frame;next.panel=panel;next.tray=tray;next.repeater=repeater;next.start=start;
+                require(next.decorate(original),"repeated repair could not acquire layout");pump(90);
+                require(tray.ActualWidth()>300&&tray.Opacity()==1,"enabling did not repair a previously missing tray");
+                next.burstStart=GetTickCount64()-6000;tray.Width(0);
+                require(settle([&]{return std::isnan(tray.Width())&&tray.ActualWidth()>300&&!next.scheduled;})&&!next.exhausted,"delayed tray loss did not recover");
+            }
+            pump(10);require(std::isnan(tray.Width())&&std::isinf(tray.MaxWidth())&&tray.Visibility()==Visibility::Visible&&tray.Opacity()==1,
+                             "repeated disable kept a broken tray baseline");
+        }
+        std::cout << "PASS twenty damaged-tray enable, delayed rebuild and disable cycles restore usable native state\n";
 
         {
             Layout bindingTest;

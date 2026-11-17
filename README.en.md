@@ -4,7 +4,7 @@
 <p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases"><strong>Download latest release</strong></a> · <a href="#feature-preview">Feature preview</a> · <a href="https://light-block-desktop.vercel.app/en/">Website</a> · <a href="README.md">简体中文</a> · <a href="CHANGES.md">Changelog</a></p>
 
 
-**v2.0.3 stable**: wallpapers, screen capture, recording, desktop styling and notes, with playback and recording components included.
+**v2.0.4 stable**: wallpapers, screen capture, recording, desktop styling and notes, with playback and recording components included.
 
 ## Download and install
 
@@ -64,7 +64,7 @@ Right-click the desktop background to create and pin a note. On Windows 11, star
 
 Settings and downloaded wallpapers stay on your device. The online gallery contacts media sources on demand. No account, ads or telemetry. Appearance offers three original silhouettes—Stream, Prism and Pixel—with custom colors and 75%–200% sizing. Mix them with independently colored Dots, Falling or Glow effects, which stop painting when idle. Settings retains the native Windows Night light entry. The app also includes a launcher, clipboard history, a file workbench and focus timers. [User guide](docs/usage.en.md)
 
-v2.0.3 fixes new desktop items appearing temporarily and collecting after one minute, with a visible hint. Organizer icons expose native Windows context menus for Properties, Delete, Rename and other shell actions. Icons use resolution-aware caching. The launcher is embedded in Tools with a clear Back button and Esc navigation; thumbnails and indexes load on demand, with idle caches released.
+v2.0.4 improves taskbar recovery after display changes and delayed tray rebuilds, with acknowledged restoration when styling is toggled. New desktop items appear near a recent desktop context-menu position; hover over the one-minute hint and click to collect immediately. Automatic collection after one minute remains available.
 
 The online gallery has 52 images, 20 GIFs and 33 videos, with media-type filters and bilingual search. The maintainer approved retaining the ten GIFs from the local review build. Every source file is at least 1920 × 1080 and no larger than 20 MB, without app-side recompression, trimming or upscaling. GIF candidates must be original 1080p, 16:9 complete looping scenes. GIFs have no likes/favorites threshold; available metrics are recorded as reported. Images and earlier videos retain their public-vote or favorite-based selection. Motion additions use source provenance, dated public page views, visual review and decoded-original verification; unpublished metrics remain null. It supports on-demand previews, byte-preserving downloads, progress/cancellation, downloaded status and Apply. GitHub stores URL and attribution metadata only. Downloads continue when settings close; quitting cancels unfinished downloads. [Evaluation and selection](docs/wallpaper-evaluation.md)
 
