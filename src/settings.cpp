@@ -48,7 +48,8 @@ static const Field options[]={
  F(5,hotkeys_enabled,"其他全局快捷键 · Ctrl+Alt+R / Space / V","Other shortcuts · Ctrl+Alt+R / Space / V",CHECK,0,1,"",""),
  F(0,wallpaper_sound,"视频壁纸声音","Video wallpaper sound",CHECK,0,1,"",""),
  F(4,record_system_audio,"录制系统声音","Record system audio",CHECK,0,1,"",""),
- F(4,record_microphone,"录制麦克风","Record microphone",CHECK,0,1,"","")
+ F(4,record_microphone,"录制麦克风","Record microphone",CHECK,0,1,"",""),
+ F(1,icon_opacity,"图标底板不透明度","Icon background opacity",SLIDER,0,100,"","")
 };
 #undef F
 static struct { HWND window,viewport,sections[6],controls[ARRAYSIZE(options)],labels[ARRAYSIZE(options)],startup,night,save,start,status;HBRUSH brush;int page,family,scroll,content;bool expanded[6],startup_checked,startup_initial;UINT hotkey_id;Settings draft,baseline; } s_options;

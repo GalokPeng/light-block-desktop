@@ -20,14 +20,28 @@ inline void protect_show(WINDOWPOS& position,HWND desktop){
     position.hwndInsertAfter=anchor(position.hwnd,desktop);
     position.flags=(position.flags&~SWP_NOZORDER)|SWP_NOACTIVATE;
 }
+// The organizer is a desktop surface throughout its lifetime. Owner-window
+// activation and programmatic raises do not necessarily include SHOWWINDOW.
+inline void protect_position(WINDOWPOS& position,HWND desktop){
+    if((position.flags&SWP_NOZORDER)&&!(position.flags&SWP_SHOWWINDOW))return;
+    position.hwndInsertAfter=anchor(position.hwnd,desktop);
+    position.flags=(position.flags&~SWP_NOZORDER)|SWP_NOACTIVATE|SWP_NOOWNERZORDER;
+}
 inline void place(HWND window,int x,int y,int width,int height,UINT flags){
     SetWindowPos(window,anchor(window,host()),x,y,width,height,flags|SWP_NOACTIVATE);
 }
-inline void maintain(HWND window){
-    if(!IsWindowVisible(window))return;HWND desktop=host();if(!desktop)return;
-    for(HWND current=GetTopWindow(nullptr);current;current=GetWindow(current,GW_HWNDNEXT)){
-        if(current==window)return;
-        if(current==desktop){place(window,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE);return;}
+inline void maintain(HWND window,HWND desktop){
+    if(!IsWindowVisible(window)||!desktop)return;
+    // Repair drift in either direction, including changes made with
+    // SWP_NOSENDCHANGING that bypass the pre-position guard.
+    bool seen=false,repair=(GetWindowLongPtrW(window,GWL_EXSTYLE)&WS_EX_TOPMOST)!=0;
+    for(HWND current=GetTopWindow(nullptr);!repair&&current;current=GetWindow(current,GW_HWNDNEXT)){
+        if(current==window){seen=true;continue;}
+        if(current==desktop){repair=!seen;break;}
+        auto owner=GetAncestor(current,GA_ROOTOWNER);
+        if(seen&&IsWindowVisible(current)&&!IsIconic(current)&&owner!=desktop&&owner!=GetShellWindow())repair=true;
     }
+    if(repair)SetWindowPos(window,anchor(window,desktop),0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER);
 }
+inline void maintain(HWND window){maintain(window,host());}
 }

@@ -12,6 +12,19 @@ bool snapshots(QString const& directory) {
     struct SnapshotTheme {QString previous;~SnapshotTheme(){qApp->setStyleSheet(previous);}} fixture_theme{qApp->styleSheet()};
     qApp->setStyleSheet(fixture_theme.previous+"\n"+styleSheet());
     QDir().mkpath(directory);resize(1250,850);ensurePolished();root_->layout()->activate();QElapsedTimer wait;wait.start();while(wait.elapsed()<800) { qApp->processEvents(QEventLoop::AllEvents,20);QThread::msleep(5); }
+    if(qEnvironmentVariable("LIGHTBLOCK_TEST_SCOPE")=="organizer"){
+        navigate(1);auto area=qobject_cast<QScrollArea*>(pages_->widget(1));
+        for(auto toggle:area->findChildren<QToolButton*>())if(toggle->isCheckable()&&toggle->arrowType()!=Qt::NoArrow)toggle->setChecked(true);
+        int id=-1;UiSetting d{};for(int n=0;api.setting(n,&d);++n)if(d.section==1&&d.kind==2&&d.high==100)id=n;
+        bool ok=id>=0&&fields_.contains(id);QJsonObject result{{"python_runtime",false},{"focused_organizer_scope",true}};
+        if(ok){auto wrapper=fields_[id];auto slider=qobject_cast<QSlider*>(wrapper->property("slider").value<QObject*>());auto value=qobject_cast<QLabel*>(wrapper->property("valueLabel").value<QObject*>());
+            ok=slider&&value&&slider->minimum()==0&&slider->maximum()==100;
+            if(ok)for(int n:{0,37,100}){slider->setValue(n);QElapsedTimer timer;timer.start();while(timer.elapsed()<260){qApp->processEvents(QEventLoop::AllEvents,15);QThread::msleep(2);}api.setting(id,&d);ok=ok&&d.value==n&&value->text()==QString::number(n)+"%";}
+            result["independent_opacity_slider_immediate_apply"]=ok;
+            if(ok){area->ensureWidgetVisible(wrapper);qApp->processEvents();QImage frame(size(),QImage::Format_ARGB32);frame.fill(Qt::transparent);render(&frame);ok=frame.save(directory+"/organizer-settings.png")&&ok;}
+        }
+        result["passed"]=ok;QFile report(directory+"/ui-checks.json");if(report.open(QIODevice::WriteOnly))report.write(QJsonDocument(result).toJson());else ok=false;return ok;
+    }
     QJsonArray memory_samples;auto memory_sample=[&](QString phase){PROCESS_MEMORY_COUNTERS_EX usage{};usage.cb=sizeof usage;bool measured=K32GetProcessMemoryInfo(GetCurrentProcess(),reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&usage),sizeof usage)!=FALSE;memory_samples.append(QJsonObject{{"phase",phase},{"measured",measured},{"private_bytes",double(usage.PrivateUsage)},{"working_set_bytes",double(usage.WorkingSetSize)},{"gdi_objects",int(GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS))},{"user_objects",int(GetGuiResources(GetCurrentProcess(),GR_USEROBJECTS))},{"widgets",QApplication::allWidgets().size()}});};memory_sample("main_initial");
     bool ok=true;QJsonObject report;report["width"]=width();report["height"]=height();report["python_runtime"]=false;report["fixture_layout_visible"]=isVisible();report["fixture_offscreen"]=testAttribute(Qt::WA_DontShowOnScreen);report["isolated_fixtures_inherit_main_theme"]=!styleSheet().isEmpty()&&qApp->styleSheet().contains(styleSheet());
     report["toggle_blocked_refresh_reversal_idle_settle"]=Toggle::fixture_tests();ok=report["toggle_blocked_refresh_reversal_idle_settle"].toBool()&&ok;

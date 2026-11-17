@@ -1,3 +1,12 @@
+# v2.0.6 · 收纳底板与桌面层级 / Organizer plates and desktop layering
+
+- 新增“图标底板不透明度”0–100% 滑块，独立于整个收纳背景；图标和文字保持原有清晰度。分组底板同步支持，调整即时生效并保存，旧配置默认保持原样。
+- 修复收纳框第一次显示及运行中被抬到其他窗口前面的问题：约束首次显示之外的层级变更，避免鼠标激活自动置前，并修复此前只能向上、不能向下纠正层级的检查。
+- 本次按维护者要求仅执行收纳透明度、设置和层级专项验证；不重复未改动的录屏、壁纸、任务栏及安装升级功能测试。发布保留完整构建、打包与公开资产校验。
+- Adds an independent 0–100% icon plate opacity slider, including group plates, with immediate application and persistence. Icons and labels remain crisp; existing configurations keep their appearance.
+- Guards organizer z-order changes throughout its lifetime, avoids activation raises and repairs drift both above and below the desktop layer.
+- This patch uses focused organizer regression as requested. Unchanged features are not retested; build, package and public asset integrity checks remain in place.
+
 # v2.0.5 · 背景透明度与全屏任务栏 / Background opacity and fullscreen taskbar
 
 - 收纳背景使用独立透明度合成，图标、图标底板与文字保持清晰；抗锯齿圆角继续使用逐像素透明，收起后缩减绘制缓冲区。

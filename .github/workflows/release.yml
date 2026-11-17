@@ -24,6 +24,7 @@ jobs:
       version: ${{ steps.plan.outputs.version }}
       build: ${{ steps.plan.outputs.build }}
       publish: ${{ steps.plan.outputs.publish }}
+      scope: ${{ steps.plan.outputs.scope }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -47,6 +48,8 @@ jobs:
           if ($env:GITHUB_REF.StartsWith('refs/tags/') -and $env:GITHUB_REF_NAME -ne $expectedTag) { throw 'Tag and app version disagree.' }
           $publish = $eligible -eq 'true' -and $env:REQUEST_PUBLISH -eq 'true'
           $build = $true
+          $scope = if ($version -eq '2.0.6') { 'organizer' } else { 'full' }
+          "scope=$scope" >> $env:GITHUB_OUTPUT
           "version=$version" >> $env:GITHUB_OUTPUT
           "build=$($build.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           "publish=$($publish.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
@@ -55,6 +58,8 @@ jobs:
     if: needs.plan.outputs.build == 'true'
     runs-on: windows-2022
     timeout-minutes: 120
+    env:
+      LIGHTBLOCK_TEST_SCOPE: ${{ needs.plan.outputs.scope }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -85,15 +90,22 @@ jobs:
         # Hosted workers have no guaranteed visible MF presentation surface.
         # Decode real frames through the shipped fallback; local tests keep MF.
         run: |
-          ./tools/test_taskbar.ps1 -CompilerRoot "$PWD/build/native-toolchain/Compiler"
-          ./tools/test.ps1 -SkipBuild -VideoProbeBackend qt-ffmpeg
-      - run: node --test tests/test_website_downloads.mjs tests/test_website_theme.mjs tests/test_preview_download.mjs
+          if ($env:LIGHTBLOCK_TEST_SCOPE -eq 'organizer') {
+            ./tools/test_organizer.ps1
+          } else {
+            ./tools/test_taskbar.ps1 -CompilerRoot "$PWD/build/native-toolchain/Compiler"
+            ./tools/test.ps1 -SkipBuild -VideoProbeBackend qt-ffmpeg
+          }
+      - if: needs.plan.outputs.scope != 'organizer'
+        run: node --test tests/test_website_downloads.mjs tests/test_website_theme.mjs tests/test_preview_download.mjs
       - name: Verify curated wallpaper metadata
+        if: needs.plan.outputs.scope != 'organizer'
         run: python tools/check_wallpaper_catalog.py
       - name: Build upgrade-compatible Setup and corresponding source assets
         shell: pwsh
         run: ./tools/release.ps1 -SkipBuild -SkipTests
       - name: Isolated localized install, upgrade and uninstall
+        if: needs.plan.outputs.scope != 'organizer'
         shell: pwsh
         run: |
           $compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue

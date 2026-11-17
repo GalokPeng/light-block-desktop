@@ -97,7 +97,7 @@ static const SettingField fields[]={
  FIELD("wallpaper",fit,0,0,3),FIELD("wallpaper",monitor,0,0,16),
  FIELD("wallpaper",fullscreen_pause,1,0,1),FIELD("wallpaper",battery_pause,1,0,1),FIELD("wallpaper",restore_on_start,1,0,1),
  FIELD("organizer",organizer_enabled,0,0,1),FIELD("organizer",organizer_alignment,2,0,2),FIELD("organizer",organizer_view,0,0,2),
- FIELD("organizer",organizer_auto_collect,1,0,1),FIELD("organizer",organizer_icon_size,1,0,2),FIELD("organizer",organizer_opacity,165,30,255),FIELD("organizer",organizer_glass,1,0,1),
+ FIELD("organizer",organizer_auto_collect,1,0,1),FIELD("organizer",organizer_icon_size,1,0,2),FIELD("organizer",organizer_opacity,165,30,255),FIELD("organizer",organizer_glass,1,0,1),FIELD("organizer",icon_opacity,100,0,100),
  FIELD("taskbar",taskbar_enabled,0,0,1),FIELD("taskbar",taskbar_radius,22,6,26),FIELD("taskbar",taskbar_opacity,79,0,100),
  FIELD("pointer",cursor_theme,0,0,3),FIELD("pointer",cursor_scale,100,75,200),FIELD("pointer",cursor_particles,0,0,1),FIELD("pointer",particle_style,0,0,2),
  FIELD("capture",capture_enabled,1,0,1),FIELD("capture",capture_modifiers,MOD_CONTROL|MOD_ALT,0,15),FIELD("capture",capture_key,'A',1,254),

@@ -1,3 +1,15 @@
+# v2.0.6 release verification
+
+The maintainer explicitly limited this patch to icon plate opacity and organizer layering. Local Windows builds passed on 2026-11-17. `tools/test_organizer.ps1` passed all five native checks and the focused Qt settings fixture. Unchanged wallpaper, recording, taskbar and installation flows were not rerun. The v2.0.6 CI scope preserves the build, focused organizer checks, packaged startup, asset integrity and archived-version gates; later versions return to the normal full scope.
+
+The actual organizer drawing path was exercised with individual and grouped entries, all three icon sizes, top/center/bottom placement, three panel opacities and plate opacities of 0/35/100%. Checks cover independent alpha, opaque icon/text pixels, premultiplied bounds and transparent corners. Settings default to 100% for older profiles; 0/37/100% changes apply immediately, survive save/reload and display the matching percentage. Invalid values are rejected or restored to the default. The generated settings-page image was inspected.
+
+Private offscreen native windows passed 60 cycles of show, resize, attempted top/topmost raises and deliberately bypassed position notifications. The guard and periodic repair retained application-above-organizer-above-desktop ordering without changing foreground focus. Three additional launches used the actual organizer preview with production desktop ownership and layering, synthetic files and no lease on real desktop icons. Across 522 visible-window samples, the organizer remained below the foreground application and above the Explorer desktop; all three launches preserved focus and exited normally. These sampled checks do not certify every Explorer build, third-party shell modification or sub-frame transition.
+
+No user installation/profile, desktop file, taskbar configuration or screen capture session was changed by these checks. Final CI and published release/website hashes are verified separately after the exact commit is pushed.
+
+---
+
 # v2.0.5 release verification
 
 Local Windows regression passed on 2026-11-17: **128 native checks**, static/GIF/MP4 playback, 12 media switches without failures or remaining children, Qt interface/note/capture/recording fixtures and six isolated lifecycle scenarios. The 14 isolated native taskbar layout checks, including 20 damaged-tray enable/rebuild/disable cycles, passed. Website checks (15) and release protocol checks (6) passed.

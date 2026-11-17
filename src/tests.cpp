@@ -11,11 +11,14 @@
 #include "window_shape.hpp"
 #include "desktop_surface.hpp"
 #include "desktop_layer.hpp"
+#include "ui_api.h"
 #include "ui_motion.hpp"
 #include "shell_menu.hpp"
 #include "directory_watch_tests.hpp"
 #include "icon_cache.hpp"
 bool settings_display_tests();
+int settings_describe(int id,UiSetting* out);
+int settings_change(int id,int value);
 bool settings_runtime_tests();
 bool settings_startup_tests();
 bool system_appearance_tests();
@@ -62,11 +65,50 @@ static bool desktop_layer_tests(){
     ok=ok&&ordinary.flags==0&&ordinary.hwndInsertAfter==HWND_TOP&&lb::desktop_layer::anchor(widget,nullptr)==HWND_BOTTOM;
     for(auto h:{widget,application,desktop})DestroyWindow(h);return ok;
 }
+static bool desktop_layer_runtime_tests(){
+    WNDCLASSW cls{};cls.hInstance=g_app.instance;cls.lpszClassName=L"LightBlock.OrganizerLayerRegression";
+    cls.lpfnWndProc=+[](HWND h,UINT m,WPARAM w,LPARAM l)->LRESULT{
+        if(m==WM_NCCREATE)SetWindowLongPtrW(h,GWLP_USERDATA,LONG_PTR(reinterpret_cast<CREATESTRUCTW*>(l)->lpCreateParams));
+        if(m==WM_WINDOWPOSCHANGING)lb::desktop_layer::protect_position(*reinterpret_cast<WINDOWPOS*>(l),HWND(GetWindowLongPtrW(h,GWLP_USERDATA)));
+        return DefWindowProcW(h,m,w,l);
+    };RegisterClassW(&cls);
+    auto create=[&](wchar_t const* name,HWND owner=nullptr){return CreateWindowExW(WS_EX_TOOLWINDOW,name,L"Organizer layer fixture",WS_POPUP,-24000,-24000,100,100,owner,nullptr,g_app.instance,owner);};
+    HWND desktop=create(L"STATIC"),application=create(L"STATIC"),widget=create(cls.lpszClassName,desktop),foreground=GetForegroundWindow();
+    if(!desktop||!application||!widget){for(auto h:{widget,application,desktop})if(h)DestroyWindow(h);return false;}
+    lb::scope_exit close([&]{for(auto h:{widget,application,desktop})DestroyWindow(h);});
+    SetWindowPos(desktop,HWND_BOTTOM,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+    SetWindowPos(application,GetWindow(desktop,GW_HWNDPREV),0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);
+    auto ordered=[&]{return GetWindow(widget,GW_HWNDPREV)==application&&GetWindow(widget,GW_HWNDNEXT)==desktop&&GetForegroundWindow()==foreground&&!(GetWindowLongPtrW(widget,GWL_EXSTYLE)&WS_EX_TOPMOST);};
+    for(int n=0;n<60;++n){
+        ShowWindow(widget,SW_SHOWNOACTIVATE);if(!ordered())return false;
+        for(auto above:{HWND_TOP,HWND_TOPMOST,HWND_NOTOPMOST}){SetWindowPos(widget,above,-24000,-24000,100+n,100+n,SWP_NOACTIVATE|SWP_NOOWNERZORDER);if(!ordered())return false;}
+        // Owner/third-party changes can bypass WM_WINDOWPOSCHANGING.
+        SetWindowPos(widget,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER|SWP_NOSENDCHANGING);
+        if(GetWindow(widget,GW_HWNDPREV)==application)return false;
+        lb::desktop_layer::maintain(widget,desktop);if(!ordered())return false;
+        ShowWindow(widget,SW_HIDE);
+    }return true;
+}
 static wchar_t checks[12000];
 static void check(BOOL result,const wchar_t *name) {
     if(passes+failures) StringCchCatW(checks,ARRAYSIZE(checks),L",\n");
     wchar_t line[350];StringCchPrintfW(line,350,L"    {\"name\":\"%s\",\"passed\":%s}",name,result?L"true":L"false");StringCchCatW(checks,ARRAYSIZE(checks),line);
     if(result) ++passes;else ++failures;
+}
+int run_organizer_tests(const wchar_t* report){
+    passes=failures=0;checks[0]=0;
+    check(desktop_layer_tests(),L"organizer-first-show-without-activation");
+    check(desktop_layer_runtime_tests(),L"organizer-sixty-repeated-shows-raises-resizes-bypass-repair");
+    check(lb::desktop_surface::tests(),L"organizer-alpha-premultiplication");
+    check(lb::organizer::surface_tests((std::filesystem::path(g_app.data)/L"surface").wstring()),L"organizer-independent-plate-background-opacity-icons-groups-sizes");
+    auto prior=g_app.settings;load_config();bool config=g_app.settings.icon_opacity==100;int id=-1;
+    for(int n=0;;++n){UiSetting d{};if(!settings_describe(n,&d))break;if(d.section==1&&d.kind==2&&d.high==100)id=n;}
+    config=config&&id>=0;if(config)for(int value:{0,37,100}){config=bool(settings_change(id,value))&&config;g_app.settings.icon_opacity=-1;load_config();config=config&&g_app.settings.icon_opacity==value;}
+    config=config&&!settings_change(id,-1)&&!settings_change(id,101);
+    WritePrivateProfileStringW(L"organizer",L"icon_opacity",L"999",g_app.config);load_config();config=config&&g_app.settings.icon_opacity==100;
+    g_app.settings=prior;save_config();check(config,L"organizer-plate-opacity-default-save-reload-range");
+    wchar_t output[15000];StringCchPrintfW(output,ARRAYSIZE(output),L"{\n \"passed\":%u, \"failed\":%u, \"checks\":[%s]}\n",passes,failures,checks);
+    if(report)write_utf8_atomic(report,output);return failures?1:0;
 }
 static uint32_t hash_image(const Image *i) { uint32_t h=2166136261u;for(size_t n=0;n<i->bytes/4;n+=17) h=(h^i->pixels[n])*16777619u;return h; }
 int run_self_tests(const wchar_t *report) {

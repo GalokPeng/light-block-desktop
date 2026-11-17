@@ -53,7 +53,7 @@ struct Settings {
     int fit,monitor,fullscreen_pause,battery_pause,restore_on_start;
     int organizer_enabled,organizer_alignment,organizer_view,organizer_auto_collect;
     int organizer_views[3]{};
-    int organizer_icon_size,organizer_opacity,organizer_glass;
+    int organizer_icon_size,organizer_opacity,organizer_glass,icon_opacity;
     int organizer_custom_position,organizer_x,organizer_y;
     int taskbar_enabled,taskbar_radius,taskbar_opacity;
     int cursor_theme,cursor_scale,cursor_particles,particle_style;
@@ -176,6 +176,7 @@ void capture_pin_bitmap(HBITMAP bitmap,RECT location,bool fit,bool edit=false,bo
 void launcher_show(HWND owner);
 void launcher_shutdown(void);
 int run_self_tests(const wchar_t *report);
+int run_organizer_tests(const wchar_t *report);
 void stress_begin(const wchar_t *report,BOOL crash);
 void stress_tick(void);
 void settings_show(int page);

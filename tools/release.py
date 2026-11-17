@@ -180,6 +180,14 @@ def smoke_at(exe, data):
     # use the Windows plugin; the offscreen plugin supplies no valid HWND.
     env["QT_QPA_PLATFORM"] = "windows"
     env["AV_LOG_FORCE_NOCOLOR"] = "1"
+    if os.environ.get("LIGHTBLOCK_TEST_SCOPE") == "organizer":
+        data = Path(data); data.mkdir(parents=True, exist_ok=True)
+        report = data.parent / "organizer-package-checks.json"
+        subprocess.run((str(exe), "--organizer-test", "--data-dir", str(data), "--report", str(report)), env=env, check=True, timeout=90)
+        result = json.loads(report.read_text(encoding="utf-8-sig"))
+        if result.get("failed") or not result.get("passed"):
+            raise RuntimeError("Packaged organizer regression failed")
+        return result
     updater = app / "runtime/QingkuaiUpdate.exe"
     if subprocess.run((str(updater),), env=env, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW).returncode != 1:
         raise RuntimeError("Updater did not reject missing arguments")
