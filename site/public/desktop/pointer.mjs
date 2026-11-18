@@ -1,3 +1,5 @@
+import {deploymentAssets} from './ui.mjs';
+
 // Same RGBA projection and shadow exception as src/cursor_art.cpp::tint_cur.
 function tint(canvas, color) {
   if (color === '#d9f2ed') return;
@@ -18,8 +20,8 @@ function tint(canvas, color) {
 const sheets=new Map();
 function sheetFor(theme) {
   if(!sheets.has(theme)){
-    const image=new Image();image.src='./art/'+theme+'.png';
-    sheets.set(theme,Promise.all([image.decode().then(()=>image),fetch('./art/'+theme+'.json').then(r=>r.json())])
+    const bundled=deploymentAssets?.cursors[theme];const image=new Image();image.src=bundled?.url||'./art/'+theme+'.png';
+    sheets.set(theme,Promise.all([image.decode().then(()=>image),bundled?.roles||fetch('./art/'+theme+'.json').then(r=>r.json())])
       .catch(error=>{sheets.delete(theme);throw error;}));
   }
   return sheets.get(theme);

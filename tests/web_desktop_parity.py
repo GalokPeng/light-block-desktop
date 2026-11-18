@@ -145,6 +145,7 @@ def fixtures(page, base):
         url = base + "/fixture/" + kind
         entries.append(dict(id=kind, kind=kind, title={"en":kind,"zh":kind}, author="Test fixture", width=1920,height=1080,bytes=len(data), sha1=hashlib.sha1(data).hexdigest(), source_url=base, license_url=base,license="Fixture",thumbnail_url=base+"/media/wallpapers/night-drive.webp",download_url=url,tags=[]))
         page.route(url, lambda route,_request,m=mime,d=data:route.fulfill(status=200,content_type=m,body=d))
+    page.route("**/desktop/?lang=zh", lambda route:route.fulfill(content_type="text/html",body=(ROOT/"site/public/desktop/index.html").read_text(encoding="utf8")))
     page.route("**/desktop/catalog.json",lambda route:route.fulfill(content_type="application/json",body=json.dumps(entries)))
     page.goto(base+"/desktop/?lang=zh")
     page.click('[data-act="library:online"]')

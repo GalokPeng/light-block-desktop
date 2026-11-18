@@ -1,3 +1,6 @@
+const block=document.getElementById('desktop-assets');
+export const deploymentAssets=block?JSON.parse(block.textContent):null;
+block?.remove();
 export const en = new URLSearchParams(location.search).get('lang') === 'en';
 document.documentElement.lang = en ? 'en' : 'zh-CN';
 export const t = (zh, english) => en ? english : zh;

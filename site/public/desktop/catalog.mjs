@@ -1,5 +1,5 @@
-import {t,escape as esc} from './ui.mjs';
-let entries,query='',kind='image',selectedId,active=null;
+import {t,escape as esc,deploymentAssets} from './ui.mjs';
+let entries=deploymentAssets?.catalog,query='',kind='image',selectedId,active=null;
 
 const typeName={image:t('静态','Still'),gif:'GIF',video:t('视频','Video')};
 const title=e=>t(e.title.zh,e.title.en);

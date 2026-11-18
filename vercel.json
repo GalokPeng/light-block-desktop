@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": null,
+  "buildCommand": "node tools/build_desktop_demo.mjs",
   "installCommand": "node --version",
   "outputDirectory": "site/public",
   "trailingSlash": true,

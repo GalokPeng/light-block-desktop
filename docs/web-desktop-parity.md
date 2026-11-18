@@ -42,6 +42,6 @@
 
 在仓库根目录运行 `python -m http.server 49173 --directory site/public`，再用装有 Playwright、Pillow 和 Chrome 的 Python 运行 `python tests/web_desktop_parity.py`。测试检查导出 PNG 的尺寸和像素、裁剪后的 GIF、滚动拼接、贴图编辑、桌面工具、移动端和中英文下载入口。实际目录测试会加载每个封面和动态片段元数据，受控素材则用于验证原件下载的完整性。
 
-`tools/web_demo_art.py` 从安装版素材重新生成指针和标注图形。`tools/web_demo_previews.py --cache <已核验原件目录> --fetch` 从正式目录生成网页清单、封面和预览，使用 FFmpeg 和 Pillow。每项预览沿用源作品许可，作者、来源、许可链接与原件地址随预览显示。原始大文件保留在各授权来源。
+`tools/web_demo_art.py` 从安装版素材重新生成指针和标注图形。`tools/web_demo_previews.py --cache <已核验原件目录> --fetch` 从正式目录生成网页清单、封面和预览，使用 FFmpeg 和 Pillow。每项预览沿用源作品许可，作者、来源、许可链接与原件地址随预览显示。原始大文件保留在各授权来源。Vercel 构建时运行 `node tools/build_desktop_demo.mjs`，把图库索引和光标图集嵌入虚拟桌面的 HTML。弱网进入体验时即可取得指针数据与列表，封面和视频仍按需加载。
 
 更细的原版参考见[截图行为矩阵](cpp-migration/CAPTURE_PARITY_MATRIX.md)和[录屏行为矩阵](cpp-migration/RECORDING_PARITY_MATRIX.md)。表中的验收路径是目标，用于逐项追踪实现进展。
