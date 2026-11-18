@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>轻块桌面 · Desktop demo</title>
+<link rel="stylesheet" href="./desktop.css">
+<script type="module" src="./desktop.mjs"></script>
+</head>
+<body>
+<main id="desk">
+  <div id="scene"><img id="wall" src="/media/wallpapers/mountain-bay.webp" alt=""><video id="movie" muted loop playsinline hidden></video></div>
+  <div id="files"></div>
+  <div id="workspace"><section id="app" class="window">
+    <div class="titlebar"><span class="brandmark"><img src="/media/icon.png" alt=""><b id="product"></b></span><span id="win-actions"></span></div>
+    <div class="layout"><nav id="rail"></nav><div class="content" id="content"></div></div>
+  </section>
+  <div id="stickies"></div>
+  <div id="results"></div></div>
+  <div id="bar"></div>
+  <div id="toast" role="status" data-html2canvas-ignore></div>
+  <div id="capture-layer" hidden data-html2canvas-ignore></div>
+  <div id="rec-state" hidden data-html2canvas-ignore></div>
+</main>
+<noscript><p>在线体验需要 JavaScript。 Enable JavaScript for the desktop demo.</p></noscript>
+</body></html>

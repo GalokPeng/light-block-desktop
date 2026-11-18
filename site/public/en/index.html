@@ -11,6 +11,7 @@
   <meta name="color-scheme" content="light dark">
   <script src="/theme.js"></script>
   <link rel="stylesheet" href="/site.css">
+  <link rel="stylesheet" href="/desktop/stage.css">
   <script type="module" src="/downloads.mjs"></script>
 
 </head>
@@ -32,7 +33,15 @@
     </div>
   </header>
   <main id="main">
-    <section class="hero">
+    <section class="lab-stage" aria-label="Desktop playground">
+      <div class="lab-set">
+        <div class="lab-caption"><strong>Desktop playground</strong><span>This preview has limited features. Install the app for the full experience.</span></div>
+        <div class="lab-monitor"><iframe src="/desktop/?lang=en" title="Interactive Windows desktop simulation"></iframe></div>
+        <div class="lab-stem" aria-hidden="true"></div><div class="lab-foot" aria-hidden="true"></div>
+      </div>
+      <div class="lab-cta"><a href="#download">Try it now <span aria-hidden="true">↓</span></a></div>
+    </section>
+    <section class="hero" id="download">
       <div class="wrap hero-inner">
         <div>
           <p class="kicker">WINDOWS 10 / 11 · X64</p>
@@ -41,12 +50,12 @@
           <div class="actions"><a class="button primary" data-setup-download href="https://github.com/GalokPeng/light-block-desktop/releases/latest/download/Qingkuai-Setup-x64.exe">Download Windows Setup ↓</a><a class="button secondary" href="https://github.com/GalokPeng/light-block-desktop">View source ↗</a></div>
           <div class="download-options"><label>Download source <select data-download-source aria-label="Download source"><option value="github" selected>GitHub (official)</option><option value="gh-proxy">gh-proxy.com mirror</option><option value="ghfast">ghfast.top mirror</option></select></label><a href="/download/?format=checksum">SHA-256 checksum</a></div>
           <p class="fine">Switch sources if a download is slow. All links track the latest stable installer.</p>
-          <p class="fine">2.0.5 · MIT licensed · Installer and portable ZIP</p>
+          <p class="fine">2.0.6 · MIT licensed · Installer and portable ZIP</p>
           <p class="preview-entry"><a data-archive-download href="https://github.com/GalokPeng/light-block-desktop/releases/download/v1.0.0/Qingkuai-Setup-x64.exe">Download v1.0.0 ↓</a><span>v2.0.6 is the current release. The previous version remains available.</span></p>
           <p class="fine">Rewritten in C++ since v2.0.0, with ongoing work to reduce memory overhead and improve responsiveness. Try the latest release!</p>
         </div>
         <figure>
-          <a class="frame" href="/media/v2-wallpaper.webp"><img src="/media/v2-wallpaper.webp" alt="Light Block Desktop v2.0.0" width="1250" height="850" fetchpriority="high"></a>
+          <a class="frame" href="/media/v2-wallpaper.webp"><img src="/media/v2-wallpaper.webp" alt="Light Block Desktop v2.0.0" width="1250" height="850" loading="lazy"></a>
           <figcaption>Actual v2.0.0 interface · bundled wallpapers</figcaption>
         </figure>
       </div>
