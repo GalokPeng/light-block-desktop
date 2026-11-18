@@ -4,12 +4,12 @@
   border-bottom: 1px solid var(--line);
 }
 .lab-stage::before { content:""; position:absolute; inset:0; z-index:-1; opacity:.36; background-image:radial-gradient(var(--muted) .6px, transparent .8px); background-size:18px 18px; mask-image:linear-gradient(transparent,black 52%,transparent); }
-.lab-set {width:min(1120px,calc(100% - 64px),calc((100svh - 225px) * 2.05)); min-width:min(690px,calc(100% - 64px)); margin:auto}
+.lab-set {width:min(1120px,calc(100% - 64px),calc((100svh - 225px) * 1.77778)); min-width:min(690px,calc(100% - 64px)); margin:auto}
 .lab-caption {display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding:0 2px 10px;color:var(--muted);font-size:13px}
 .lab-caption strong {color:var(--ink);font-weight:650;letter-spacing:.03em;font-size:16px}
 .lab-monitor {position:relative; isolation:isolate; padding:10px 10px 17px; border:1px solid #555b62; border-radius:20px; background:linear-gradient(115deg,#404650,#15191b 40%,#343a40 90%); box-shadow:0 16px 35px -18px #0c211c88,inset 0 0 0 2px #ffffff13;}
 .lab-monitor::after {content:"";position:absolute;right:25px;bottom:6px;width:4px;height:4px;border-radius:50%;background:#abe5d3;}
-.lab-monitor iframe {width:100%;aspect-ratio:2.05;display:block;border:0;border-radius:10px;background:#182e36;color-scheme:normal;}
+.lab-monitor iframe {width:100%;aspect-ratio:16/9;display:block;border:0;border-radius:10px;background:#182e36;color-scheme:normal;}
 .lab-stem {width:11%;height:clamp(16px,2.7vh,28px);margin:auto;background:linear-gradient(90deg,#919a9e,#c8cdce 50%,#8d969c);clip-path:polygon(10% 0,90% 0,100% 100%,0 100%)}
 .lab-foot {width:22%;height:6px;margin:auto;background:linear-gradient(#d3d7d8,#8a9296);border-radius:90% 90% 4px 4px;box-shadow:0 4px 9px #152e3140;}
 .lab-cta {display:flex;justify-content:center;margin-top:15px}
