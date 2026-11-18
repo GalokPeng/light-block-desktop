@@ -161,6 +161,7 @@ let shelfExpanded=false,shelfQuery='',selectedFile=null,shelfMove=false,shelfOri
 const openSections=new Set();
 function render(){
   disposeStudio?.();disposeStudio=null;
+  $('content').removeAttribute('aria-busy');
   const panels={wall:renderWalls,cursor:renderAppearance,capture:renderCapture,tools:renderTools,settings,about};
   const actions=ib('theme',t('切换明暗主题','Toggle theme'),state.theme==='dark'?'moon':'sun')+button('language',t('EN','中'));
   $('content').innerHTML='<header class="page-head"><div><small>'+t('给桌面留一点安静','A QUIETER DESKTOP')+'</small><h1>'+(state.tab==='capture'?t('截屏与录屏','Capture and recording'):sections[state.tab])+'</h1></div><div>'+actions+(state.tab==='wall'?button('import',t('＋ 导入壁纸','＋ Import'),true):state.tab==='tools'?button('newnote',t('＋ 新建便签','＋ New note'),true):'')+'</div></header>'+panels[state.tab]();

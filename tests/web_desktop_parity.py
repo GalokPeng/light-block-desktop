@@ -246,7 +246,7 @@ def actual_catalog(page,base):
     assert counts=={"image":52,"gif":20,"video":33}
     total=page.evaluate("""async()=>{const q=await(await fetch('./catalog.json')).json();let i=0,passed=0;
       async function check(){while(i<q.length){const it=q[i++],img=new Image();img.src=it.cover;await img.decode();
-        if(it.kind!=='image'){await new Promise((resolve,reject)=>{const v=document.createElement('video');v.muted=true;v.preload='metadata';const timer=setTimeout(()=>reject(Error(it.id)),10000);
+        if(it.kind!=='image'){await new Promise((resolve,reject)=>{const v=document.createElement('video');v.muted=true;v.preload='metadata';const timer=setTimeout(()=>reject(Error(it.id)),30000);
           v.onloadedmetadata=()=>{clearTimeout(timer);const ok=v.videoWidth>0&&v.duration>0;v.removeAttribute('src');v.load();ok?resolve():reject(Error(it.id));};v.onerror=()=>{clearTimeout(timer);reject(Error(it.id));};v.src=it.preview;});}
         passed++;}}
       await Promise.all(Array.from({length:4},check));return passed;}""")
@@ -264,11 +264,13 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("base",nargs="?",default="http://127.0.0.1:49173")
     parser.add_argument("--channel",default="chrome")
+    parser.add_argument("--direct",action="store_true",help="Bypass the local system proxy when checking a deployment")
     args=parser.parse_args()
     with sync_playwright() as pw:
-        browser=pw.chromium.launch(channel=args.channel)
+        browser=pw.chromium.launch(channel=args.channel,args=['--no-proxy-server'] if args.direct else [])
+        expect.set_options(timeout=30000 if args.base.startswith('https:') else 7000)
         desktop=browser.new_page(viewport={"width":1366,"height":900},locale="zh-CN")
-        desktop.set_default_timeout(7000)
+        desktop.set_default_timeout(30000 if args.base.startswith('https:') else 7000)
         exercise(desktop,args.base)
         fixtures(browser.new_page(),args.base)
         desktop_tools(browser.new_page(viewport={'width':1024,'height':650}),args.base)

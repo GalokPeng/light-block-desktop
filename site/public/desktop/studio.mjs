@@ -1,5 +1,5 @@
 import {$,t,button,toast} from './ui.mjs';
-import {editFrame} from './editor.mjs';
+
 
 // GIF89a, a global 3:3:2 palette and literal LZW blocks with a bounded code width.
 function gifWriter(width,height,fps){
@@ -53,6 +53,7 @@ export function recordingControls(box,video,seconds){
   }
   controls.onclick=async e=>{const a=e.target.closest('[data-act]')?.dataset.act;if(!a||!crop||job)return;e.stopPropagation();video.pause();
     if(a==='crop'||a==='ink'){
+      const {editFrame}=await import('./editor.mjs');if(!box.isConnected)return;
       const r={x:0,y:0,w:video.videoWidth,h:video.videoHeight};box.style.visibility='hidden';
       stopEdit=editFrame(frame(),{initial:a==='crop'?{...crop}:r,pinEdit:true,mediaEdit:a,onClose(){box.style.visibility='';stopEdit=null;},onOutput(key,_,rect,layer){
         if(key==='done'){if(a==='crop'){crop=rect;status.textContent=rect.w+' × '+rect.h;}else{if(!ink)ink=layer;else ink.getContext('2d').drawImage(layer,0,0);overlay();}}

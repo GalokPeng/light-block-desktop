@@ -1,6 +1,6 @@
 import { $, t, ib, button, drag, toast } from './ui.mjs';
 import {recordingControls} from './studio.mjs';
-import { editFrame } from './editor.mjs';
+
 
 let resultZ=1,currentResult;
 let renderer, busy=false, captureCleanup, recording=false, recordingSession, playingUrl;
@@ -126,7 +126,7 @@ export async function startCapture(options={}){
   let transition=null;
   try{
     const rects=[...desk.querySelectorAll('.file-tile,.note,.result,.bar-part,.document-window')].filter(el=>el.offsetWidth&&el.offsetHeight).map(el=>{const r=el.getBoundingClientRect();return {x:Math.floor(r.x),y:Math.floor(r.y),w:Math.round(r.width),h:Math.round(r.height),window:true};});
-    const frame=options.pin||await snapshot();if(document.hidden){busy=false;return;}
+    const [{editFrame},frame]=await Promise.all([import('./editor.mjs'),options.pin||snapshot()]);if(document.hidden){busy=false;return;}
     if(options.pin){const r=options.box.getBoundingClientRect();Object.assign(layer.style,{inset:'auto',left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'});layer.classList.add('pin-edit');options.box.style.visibility='hidden';}
     captureCleanup=editFrame(frame,{initialMarks:options.marks,intent:options.recordSelection?'record':options.scrollSelection?'longshot':'',targets:rects,pinEdit:!!options.pin,initial:options.pin?{x:0,y:0,w:frame.width,h:frame.height}:null,
       onClose(){captureCleanup=null;busy=false;layer.classList.remove('pin-edit');layer.removeAttribute('style');if(options.box)options.box.style.visibility='';transition?.();},
