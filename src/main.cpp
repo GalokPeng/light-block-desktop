@@ -307,15 +307,20 @@ static void request_exit(bool session_ending=false) {
 }
 int app_session_end(int phase) {
     if(phase<0) {
+        lb::organizer::suspend_for_session_end();
         bool ready=g_app.close_requested||exit_checkpoint(false);
-        if(!ready) ShutdownBlockReasonCreate(g_app.window,tr(L"正在保存便签和设置",L"Saving notes and settings"));
+        if(!ready) {
+            ShutdownBlockReasonCreate(g_app.window,tr(L"正在保存便签和设置",L"Saving notes and settings"));
+            lb::organizer::resume_after_cancelled_session();
+        }
         return ready;
     }
     ShutdownBlockReasonDestroy(g_app.window);
-    if(!phase) {log_line(L"Windows session end cancelled; application remains running");return 0;}
+    if(!phase) {lb::organizer::resume_after_cancelled_session();log_line(L"Windows session end cancelled; application remains running");return 0;}
     // Windows may terminate us as soon as WM_ENDSESSION returns. Give helpers
     // a bounded chance to restore; durable receipts cover forced termination.
     static bool ending=false;if(ending) return 0;ending=true;
+    lb::organizer::suspend_for_session_end();
     ULONGLONG deadline=GetTickCount64()+3000;request_exit(true);
     while(IsWindow(g_app.window)&&GetTickCount64()<deadline) {
         request_exit(true);MSG message{};
@@ -437,15 +442,18 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR line,int show) {
     bool fixture=lifecycle_fixture||organizer_preview||ui_snapshots||update_fixture||self_test||organizer_test||stress||performance_report;bool helper=worker||taskbar_helper||icon_lease||pointer_helper||static_helper;
     fixture_mode=fixture;
     if(fixture&&!custom_profile){LocalFree(argv);return 2;}
-    if(!helper&&!fixture){auto profile=lb::profile::select_with_progress(g_app.exe,custom_profile?std::filesystem::path(g_app.data):std::filesystem::path{});if(!profile.ok){MessageBoxW(nullptr,profile.error.c_str(),L"轻块桌面",MB_ICONERROR);LocalFree(argv);return 3;}StringCchCopyW(g_app.data,LB_PATH,profile.path.c_str());}
+    if(!helper&&!fixture){auto directory=custom_profile?std::filesystem::path(g_app.data):std::filesystem::path{};
+        auto profile=background&&!desktop_action?lb::profile::select(g_app.exe,directory):lb::profile::select_with_progress(g_app.exe,directory);if(!profile.ok){MessageBoxW(nullptr,profile.error.c_str(),L"轻块桌面",MB_ICONERROR);LocalFree(argv);return 3;}StringCchCopyW(g_app.data,LB_PATH,profile.path.c_str());}
     if(!ensure_directory(g_app.data)){MessageBoxW(nullptr,L"The data folder is not writable.",L"Light Block Desktop",MB_ICONERROR);LocalFree(argv);return 3;}
+    // The visibility helper only needs its recovery receipt. In particular it
+    // must not wait for settings/library I/O on the session-end critical path.
+    if(icon_lease) {int result=lb::organizer::lease_main(argc,argv);LocalFree(argv);return result;}
     path_join(g_app.config,LB_PATH,g_app.data,L"settings.ini");if(fixture&&GetFileAttributesW(g_app.config)!=INVALID_FILE_ATTRIBUTES){LocalFree(argv);return 2;}load_config();
     if(lifecycle_fixture||organizer_preview||ui_snapshots||update_fixture||performance_report){g_app.settings.organizer_enabled=g_app.settings.taskbar_enabled=g_app.settings.cursor_theme=g_app.settings.cursor_particles=g_app.settings.clipboard_enabled=g_app.settings.restore_on_start=g_app.settings.notes_background=g_app.settings.capture_enabled=0;}
     if(organizer_preview)g_app.settings.organizer_enabled=1;
     if(static_helper){int result=lb::static_wallpaper::helper_main(argc,argv);LocalFree(argv);return result;}
     if(worker) { int result=worker_main(argc,argv);LocalFree(argv);return result; }
     if(taskbar_helper) { int result=lb::taskbar::helper_main(argc,argv);LocalFree(argv);return result; }
-    if(icon_lease) { int result=lb::organizer::lease_main(argc,argv);LocalFree(argv);return result; }
     if(pointer_helper) { int result=lb::pointer::helper_main(argc,argv);LocalFree(argv);return result; }
     CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
     if(organizer_test){int result=run_organizer_tests(report);CoUninitialize();LocalFree(argv);return result;}
@@ -453,6 +461,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR line,int show) {
     DWORD hash=2166136261u;for(const wchar_t *p=g_app.data;*p;++p) hash=(hash^(DWORD)towlower(*p))*16777619u;if(!hash) hash=1;
     wchar_t mutex[100];StringCchPrintfW(mutex,100,L"Local\\LightBlockDesktopNative-%08lx",hash);g_app.mutex=CreateMutexW(NULL,FALSE,mutex);BOOL exists=GetLastError()==ERROR_ALREADY_EXISTS;
     if(quit || exists) { Existing e={hash,NULL};EnumWindows(find_existing,(LPARAM)&e);if(e.window&&(quit||desktop_action||!background)) PostMessageW(e.window,WM_COMMAND,quit?900:desktop_action?desktop_action:901,0);if(g_app.mutex) CloseHandle(g_app.mutex);CoUninitialize();LocalFree(argv);return quit&&!e.window?1:0; }
+    // The controller requests restoration before ordinary helpers and Explorer
+    // receive the default application-priority shutdown notification.
+    SetProcessShutdownParameters(0x380,0);
     if(!fixture)lb::recording::audio::cleanup_abandoned(std::filesystem::path(g_app.data)/L"recordings");
     INITCOMMONCONTROLSEX controls={sizeof controls,ICC_STANDARD_CLASSES|ICC_LISTVIEW_CLASSES|ICC_TAB_CLASSES|ICC_BAR_CLASSES|ICC_HOTKEY_CLASS|ICC_DATE_CLASSES};InitCommonControlsEx(&controls);g_app.dpi=GetDpiForSystem();fonts();load_library();
     taskbar_created=RegisterWindowMessageW(L"TaskbarCreated");WNDCLASSEXW cls={};cls.cbSize=sizeof cls;cls.lpfnWndProc=window_proc;cls.hInstance=instance;cls.lpszClassName=LB_CLASS;cls.hCursor=LoadCursorW(NULL,IDC_ARROW);cls.hIcon=LoadIconW(instance,MAKEINTRESOURCEW(1));RegisterClassExW(&cls);

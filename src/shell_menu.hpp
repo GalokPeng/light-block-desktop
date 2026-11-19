@@ -10,6 +10,10 @@ class Menu {
     winrt::com_ptr<IContextMenu3> menu3_;
     HWND owner_{};
     UINT count_{};
+    bool system_shortcut_{};
+    bool protected_verb(UINT id) const {
+        return system_shortcut_&&(is_verb(id,"delete")||is_verb(id,"cut")||is_verb(id,"rename"));
+    }
     static LRESULT CALLBACK messages(HWND hwnd,UINT message,WPARAM wp,LPARAM lp,UINT_PTR id,DWORD_PTR data) {
         auto self=reinterpret_cast<Menu*>(data);
         if(message==WM_NCDESTROY){RemoveWindowSubclass(hwnd,messages,id);self->owner_=nullptr;}
@@ -26,19 +30,24 @@ public:
     ~Menu(){if(owner_)RemoveWindowSubclass(owner_,messages,UINT_PTR(this));}
     bool append(HWND owner,HMENU target,std::wstring const& path,bool extended=false){
         if(path.empty())return false;
+        system_shortcut_=path==L"shell:MyComputerFolder"||path==L"shell:RecycleBinFolder"||path==L"ms-settings:";
         PIDLIST_ABSOLUTE item{};if(FAILED(SHParseDisplayName(path.c_str(),nullptr,&item,0,nullptr)))return false;
         scope_exit free_item([&]{CoTaskMemFree(item);});winrt::com_ptr<IShellFolder> folder;PCUITEMID_CHILD child{};
         if(FAILED(SHBindToParent(item,__uuidof(IShellFolder),folder.put_void(),&child)))return false;
         if(FAILED(folder->GetUIObjectOf(owner,1,&child,__uuidof(IContextMenu),nullptr,menu_.put_void())))return false;
         auto result=menu_->QueryContextMenu(target,0,first_id,last_id,CMF_NORMAL|CMF_CANRENAME|(extended?CMF_EXTENDEDVERBS:0));
         if(FAILED(result)){menu_=nullptr;return false;}count_=HRESULT_CODE(result);
+        // The organizer's built-in shortcuts represent shell locations. Keep
+        // their local display-name action separate from changing Explorer.
+        if(system_shortcut_) for(UINT offset=0;offset<count_;++offset)
+            if(protected_verb(first_id+offset)) DeleteMenu(target,first_id+offset,MF_BYCOMMAND);
         menu2_=menu_.try_as<IContextMenu2>();menu3_=menu_.try_as<IContextMenu3>();owner_=owner;
         if(!SetWindowSubclass(owner,messages,UINT_PTR(this),DWORD_PTR(this)))owner_=nullptr;
         return count_!=0;
     }
     bool owns(UINT command)const{return menu_&&command>=first_id&&command<first_id+count_;}
     bool invoke(UINT command,POINT point){
-        if(!owns(command)||!owner_||!IsWindow(owner_))return false;
+        if(!owns(command)||protected_verb(command)||!owner_||!IsWindow(owner_))return false;
         CMINVOKECOMMANDINFOEX info{sizeof info};info.fMask=CMIC_MASK_UNICODE|CMIC_MASK_PTINVOKE;
         if(GetKeyState(VK_SHIFT)<0)info.fMask|=CMIC_MASK_SHIFT_DOWN;
         if(GetKeyState(VK_CONTROL)<0)info.fMask|=CMIC_MASK_CONTROL_DOWN;

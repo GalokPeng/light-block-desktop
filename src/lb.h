@@ -71,7 +71,7 @@ struct Image {
     uint32_t background{};
     RECT previous{};
     std::unique_ptr<uint32_t[]> pixels,backup,scratch;
-    size_t bytes{},scratch_capacity{};
+    size_t bytes{},scratch_capacity{},backup_capacity{};
     BOOL gif{};
 };
 struct Item { wchar_t path[LB_PATH], title[160]; MediaKind kind; HBITMAP thumb;int builtin; };

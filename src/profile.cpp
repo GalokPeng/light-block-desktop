@@ -20,7 +20,7 @@ bool writable(fs::path const& directory){
 fs::path legacy_directory(){PWSTR path=nullptr;HRESULT hr=SHGetKnownFolderPath(FOLDERID_LocalAppData,KF_FLAG_DEFAULT,nullptr,&path);if(SUCCEEDED(hr)&&path){fs::path result=fs::path(path)/LB_PROFILE_DIRECTORY;CoTaskMemFree(path);return result;}if(path)CoTaskMemFree(path);wchar_t buffer[LB_PATH]{};DWORD length=GetEnvironmentVariableW(L"LOCALAPPDATA",buffer,LB_PATH);require(length&&length<LB_PATH,"Cannot locate the per-user data directory");return fs::path(buffer)/LB_PROFILE_DIRECTORY;}
 Selection direct(fs::path const& directory){require(writable(directory),"The selected profile directory is not writable");fs::create_directories(directory);Selection out;out.ok=true;out.path=directory;return out;}
 std::wstring reg_string(HKEY key,wchar_t const* name){DWORD type{},bytes{};if(RegQueryValueExW(key,name,nullptr,&type,nullptr,&bytes)!=ERROR_SUCCESS||type!=REG_SZ||bytes>65536)return {};std::vector<wchar_t> text(bytes/2+1);if(RegQueryValueExW(key,name,nullptr,&type,reinterpret_cast<BYTE*>(text.data()),&bytes)!=ERROR_SUCCESS)return {};return text.data();}
-bool set_string(HKEY key,wchar_t const* name,std::wstring const& value){return RegSetValueExW(key,name,0,REG_SZ,reinterpret_cast<BYTE const*>(value.c_str()),DWORD((value.size()+1)*sizeof(wchar_t)))==ERROR_SUCCESS;}
+bool set_string(HKEY key,wchar_t const* name,std::wstring const& value){if(reg_string(key,name)==value) return true;return RegSetValueExW(key,name,0,REG_SZ,reinterpret_cast<BYTE const*>(value.c_str()),DWORD((value.size()+1)*sizeof(wchar_t)))==ERROR_SUCCESS;}
 bool inno_record(fs::path const& directory){
     for(auto const& entry:fs::directory_iterator(directory)){
         auto name=lower(entry.path().filename().wstring());if(!name.starts_with(L"unins")||entry.path().extension()!=L".dat"||!entry.is_regular_file())continue;auto uninstaller=entry.path();uninstaller.replace_extension(L".exe");if(!fs::is_regular_file(uninstaller))continue;
@@ -104,8 +104,8 @@ bool desktop_menu(fs::path const& executable,bool enabled,bool official,bool eng
         bool ok=true;
         for(auto const& entry:entries){
             if(!enabled){LONG result=RegDeleteTreeW(HKEY_CURRENT_USER,entry.key.c_str());ok=ok&&(result==ERROR_SUCCESS||result==ERROR_FILE_NOT_FOUND);continue;}
-            HKEY key{},command{};if(RegCreateKeyExW(HKEY_CURRENT_USER,entry.key.c_str(),0,nullptr,0,KEY_SET_VALUE,nullptr,&key,nullptr)!=ERROR_SUCCESS)return false;
-            bool changed=set_string(key,L"MUIVerb",entry.label)&&set_string(key,L"Icon",entry.icon);if(changed&&RegCreateKeyExW(key,L"command",0,nullptr,0,KEY_SET_VALUE,nullptr,&command,nullptr)==ERROR_SUCCESS){changed=set_string(command,L"",entry.command);RegCloseKey(command);}else changed=false;RegCloseKey(key);ok=ok&&changed;
+            HKEY key{},command{};if(RegCreateKeyExW(HKEY_CURRENT_USER,entry.key.c_str(),0,nullptr,0,KEY_QUERY_VALUE|KEY_SET_VALUE,nullptr,&key,nullptr)!=ERROR_SUCCESS)return false;
+            bool changed=set_string(key,L"MUIVerb",entry.label)&&set_string(key,L"Icon",entry.icon);if(changed&&RegCreateKeyExW(key,L"command",0,nullptr,0,KEY_QUERY_VALUE|KEY_SET_VALUE,nullptr,&command,nullptr)==ERROR_SUCCESS){changed=set_string(command,L"",entry.command);RegCloseKey(command);}else changed=false;RegCloseKey(key);ok=ok&&changed;
         }
         return ok;
     }catch(...){return false;}

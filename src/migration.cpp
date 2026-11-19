@@ -125,7 +125,22 @@ void collections(Context& c) {
     write(c.stage/L"organizer.json",L"{\"schema\":1,\"groups\":["+groups+L"],\"entries\":["+entries+L"]}\n");
 }
 void notes(Context& c,LegacySql& old) {
-    if(!old.table("notes"))return;LegacySql::Rows rows(old,"SELECT id,title,body,color,done,due,notified,pinned,updated,archived,pin_x,pin_y,pin_w,pin_h FROM notes ORDER BY updated,id");size_t count=0;
+    if(!old.table("notes"))return;
+    // Older Python installs added these five columns at different times.
+    // Read their original defaults without altering the backed-up database.
+    LegacySql::Rows schema(old,"PRAGMA table_info(notes)");
+    std::set<std::wstring> columns;
+    while(schema.next())columns.insert(lower(schema.text(1)));
+    for(auto field:{L"id",L"title",L"body",L"color",L"done",L"due",L"notified",L"pinned",L"updated"})
+        require(columns.contains(field),"Required legacy notes column is missing");
+    auto optional=[&](std::wstring const& name,char const* fallback){
+        if(!columns.contains(name))return std::string(fallback);
+        return "COALESCE("+sql::utf8(name)+","+fallback+")";
+    };
+    auto query=std::string("SELECT id,title,body,color,done,due,notified,pinned,updated,")+
+        optional(L"archived","0")+","+optional(L"pin_x","180")+","+optional(L"pin_y","160")+","+
+        optional(L"pin_w","290")+","+optional(L"pin_h","240")+" FROM notes ORDER BY updated,id";
+    LegacySql::Rows rows(old,query.c_str());size_t count=0;
     while(rows.next()){require(++count<=10000,"Too many legacy notes");auto id=rows.text(0),title=rows.text(1),body=rows.text(2);require(!id.empty()&&sql::utf8(body).size()<=1024*1024,"Invalid or oversized legacy note");auto file=c.stage/L"notes"/(L"note-"+digest_text(id).substr(0,24)+L".txt");write(file,body);Ini meta;meta.put(L"note",L"title",quote(title));meta.put(L"note",L"color",color(rows.text(3),RGB(166,228,202)));meta.put(L"note",L"done",rows.integer(4)!=0);meta.put(L"note",L"due",timestamp(rows.text(5))*10000);meta.put(L"note",L"notified",rows.integer(6)!=0);meta.put(L"note",L"pinned",rows.integer(7)!=0);meta.put(L"note",L"archived",rows.integer(9)!=0);meta.put(L"note",L"x",rows.integer(10));meta.put(L"note",L"y",rows.integer(11));meta.put(L"note",L"width",std::clamp<int64_t>(rows.integer(12),220,1400));meta.put(L"note",L"height",std::clamp<int64_t>(rows.integer(13),150,1400));meta.save(fs::path(file.wstring()+L".ini"),false);auto updated=timestamp(rows.text(8));if(updated){uint64_t value=uint64_t(updated)*10000;FILETIME ft{DWORD(value),DWORD(value>>32)};unique_handle h(CreateFileW(file.c_str(),FILE_WRITE_ATTRIBUTES,FILE_SHARE_READ,nullptr,OPEN_EXISTING,0,nullptr));require(h&&SetFileTime(h.get(),nullptr,nullptr,&ft),"Cannot preserve note timestamp");}}
 }
 void clipboard(Context& c,LegacySql& old) {
@@ -528,6 +543,29 @@ bool tests(fs::path const& root) {
         {sql::Database db(destination/L"clipboard"/L"history.sqlite3");sql::Statement row(db,"SELECT text,pinned,created FROM clipboard WHERE id=4");require(row.next()&&row.text(0)==L"Synthetic only"&&row.integer(1)==1&&row.integer(2)>epoch_ms,"Clipboard conversion failed");}
         {sql::Database db(destination/L"focus.db");sql::Statement row(db,"SELECT duration,completed FROM focus_sessions");require(row.next()&&row.integer(0)==1500&&row.integer(1)==1,"Focus conversion failed");sql::Statement profile(db,"SELECT group_order,path FROM workspaces");require(profile.next()&&profile.text(0)==L"documents"&&profile.text(1)==str(library_index,items[0],"path"),"Workspace references were not remapped");}
         auto again=upgrade(source,destination,assets);require(again.ok&&!again.migrated,"Migration is not idempotent");
+        for(int variant=0;variant<3;++variant){
+            auto old=root/(L"early-notes-"+std::to_wstring(variant));
+            auto output=root/(L"early-output-"+std::to_wstring(variant));
+            write(old/L"settings.json",L"{\"library\":[]}");
+            auto database=old/L"workbench.sqlite3";
+            {
+                LegacySql db(database,true);
+                db.exec("CREATE TABLE notes(id TEXT PRIMARY KEY,title TEXT,body TEXT,color TEXT,done INTEGER,due TEXT,notified INTEGER,pinned INTEGER,updated TEXT)");
+                if(variant>=1)db.exec("ALTER TABLE notes ADD archived INTEGER DEFAULT 0;ALTER TABLE notes ADD pin_x INTEGER;ALTER TABLE notes ADD pin_y INTEGER");
+                if(variant==2)db.exec("ALTER TABLE notes ADD pin_w INTEGER");
+                db.exec("INSERT INTO notes(id,title,body,pinned) VALUES('early','Title','Older note body',1)");
+                if(variant>=1)db.exec("UPDATE notes SET pin_x=91,pin_y=113,archived=1");
+            }
+            auto before=digest(database);
+            auto migrated=upgrade(old,output,assets);
+            require(migrated.ok&&migrated.migrated&&before==digest(database),"Older notes migration failed or changed input");
+            auto note=output/L"notes"/(L"note-"+digest_text(L"early").substr(0,24)+L".txt");
+            auto ini=fs::path(note.wstring()+L".ini");
+            std::unique_ptr<wchar_t,decltype(&free)> body(read_utf8_file(note.c_str(),1024),free);
+            require(body&&std::wstring(body.get())==L"Older note body","Older note body lost");
+            auto value=[&](wchar_t const* key){return GetPrivateProfileIntW(L"note",key,0,ini.c_str());};
+            require(value(L"width")==290&&value(L"height")==240&&value(L"pinned")==1&&value(L"archived")==unsigned(variant>=1)&&value(L"x")==unsigned(variant?91:180)&&value(L"y")==unsigned(variant?113:160),"Older note geometry or status lost");
+        }
         auto broken=root/L"broken";fs::create_directories(broken);write(broken/L"settings.json",L"{bad");auto fail=upgrade(broken,root/L"rejected",assets);require(!fail.ok&&!fs::exists(root/L"rejected")&&fs::exists(broken/L"settings.json"),"Corrupt migration was not rejected atomically");
         auto occupied=root/L"occupied";fs::create_directories(occupied);write(occupied/L"settings.ini",L"keep");auto occupied_hash=digest(occupied/L"settings.ini");fail=upgrade(source,occupied,assets);require(!fail.ok&&digest(occupied/L"settings.ini")==occupied_hash,"Existing profile was overwritten");
         auto pending=root/L"pending";fs::create_directories(pending);write(pending/L"settings.json",L"{\"library\":[],\"organizer_pending\":[{\"entry\":{}}]}");fail=upgrade(pending,root/L"pending-output",assets);require(!fail.ok&&!fs::exists(root/L"pending-output"),"Unfinished file transaction was silently accepted");

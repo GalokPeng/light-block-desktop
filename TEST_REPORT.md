@@ -1,3 +1,9 @@
+# v2.0.7 local verification
+
+On 2026-11-19, the Windows native suite passed 128 checks and the organizer suite passed 11. The lifecycle fixture covered simulated session end, cancellation and tray exit with both window backends. The test did not reboot or sign out the workstation.
+
+Upgrade checks exercised the early notes schemas, including missing or nullable size columns, retained note text and geometry, idempotent migration and unchanged source checksums. Two visually identical shortcuts with separate targets were used to verify the read-only diagnostic. Verification of the original report of wrong targets in Windows Explorer still requires evidence from the affected machine.
+
 # v2.0.6 release verification
 
 The maintainer explicitly limited this patch to icon plate opacity and organizer layering. Local Windows builds passed on 2026-11-17. `tools/test_organizer.ps1` passed all five native checks and the focused Qt settings fixture. Unchanged wallpaper, recording, taskbar and installation flows were not rerun. The v2.0.6 CI scope preserves the build, focused organizer checks, packaged startup, asset integrity and archived-version gates; later versions return to the normal full scope.

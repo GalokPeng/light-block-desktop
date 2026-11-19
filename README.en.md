@@ -4,7 +4,7 @@
 <p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases"><strong>Download latest release</strong></a> · <a href="#feature-preview">Feature preview</a> · <a href="https://light-block-desktop.vercel.app/en/">Website</a> · <a href="README.md">简体中文</a> · <a href="CHANGES.md">Changelog</a></p>
 
 
-**v2.0.6 stable**: independent icon plate opacity and fixes for organizer windows unexpectedly appearing above other apps during startup or use.
+**v2.0.7 stable** restores desktop icon visibility during shutdown, verifies organizer clicks after sign-in, fixes an upgrade failure affecting older notes, and reduces allocations during wallpaper playback.
 
 ## Download and install
 

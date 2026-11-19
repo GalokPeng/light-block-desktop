@@ -3,6 +3,7 @@
 #include <mferror.h>
 #include <cstring>
 #include <bit>
+#include <utility>
 #include <QApplication>
 #include <QAbstractNativeEventFilter>
 #include <QAudioOutput>
@@ -35,6 +36,7 @@ class Surface final : public QWidget,public QAbstractNativeEventFilter {
     HMODULE wts_{};
     bool paused_{},auto_paused_{},sound_{},locked_{},display_off_{},closing_{},ready_queued_{};
     QSize frame_size_;
+    qint64 reported_position_{-1},reported_duration_{-1};
     UiMediaRect geometry_{};
     void reply(UINT message,LPARAM value=0) {if(request_.owner) PostMessageW(HWND(request_.owner),message,request_.token,value);}
     void log(QString const& message) {if(request_.log) request_.log(message.toStdWString().c_str());}
@@ -53,7 +55,10 @@ class Surface final : public QWidget,public QAbstractNativeEventFilter {
     void sound(bool enabled) {
         sound_=enabled;
         if(enabled&&!audio_) {audio_=new QAudioOutput(this);player_.setAudioOutput(audio_);}
-        if(audio_) audio_->setMuted(!enabled);
+        if(!enabled&&audio_) {
+            player_.setAudioOutput(nullptr);
+            delete std::exchange(audio_,nullptr);
+        }
         tracks();state();
     }
     void layout_video() {
@@ -88,11 +93,15 @@ class Surface final : public QWidget,public QAbstractNativeEventFilter {
         if(!move_surface()) {fail(HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE),QStringLiteral("Qt media parent disappeared"));return;}
         if(request_.desktop) {
             SYSTEM_POWER_STATUS power{};bool battery=request_.settings.battery_pause&&GetSystemPowerStatus(&power)&&power.ACLineStatus==0;
-            bool full=request_.settings.fullscreen_pause&&request_.fullscreen&&request_.fullscreen(uintptr_t(handle_),request_.settings.monitor);
-            bool paused=locked_||display_off_||battery||full;
-            if(paused!=auto_paused_) {auto_paused_=paused;playback();}
+            bool paused=locked_||display_off_||battery||
+                (request_.settings.fullscreen_pause&&request_.fullscreen&&request_.fullscreen(uintptr_t(handle_),request_.settings.monitor));
+            if(result_->ready&&paused!=auto_paused_) {auto_paused_=paused;playback();}
         }
-        if(request_.embed&&result_->ready) {reply(position_message,LPARAM(player_.position()));reply(duration_message,LPARAM(player_.duration()));}
+        if(request_.embed&&result_->ready) {
+            auto position=player_.position(),duration=player_.duration();
+            if(position!=reported_position_) {reported_position_=position;reply(position_message,LPARAM(position));}
+            if(duration!=reported_duration_) {reported_duration_=duration;reply(duration_message,LPARAM(duration));}
+        }
         if(!result_->ready&&elapsed_.elapsed()>14000) {fail(HRESULT_FROM_WIN32(ERROR_TIMEOUT),QStringLiteral("Qt FFmpeg first frame timed out"));return;}
         if(request_.probe_milliseconds>0&&elapsed_.elapsed()>request_.probe_milliseconds) close();
     }

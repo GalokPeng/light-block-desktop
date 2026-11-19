@@ -4,7 +4,7 @@
 <p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases"><strong>下载最新安装包</strong></a> · <a href="#功能展示">功能展示</a> · <a href="https://light-block-desktop.vercel.app/?lang=zh">产品官网</a> · <a href="README.en.md">English</a> · <a href="CHANGES.md">更新日志</a></p>
 
 
-**v2.0.6 正式版**：新增图标底板独立不透明度，修复收纳框初始化和运行中意外浮到其他窗口前面的问题。
+**v2.0.7 正式版**改进关机时的桌面图标恢复和重启后的收纳点击，修复部分旧版本便签导致升级启动失败的问题，并减少动态壁纸播放时的内存分配。
 
 ## 下载与安装
 

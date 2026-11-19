@@ -68,7 +68,8 @@ static uint32_t image_hash(const Image *i) {
     return hash;
 }
 static void image_frame(Worker *w) {
-    ++w->frames;uint32_t hash=image_hash(&w->image);if(hash!=w->last_hash) ++w->changes;w->last_hash=hash;
+    ++w->frames;
+    if(w->report) {uint32_t hash=image_hash(&w->image);if(hash!=w->last_hash) ++w->changes;w->last_hash=hash;}
     InvalidateRect(w->window,NULL,FALSE);
     if(w->hidden_probe) ready(w);
     if(w->image.count>1 && !w->paused && !w->auto_paused) SetTimer(w->window,1,lb::frame_wait(GetTickCount64(),w->frame_due,w->image.delay),NULL);
@@ -185,6 +186,7 @@ static LRESULT CALLBACK worker_proc(HWND window,UINT message,WPARAM wp,LPARAM lp
     case WM_TIMER:
         if(wp==1) {
             KillTimer(window,1);
+            if(w->paused||w->auto_paused) return 0;
             auto started=GetTickCount64();
             HRESULT hr=image_next(&w->image);
             w->frame_due=lb::next_frame_due(started,w->image.delay);
@@ -202,7 +204,7 @@ static LRESULT CALLBACK worker_proc(HWND window,UINT message,WPARAM wp,LPARAM lp
                 if(!IsWindow(GetParent(window))||!refresh_desktop_geometry(w)) { w->error=HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE);PostMessageW(window,WM_CLOSE,0,0);return 0; }
                 SYSTEM_POWER_STATUS power={};BOOL on_battery=g_app.settings.battery_pause && GetSystemPowerStatus(&power) && power.ACLineStatus==0;
                 BOOL paused=w->locked||w->display_off||(g_app.settings.fullscreen_pause && fullscreen_on(w->monitor,window)) || on_battery;
-                if(paused!=w->auto_paused) { w->auto_paused=paused;playback_pause(w); }
+                if(w->ready&&paused!=w->auto_paused) { w->auto_paused=paused;playback_pause(w); }
             }
             if(!w->ready && GetTickCount64()-w->began>14000) { w->error=HRESULT_FROM_WIN32(ERROR_TIMEOUT);PostMessageW(window,WM_CLOSE,0,0); }
         } else if(wp==3) PostMessageW(window,WM_CLOSE,0,0);

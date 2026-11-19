@@ -4,18 +4,31 @@
 namespace lb::files {
 namespace {
 std::wstring key(std::filesystem::path const& path) { auto value=std::filesystem::absolute(path).lexically_normal().wstring();if(!value.empty()) CharLowerBuffW(value.data(),DWORD(value.size()));return value; }
-std::wstring identity(std::filesystem::path const& path) {
-    DWORD attributes=GetFileAttributesW(path.c_str());if(attributes==INVALID_FILE_ATTRIBUTES||(attributes&FILE_ATTRIBUTE_REPARSE_POINT)) throw std::runtime_error("Missing file or unsupported reparse point");
-    unique_handle file(CreateFileW(path.c_str(),FILE_READ_ATTRIBUTES,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,nullptr,OPEN_EXISTING,FILE_FLAG_BACKUP_SEMANTICS|FILE_FLAG_OPEN_REPARSE_POINT,nullptr));BY_HANDLE_FILE_INFORMATION info{};
-    if(!file||!GetFileInformationByHandle(file.get(),&info)) throw std::runtime_error("Cannot identify file");
+unique_handle open_item(std::filesystem::path const& path,DWORD access) {
+    return unique_handle(CreateFileW(path.c_str(),access,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,nullptr,OPEN_EXISTING,FILE_FLAG_BACKUP_SEMANTICS|FILE_FLAG_OPEN_REPARSE_POINT,nullptr));
+}
+std::wstring identity(HANDLE file) {
+    BY_HANDLE_FILE_INFORMATION info{};
+    if(!GetFileInformationByHandle(file,&info)||(info.dwFileAttributes&FILE_ATTRIBUTE_REPARSE_POINT)) throw std::runtime_error("Cannot identify file or unsupported reparse point");
     return std::to_wstring(info.dwVolumeSerialNumber)+L":"+std::to_wstring(info.nFileIndexHigh)+L":"+std::to_wstring(info.nFileIndexLow);
 }
+std::wstring identity(std::filesystem::path const& path) {return identity(open_item(path,FILE_READ_ATTRIBUTES).get());}
 bool present(std::filesystem::path const& path) { return GetFileAttributesW(path.c_str())!=INVALID_FILE_ATTRIBUTES; }
 std::filesystem::path temporary(std::filesystem::path const& source) {
     GUID guid{};if(FAILED(CoCreateGuid(&guid))) throw std::runtime_error("Cannot allocate rename identity");wchar_t text[40];StringFromGUID2(guid,text,40);return source.parent_path()/(L".LightBlockNative-rename-"+std::wstring(text));
 }
 void move(std::filesystem::path const& from,std::filesystem::path const& to,std::wstring const& expected) {
-    if(identity(from)!=expected||present(to)||!MoveFileExW(from.c_str(),to.c_str(),MOVEFILE_WRITE_THROUGH)) throw std::runtime_error("Rename failed; recovery record preserved");
+    // Use the same handle for validation and rename. The path can be replaced
+    // between two system calls, especially on a redirected desktop at sign-in.
+    auto source=open_item(from,DELETE|FILE_READ_ATTRIBUTES);
+    if(!source||identity(source.get())!=expected) throw std::runtime_error("Rename source changed");
+    auto destination=std::filesystem::absolute(to).wstring();
+    auto name_bytes=destination.size()*sizeof(wchar_t);
+    std::vector<BYTE> buffer(sizeof(FILE_RENAME_INFO)+name_bytes);
+    auto info=reinterpret_cast<FILE_RENAME_INFO*>(buffer.data());
+    info->ReplaceIfExists=FALSE;info->RootDirectory=nullptr;info->FileNameLength=DWORD(name_bytes);
+    memcpy(info->FileName,destination.c_str(),name_bytes+sizeof(wchar_t));
+    if(!SetFileInformationByHandle(source.get(),FileRenameInfo,info,DWORD(buffer.size()))) throw std::runtime_error("Rename failed; recovery record preserved");
 }
 std::wstring format(std::filesystem::path const& source,std::wstring const& pattern,size_t index) {
     std::wstring value;bool directory=(GetFileAttributesW(source.c_str())&FILE_ATTRIBUTE_DIRECTORY)!=0;
@@ -62,8 +75,13 @@ int64_t Journal::apply(std::vector<Pair> const& pairs,int64_t undo_of,int interr
       for(size_t n=0;n<records.size();++n) { auto const& r=records[n];sql::Statement item(db_,"INSERT INTO rename_items(job,n,source,target,temp,identity) VALUES(?,?,?,?,?,?)");item.bind(1,job);item.bind(2,int64_t(n));item.bind(3,r.source.wstring());item.bind(4,r.target.wstring());item.bind(5,r.temp.wstring());item.bind(6,r.id);item.next(); }transaction.commit(); }
     int moves=0;
     try {
-        for(auto const& r:records) { move(r.source,r.temp,r.id);if(interrupt_after>=0&&++moves==interrupt_after) return job; }
-        for(auto const& r:records) { move(r.temp,r.target,r.id);if(interrupt_after>=0&&++moves==interrupt_after) return job; }
+        if(records.size()==1 && key(records.front().source)!=key(records.front().target)) {
+            auto const& r=records.front();move(r.source,r.target,r.id);
+            if(interrupt_after==1) return job;
+        }else {
+            for(auto const& r:records) { move(r.source,r.temp,r.id);if(interrupt_after>=0&&++moves==interrupt_after) return job; }
+            for(auto const& r:records) { move(r.temp,r.target,r.id);if(interrupt_after>=0&&++moves==interrupt_after) return job; }
+        }
         sql::Statement committed(db_,"UPDATE rename_jobs SET state='committed' WHERE id=?");committed.bind(1,job);committed.next();return job;
     }catch(...) { try { restore(job); }catch(...) {} throw; }
 }
@@ -78,6 +96,12 @@ void Journal::restore(int64_t job) {
         }
     }if(records.empty()) throw std::runtime_error("Empty recovery record");
     for(auto const& r:records) if(present(r.source)&&!moving.contains(key(r.source))) throw std::runtime_error("Original name occupied; every file preserved");
+    if(records.size()==1 && key(records.front().source)!=key(records.front().target)) {
+        auto const& r=records.front();
+        if(key(located.front())!=key(r.source)) move(located.front(),r.source,r.id);
+        sql::Statement state(db_,"UPDATE rename_jobs SET state='rolled_back' WHERE id=?");
+        state.bind(1,job);state.next();return;
+    }
     { sql::Transaction transaction(db_);for(size_t n=0;n<records.size();++n) { records[n].rescue=temporary(located[n]);sql::Statement update(db_,"INSERT OR IGNORE INTO rename_locations(job,n,path) VALUES(?,?,?)");update.bind(1,job);update.bind(2,int64_t(n));update.bind(3,records[n].rescue.wstring());update.next(); }sql::Statement state(db_,"UPDATE rename_jobs SET state='recovering' WHERE id=?");state.bind(1,job);state.next();transaction.commit(); }
     for(size_t n=0;n<records.size();++n) move(located[n],records[n].rescue,records[n].id);
     for(auto const& r:records) move(r.rescue,r.source,r.id);
@@ -95,7 +119,20 @@ bool rename_tests(std::filesystem::path const& root) {
         auto ida=identity(a),idb=identity(b);journal.apply({{a,b,ida},{b,a,idb}});if(identity(a)!=idb||identity(b)!=ida) return false;journal.undo();if(identity(a)!=ida||identity(b)!=idb) return false;
         journal.apply(preview({a,b},L"renamed-{n:02}{ext}"),0,1);if(journal.pending().empty()) return false;journal.recover();if(!journal.pending().empty()||identity(a)!=ida||identity(b)!=idb) return false;
         for(auto const& invalid:{L"CON{ext}",L"same.txt",L"../{name}",L"{evil}"}) { bool rejected=false;try { preview({a,b},invalid); }catch(...) { rejected=true; }if(!rejected) return false; }
-        auto stale=preview({a},L"renamed-{n:02}{ext}");write_utf8_atomic(c.c_str(),L"external");bool collision=false;try { journal.apply(stale); }catch(...) { collision=true; }return collision&&present(a)&&present(c);
+        auto stale=preview({a},L"renamed-{n:02}{ext}");write_utf8_atomic(c.c_str(),L"external");bool collision=false;try { journal.apply(stale); }catch(...) { collision=true; }if(!collision||!present(a)||!present(c)) return false;
+        auto link=root/L"sample.lnk", renamed=root/L"approved.lnk", replaced=root/L"replaced.lnk";
+        if(!write_utf8_atomic(link.c_str(),L"isolated fixture"))return false;
+        auto single=preview({link},L"approved{ext}");auto original=single.front().identity;
+        journal.apply(single,0,1);
+        if(present(link)||identity(renamed)!=original||journal.pending().size()!=1)return false;
+        for(auto const& e:std::filesystem::directory_iterator(root))
+            if(e.path().filename().wstring().starts_with(L".LightBlockNative-rename-"))return false;
+        journal.recover();
+        if(!journal.pending().empty()||present(renamed)||identity(link)!=original)return false;
+        std::filesystem::rename(link,replaced);
+        if(!write_utf8_atomic(link.c_str(),L"external replacement"))return false;
+        try{journal.apply(single);return false;}catch(...){}
+        return identity(replaced)==original&&identity(link)!=original&&!present(renamed)&&journal.pending().empty();
     }catch(...) { return false; }
 }
 }

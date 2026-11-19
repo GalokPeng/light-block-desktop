@@ -112,17 +112,18 @@ def startup_snapshot():
     return values
 
 
-def run(executable, root):
+def run(executable, root, scenarios):
     before = startup_snapshot()
     results = []
     startup = subprocess.STARTUPINFO()
     startup.dwFlags = subprocess.STARTF_USESHOWWINDOW
     startup.wShowWindow = 0
     for backend in ("qt", "native"):
-        for scenario in ("tray-exit", "capture-then-exit", "session-end"):
+        for scenario in scenarios:
             profile = root / (backend + "-" + scenario)
             assert not profile.exists(), "Fresh test profile required"
             flags = ["--legacy-ui"] if backend == "native" else []
+            launch_time = time.monotonic()
             proc = subprocess.Popen([str(executable), "--lifecycle-fixture", "--background", "--data-dir", str(profile), *flags], startupinfo=startup)
             controller = None
             seen_children = set()
@@ -138,6 +139,7 @@ def run(executable, root):
                     logs = list(profile.glob("*.log"))
                     return any("app start C++23" in p.read_text(encoding="utf-8", errors="replace") for p in logs)
                 wait_until(initialized, 30)
+                startup_ms = round((time.monotonic() - launch_time) * 1000)
                 assert not any(visible for _, _, visible in windows(proc.pid)), "Background launch exposed UI"
                 duplicate = subprocess.run([str(executable), "--background", "--data-dir", str(profile)], startupinfo=startup, timeout=10)
                 assert duplicate.returncode == 0
@@ -159,6 +161,7 @@ def run(executable, root):
                 seen_children.update(descendants(proc.pid))
                 began = time.monotonic()
                 if scenario == "session-end":
+                    assert user.SendMessageTimeoutW(visible, 0x11, 0, 0, 2, 4000, c.byref(result)) and result.value == 1
                     user.SendMessageTimeoutW(visible, 0x16, 1, 0, 2, 4500, c.byref(result))
                 else:
                     if scenario == "capture-then-exit":
@@ -170,7 +173,7 @@ def run(executable, root):
                 assert code == 0, f"Exit returned {code}"
                 wait_until(lambda: not descendants(proc.pid) and not (seen_children & processes().keys()), 5)
                 assert (profile / "settings.ini").is_file()
-                results.append(dict(backend=backend, scenario=scenario, exit_ms=elapsed, child_cleanup=True,
+                results.append(dict(backend=backend, scenario=scenario, startup_ms=startup_ms, exit_ms=elapsed, child_cleanup=True,
                                     background_quiet=True, duplicate_background_quiet=True, manual_reopen=True,
                                     close_to_tray=True, cancelled_session_preserved=True, settings_saved=True))
                 print(f"{backend}/{scenario}: exited in {elapsed} ms; child processes gone", flush=True)
@@ -192,7 +195,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--exe", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--scenario", action="append", choices=("tray-exit", "capture-then-exit", "session-end"))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
-    report = run(args.exe.resolve(), args.output.resolve())
+    report = run(args.exe.resolve(), args.output.resolve(), args.scenario or ("tray-exit", "capture-then-exit", "session-end"))
     (args.output / "lifecycle.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

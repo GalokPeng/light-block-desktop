@@ -31,23 +31,39 @@ HRESULT image_open(Image *image,const wchar_t *path) {
 }
 HRESULT image_next(Image *image) {
     if(!image->decoder || !image->pixels) return E_UNEXPECTED;
-    if(image->disposal==2) for(LONG y=image->previous.top;y<image->previous.bottom;++y) for(LONG x=image->previous.left;x<image->previous.right;++x) image->pixels[size_t(y)*image->width+x]=image->background;
-    else if(image->disposal==3 && image->backup) memcpy(image->pixels.get(),image->backup.get(),image->bytes);
     if(image->index==0) std::fill_n(image->pixels.get(),image->bytes/4,image->background);
+    else if(image->disposal==2||image->disposal==3) {
+        auto rect=image->previous;
+        auto span=size_t(rect.right-rect.left);
+        for(LONG y=rect.top;y<rect.bottom;++y) {
+            auto row=image->pixels.get()+size_t(y)*image->width+rect.left;
+            if(image->disposal==2) std::fill_n(row,span,image->background);
+            else std::copy_n(image->backup.get()+size_t(y-rect.top)*span,span,row);
+        }
+    }
     winrt::com_ptr<IWICBitmapFrameDecode> frame;winrt::com_ptr<IWICFormatConverter> converter;winrt::com_ptr<IWICMetadataQueryReader> reader;
     UINT width=0,height=0,left=0,top=0,disposal=0,delay=100;bool transparent=image->gif;
     HRESULT hr=image->decoder->GetFrame(image->index,frame.put());if(FAILED(hr)) return hr;hr=frame->GetSize(&width,&height);if(FAILED(hr)) return hr;
     if(image->gif && SUCCEEDED(frame->GetMetadataQueryReader(reader.put()))) { left=metadata(reader.get(),L"/imgdesc/Left",0);top=metadata(reader.get(),L"/imgdesc/Top",0);disposal=metadata(reader.get(),L"/grctlext/Disposal",0);transparent=metadata(reader.get(),L"/grctlext/TransparencyFlag",0)!=0;UINT ticks=metadata(reader.get(),L"/grctlext/Delay",10);delay=ticks?std::max(10u,ticks*10):100; }
     if(!valid_size(width,height)||left>=image->width||top>=image->height||width>image->width-left||height>image->height-top) return WINCODEC_ERR_BADIMAGE;
-    if(disposal==3) { if(!image->backup) image->backup.reset(new(std::nothrow) uint32_t[image->bytes/4]);if(!image->backup) return E_OUTOFMEMORY;memcpy(image->backup.get(),image->pixels.get(),image->bytes); }
+    if(disposal==3) {
+        const size_t needed=size_t(width)*height;
+        if(needed>image->backup_capacity) {
+            auto buffer=std::unique_ptr<uint32_t[]>(new(std::nothrow) uint32_t[needed]);
+            if(!buffer) return E_OUTOFMEMORY;
+            image->backup=std::move(buffer);image->backup_capacity=needed;
+        }
+        for(UINT y=0;y<height;++y)
+            std::copy_n(image->pixels.get()+size_t(top+y)*image->width+left,width,image->backup.get()+size_t(y)*width);
+    }
     hr=image->factory->CreateFormatConverter(converter.put());if(FAILED(hr)) return hr;
     hr=converter->Initialize(frame.get(),GUID_WICPixelFormat32bppPBGRA,WICBitmapDitherTypeNone,nullptr,0,WICBitmapPaletteTypeCustom);if(FAILED(hr)) return hr;
     // Full opaque GIF frames and still images can decode into the canvas itself.
     // Delta/transparent GIFs retain one bounded scratch buffer, not a new large
     // heap allocation for every frame. Disposal-3 backup remains independent.
-    bool direct=width==image->width&&height==image->height&&!left&&!top&&(!image->gif||!transparent);
+    bool direct=width==image->width&&!left&&(!image->gif||!transparent);
     if(direct) {
-        hr=converter->CopyPixels(nullptr,width*4,width*height*4,reinterpret_cast<BYTE*>(image->pixels.get()));if(FAILED(hr)) return hr;
+        hr=converter->CopyPixels(nullptr,width*4,width*height*4,reinterpret_cast<BYTE*>(image->pixels.get()+size_t(top)*width));if(FAILED(hr)) return hr;
     }else {
     size_t needed=size_t(width)*height;
     if(needed>image->scratch_capacity){auto buffer=std::unique_ptr<uint32_t[]>(new(std::nothrow)uint32_t[needed]);if(!buffer)return E_OUTOFMEMORY;image->scratch=std::move(buffer);image->scratch_capacity=needed;}

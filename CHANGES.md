@@ -1,3 +1,14 @@
+# v2.0.7 · 重启后的桌面与旧版升级 / Desktop recovery and profile upgrades
+
+- 关机或注销时提前恢复原有桌面图标显示状态，取消关机后继续收纳。登录时桌面目录暂不可用会重试，避免空扫描覆盖已有分组。
+- 打开收纳图标时核对按下和松开时选中的项目。快捷方式改名保留扩展名，按回车确认文件改名。中断后恢复单文件改名时会校验文件身份。
+- 修复早期便签数据库缺少尺寸列导致的升级启动失败。已有的便签内容、位置和尺寸会迁移，缺失的尺寸沿用旧版默认值。
+- GIF 播放复用解码缓冲区，按局部帧范围备份像素。优化视频暂停和恢复处理，保留导入文件的原始画质。
+- Restores the user's desktop icon visibility before shutdown or sign-out and resumes organizing after a cancelled shutdown. A temporarily unavailable desktop folder no longer clears saved entries.
+- Organizer clicks verify the selected item after a layout change. Shortcut renames keep the file extension and require Enter to confirm. Interrupted single-file renames verify file identity during recovery.
+- Fixes startup when migrating older notes databases with missing size columns. Existing note content and geometry are preserved, with legacy defaults for missing dimensions.
+- Reuses GIF decode buffers, saves only the affected pixels when restoring a frame, and improves video pause and resume handling while retaining the original media files.
+
 # v2.0.6 · 收纳底板与桌面层级 / Organizer plates and desktop layering
 
 - 新增“图标底板不透明度”0–100% 滑块，独立于整个收纳背景；图标和文字保持原有清晰度。分组底板同步支持，调整即时生效并保存，旧配置默认保持原样。

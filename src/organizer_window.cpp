@@ -17,7 +17,21 @@ namespace lb::organizer {
 namespace {
 constexpr UINT changed_message=WM_APP+92;
 auto popup_menu=&TrackPopupMenu;
-struct Tile { RECT bounds;size_t index;bool group; };
+struct Tile {
+    RECT bounds;
+    size_t index;
+    bool group;
+    std::wstring identity;
+    bool current(Model const& model) const {
+        if(index==SIZE_MAX) return !group&&identity.empty();
+        if(group) return index<model.groups.size()&&model.groups[index].id==identity;
+        return index<model.entries.size()&&model.entries[index].path==identity;
+    }
+    bool matches_press(std::wstring const& path,std::wstring const& group_id) const {
+        if(index==SIZE_MAX) return path.empty()&&group_id.empty();
+        return group ? identity==group_id : identity==path;
+    }
+};
 struct Loose { HWND window{};std::wstring path;POINT position{},pressed{};bool dragging{},hint{true},hint_hover{},hint_pressed{}; };
 struct ArrivalAnchor {
     POINT point{};ULONGLONG captured{};bool valid{};
@@ -34,8 +48,12 @@ struct Shelf {
     IconCache icons;
     std::vector<std::unique_ptr<Loose>> loose;
     DirectoryWatch watcher;
-    unique_handle lease,stop;
+    unique_handle lease,stop,ready;
+    unsigned retry_seconds{};
+    bool retry_pending{},recovering{};
+    ULONGLONG protect_empty_until{};
     DWORD token{};
+    bool session_suspended{};
     bool fixture{},preview{},layer_preview{},enabled{},expanded{},moving{},menu{},dragging{},mouse_inside{},stopping{},reduced_motion{};
     std::wstring group,editing_entry,drag_entry,drag_group,drag_origin;
     bool drag_started{},drag_groups{},drag_expanded{};
@@ -79,7 +97,13 @@ void shelf_fonts(){for(auto font:{shelf.font,shelf.small,shelf.heading})if(font)
 COLORREF mixed(COLORREF a,COLORREF b,int weight) { return RGB((GetRValue(a)*weight+GetRValue(b)*(255-weight))/255,(GetGValue(a)*weight+GetGValue(b)*(255-weight))/255,(GetBValue(a)*weight+GetBValue(b)*(255-weight))/255); }
 COLORREF foreground(COLORREF color) { return GetRValue(color)*299+GetGValue(color)*587+GetBValue(color)*114>140000?RGB(24,34,43):RGB(240,245,251); }
 std::vector<std::wstring> desktop_roots() {
-    std::vector<std::wstring> result;for(auto const& id:{FOLDERID_Desktop,FOLDERID_PublicDesktop}) { PWSTR path=nullptr;if(SUCCEEDED(SHGetKnownFolderPath(id,0,nullptr,&path))) { result.emplace_back(path);CoTaskMemFree(path); } }return result;
+    std::vector<std::wstring> result;
+    for(auto const& id:{FOLDERID_Desktop,FOLDERID_PublicDesktop}) {
+        PWSTR path=nullptr;
+        if(FAILED(SHGetKnownFolderPath(id,KF_FLAG_DONT_VERIFY,nullptr,&path))) return {};
+        result.emplace_back(path);CoTaskMemFree(path);
+    }
+    return result;
 }
 int cell_size() { return metrics().cell_width; }
 int row_size() { return metrics().row_height; }
@@ -174,8 +198,8 @@ void paint(HWND window) {
             auto const& group=shelf.model->groups[n];int side=metrics().tile,cx=(bounds.left+bounds.right)/2,top_tile=bounds.top+scaled(5);RECT tile{cx-side/2,top_tile,cx+(side+1)/2,top_tile+side};draw_plate(dc,tile,scaled(14),mixed(group.color,background,120),mixed(group.color,background,85));
             auto group_entries=shelf.model->view(0,L"",group.id);int gap=scaled(4),mini=(side-scaled(14)-gap)/2,grid=2*mini+gap,origin_x=cx-grid/2,origin_y=top_tile+(side-grid)/2;
             for(size_t k=0;k<std::min<size_t>(4,group_entries.size());++k)if(auto icon=icon_for(shelf.model->entries[group_entries[k]],int(std::ceil(mini*1.1)))){int zoom=int(mini*(.1f*hover-(pressed?.06f:0.f)));DrawIconEx(dc,origin_x+int(k%2)*(mini+gap)-zoom/2,origin_y+int(k/2)*(mini+gap)-zoom/2,icon,mini+zoom,mini+zoom,0,nullptr,DI_NORMAL);}
-            draw_text(dc,group.name.c_str(),RECT{bounds.left+scaled(2),bounds.bottom-metrics().label,bounds.right-scaled(2),bounds.bottom-scaled(2)},shelf.small,foreground(background),DT_CENTER|DT_SINGLELINE|DT_END_ELLIPSIS);shelf.tiles.push_back({bounds,n,true});
-        } else { draw_entry(dc,shelf.model->entries[entries[n]],bounds,hover,background,pressed);shelf.tiles.push_back({bounds,entries[n],false}); }
+            draw_text(dc,group.name.c_str(),RECT{bounds.left+scaled(2),bounds.bottom-metrics().label,bounds.right-scaled(2),bounds.bottom-scaled(2)},shelf.small,foreground(background),DT_CENTER|DT_SINGLELINE|DT_END_ELLIPSIS);shelf.tiles.push_back({bounds,n,true,group.id});
+        } else { draw_entry(dc,shelf.model->entries[entries[n]],bounds,hover,background,pressed);shelf.tiles.push_back({bounds,entries[n],false,shelf.model->entries[entries[n]].path}); }
     }
     if(!shelf.expanded) { RECT search{client.right-cell-scaled(12),scaled(10),client.right-scaled(12),scaled(10)+row};int cx=(search.left+search.right)/2,cy=search.top+scaled(5)+metrics().tile/2,r=scaled(10);unique_gdi<HPEN> pen(CreatePen(PS_SOLID,scaled(2),foreground(background)));auto prior=SelectObject(dc,pen.get()),prior_brush=SelectObject(dc,GetStockObject(NULL_BRUSH));Ellipse(dc,cx-r,cy-r,cx+r,cy+r);MoveToEx(dc,cx+scaled(7),cy+scaled(7),nullptr);LineTo(dc,cx+scaled(15),cy+scaled(15));SelectObject(dc,prior_brush);SelectObject(dc,prior);draw_text(dc,tr(L"搜索",L"Search"),RECT{search.left,search.bottom-metrics().label,search.right,search.bottom-scaled(2)},shelf.small,foreground(background),DT_CENTER|DT_SINGLELINE);shelf.tiles.push_back({search,SIZE_MAX,false}); }
     if(shelf.expanded&&!shelf.group.empty()) { auto found=std::find_if(shelf.model->groups.begin(),shelf.model->groups.end(),[](auto const& group){return group.id==shelf.group;});if(found!=shelf.model->groups.end()) draw_text(dc,found->name.c_str(),RECT{scaled(24),scaled(12),client.right-scaled(360),scaled(48)},shelf.heading,mixed(foreground(background),background,int(std::clamp(shelf.header_motion.value/std::max(1,scaled(48)),0.,1.)*255)),DT_SINGLELINE|DT_VCENTER); }
@@ -193,14 +217,14 @@ void paint(HWND window) {
     }else content(dc);
     shelf.surface.present(window,client.right,client.bottom,255,float(scaled(18)),!separate);EndPaint(window,&ps);
 }
-int hit(POINT point) { for(size_t n=0;n<shelf.tiles.size();++n) if(PtInRect(&shelf.tiles[n].bounds,point)) return int(n);return -1; }
+int hit(POINT point) { for(size_t n=0;n<shelf.tiles.size();++n) if(PtInRect(&shelf.tiles[n].bounds,point)&&shelf.model&&shelf.tiles[n].current(*shelf.model)) return int(n);return -1; }
 bool model_result(bool ok) { if(!ok)set_status(L"收纳更改未能保存，已恢复原状态；原文件未改动。",L"Organizer changes could not be saved and were reverted. Files are untouched.");return ok; }
 void launch(Entry const& entry) { ShellExecuteW(shelf.window,L"open",entry.path.c_str(),nullptr,nullptr,SW_SHOWNORMAL);animate(false); }
 void rebuild_loose();
 void synchronize() {
     if(interaction_busy()){if(shelf.window)SetTimer(shelf.window,2,200,nullptr);return;}
     std::set<std::wstring> before;if(shelf.model&&arrival_anchor.recent(GetTickCount64()))for(auto const& entry:shelf.model->entries)before.insert(entry.path);
-    if(shelf.model && shelf.model->synchronize(shelf.roots,true)) {
+    if(shelf.model && shelf.model->synchronize(shelf.roots,true,GetTickCount64()<shelf.protect_empty_until)) {
         if(arrival_anchor.recent(GetTickCount64())) {
             auto entries=shelf.model->entries;unsigned placed=0;
             for(auto& entry:shelf.model->entries)if(entry.loose&&!entry.positioned&&!before.contains(entry.path)) {
@@ -210,7 +234,7 @@ void synchronize() {
             if(placed){arrival_anchor.valid=false;if(!shelf.model->save())shelf.model->entries=std::move(entries);}
         }
         rebuild_loose();schedule_collect();reflow();
-    }
+    }else if(shelf.window) SetTimer(shelf.window,2,5000,nullptr);
 }
 bool finish_file_rename(){
     if(!shelf.rename)return true;if(!shelf.rename->done)return false;
@@ -219,8 +243,22 @@ bool finish_file_rename(){
     else if(!job->ok&&!shelf.fixture&&!g_app.close_requested)error_box(shelf.window,tr(L"无法重命名：请检查文件是否被占用、名称是否合法或目标是否已存在。原文件已保留。",L"Cannot rename: check the name, file permissions and whether the target exists. Existing files were preserved."),E_FAIL);
     if(shelf.window){KillTimer(shelf.window,8);rebuild_loose();schedule_collect();reflow();desktop_changed();}return true;
 }
-bool start_file_rename(std::wstring const& path,std::wstring const& name){
-    if(shelf.rename||!safe_filename(name.c_str()))return false;auto target=(std::filesystem::path(path).parent_path()/name).wstring();if(path==target)return true;
+std::wstring shortcut_extension(std::filesystem::path const& path,bool directory){
+    if(directory) return {};
+    auto ext=path.extension().wstring();
+    for(auto known:{L".lnk",L".url",L".website",L".appref-ms"})
+        if(!_wcsicmp(ext.c_str(),known)) return ext;
+    return {};
+}
+bool start_file_rename(std::wstring const& path,std::wstring name){
+    if(shelf.rename||!shelf.model||!safe_filename(name.c_str()))return false;
+    auto item=std::find_if(shelf.model->entries.begin(),shelf.model->entries.end(),[&](auto const& entry){return entry.path==path;});
+    if(item==shelf.model->entries.end()||item->system)return false;
+    std::filesystem::path source(path);
+    auto ext=shortcut_extension(source,item->directory);
+    if(!ext.empty()&&_wcsicmp(std::filesystem::path(name).extension().c_str(),ext.c_str())) name+=ext;
+    if(name.size()>255||!safe_filename(name.c_str()))return false;
+    auto target=(source.parent_path()/name).wstring();if(path==target)return true;
     auto job=std::make_unique<RenameJob>();job->source=path;job->target=target;auto raw=job.get();auto data=std::filesystem::path(g_app.data);
     try{job->worker=std::thread([raw,data]{try{com_apartment apartment(COINIT_MULTITHREADED);auto plan=lb::files::preview({raw->source},L"{name}{ext}");plan.front().target=raw->target;lb::files::Journal journal(data/L"file-journal.db");journal.apply(plan);raw->ok=true;}catch(...){raw->ok=false;}raw->done=true;});}catch(...){return false;}
     shelf.rename=std::move(job);if(shelf.window)SetTimer(shelf.window,8,50,nullptr);return true;
@@ -231,12 +269,20 @@ void rename_group(size_t index) {
 }
 void rename_entry(std::wstring const& path,RECT bounds,bool file=false,HWND anchor=nullptr) {
     auto found=std::find_if(shelf.model->entries.begin(),shelf.model->entries.end(),[&](auto const& e){return e.path==path;});if(found==shelf.model->entries.end())return;
-    if(shelf.rename)return;if(shelf.editor)DestroyWindow(std::exchange(shelf.editor,nullptr));shelf.editing_entry=path;shelf.editing_file=file&&!found->system;shelf.editor_anchor=anchor?anchor:shelf.window;auto text=shelf.editing_file?std::filesystem::path(path).filename().wstring():found->name;RECT client{};GetClientRect(shelf.editor_anchor,&client);int w=std::min(scaled(260),int(client.right)-scaled(24)),x=std::clamp(int(bounds.left),scaled(12),int(client.right)-w-scaled(12)),y=std::max(scaled(10),int(bounds.bottom)-metrics().label);
-    shelf.editor_bounds={x,y,x+w,y+scaled(30)};shelf.editor=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_CLIENTEDGE,L"EDIT",text.c_str(),WS_POPUP|ES_AUTOHSCROLL,0,0,w,scaled(30),shelf.editor_anchor,nullptr,g_app.instance,nullptr);SetWindowLongPtrW(shelf.editor,GWLP_ID,2);lb::window_shape::own_frame(shelf.editor);SendMessageW(shelf.editor,WM_SETFONT,WPARAM(shelf.font),TRUE);SendMessageW(shelf.editor,EM_SETLIMITTEXT,shelf.editing_file?255:240,0);SetWindowSubclass(shelf.editor,edit_keys,1,0);position_edits();ShowWindow(shelf.editor,SW_SHOWNOACTIVATE);SetForegroundWindow(shelf.editor);SetFocus(shelf.editor);SendMessageW(shelf.editor,EM_SETSEL,0,-1);
+    if(shelf.rename)return;if(shelf.editor)DestroyWindow(std::exchange(shelf.editor,nullptr));shelf.editing_entry=path;shelf.editing_file=file&&!found->system;shelf.editor_anchor=anchor?anchor:shelf.window;auto text=shelf.editing_file?std::filesystem::path(path).filename().wstring():found->name;
+    auto ext=shelf.editing_file?shortcut_extension(path,found->directory):std::wstring{};
+    auto selection_end=ext.empty()?LPARAM(-1):LPARAM(text.size()-ext.size());
+    RECT client{};GetClientRect(shelf.editor_anchor,&client);int w=std::min(scaled(260),int(client.right)-scaled(24)),x=std::clamp(int(bounds.left),scaled(12),int(client.right)-w-scaled(12)),y=std::max(scaled(10),int(bounds.bottom)-metrics().label);
+    shelf.editor_bounds={x,y,x+w,y+scaled(30)};shelf.editor=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_CLIENTEDGE,L"EDIT",text.c_str(),WS_POPUP|ES_AUTOHSCROLL,0,0,w,scaled(30),shelf.editor_anchor,nullptr,g_app.instance,nullptr);SetWindowLongPtrW(shelf.editor,GWLP_ID,2);lb::window_shape::own_frame(shelf.editor);SendMessageW(shelf.editor,WM_SETFONT,WPARAM(shelf.font),TRUE);SendMessageW(shelf.editor,EM_SETLIMITTEXT,shelf.editing_file?255:240,0);SetWindowSubclass(shelf.editor,edit_keys,1,0);position_edits();ShowWindow(shelf.editor,SW_SHOWNOACTIVATE);SetForegroundWindow(shelf.editor);SetFocus(shelf.editor);SendMessageW(shelf.editor,EM_SETSEL,0,selection_end);
 }
-void commit_title() {
+void commit_title(bool confirm_file=false) {
     if(!shelf.editor)return;auto edit=std::exchange(shelf.editor,nullptr);wchar_t title[258]{};GetWindowTextW(edit,title,258);auto path=std::exchange(shelf.editing_entry,{});bool file=std::exchange(shelf.editing_file,false);shelf.editor_anchor=nullptr;log_line(L"organizer title commit file=%d length=%u",file,unsigned(wcslen(title)));
-    if(file){DestroyWindow(edit);if(!start_file_rename(path,title)&&!shelf.fixture)error_box(shelf.window,tr(L"文件名无效，原文件未更改。",L"Invalid filename; the original file was not changed."),E_INVALIDARG);schedule_collect();return;}
+    if(file){
+        DestroyWindow(edit);
+        if(confirm_file&&!start_file_rename(path,title)&&!shelf.fixture)
+            error_box(shelf.window,tr(L"文件名无效或项目已更改，原文件未改动。",L"Invalid name or the item changed. The original file was retained."),E_INVALIDARG);
+        schedule_collect();return;
+    }
     if(shelf.model){if(!path.empty())model_result(shelf.model->rename_entry(path,title));else {auto found=std::find_if(shelf.model->groups.begin(),shelf.model->groups.end(),[](auto const& group){return group.id==shelf.group;});if(found!=shelf.model->groups.end()){auto before=*found;found->name=title;found->automatic=false;if(!model_result(shelf.model->save()))*found=std::move(before);}}}
     DestroyWindow(edit);if(shelf.window){InvalidateRect(shelf.window,nullptr,FALSE);schedule_collect();}
 }
@@ -244,7 +290,7 @@ void context_menu(POINT point,int tile) {
     if(shelf.rename)return;MenuGuard guard;HMENU menu=CreatePopupMenu();scope_exit destroy([&]{DestroyMenu(menu);});std::wstring group_id,path;RECT bounds{};bool system=false,external=false;std::vector<std::wstring> targets;
     // The popup pumps messages. Retain identifiers, never tile indices or Entry
     // references, across that nested loop (refresh/disable can replace either).
-    if(tile>=0&&size_t(tile)<shelf.tiles.size()){auto item=shelf.tiles[size_t(tile)];bounds=item.bounds;if(item.group&&item.index<shelf.model->groups.size())group_id=shelf.model->groups[item.index].id;else if(item.index<shelf.model->entries.size()){auto const& entry=shelf.model->entries[item.index];path=entry.path;group_id=entry.group;system=entry.system;external=entry.external;}}
+    if(tile>=0&&size_t(tile)<shelf.tiles.size()&&shelf.tiles[size_t(tile)].current(*shelf.model)){auto item=shelf.tiles[size_t(tile)];bounds=item.bounds;if(item.group&&item.index<shelf.model->groups.size())group_id=shelf.model->groups[item.index].id;else if(item.index<shelf.model->entries.size()){auto const& entry=shelf.model->entries[item.index];path=entry.path;group_id=entry.group;system=entry.system;external=entry.external;}}
     lb::shell_menu::Menu native;bool shell=!path.empty()&&native.append(shelf.window,menu,path,GetKeyState(VK_SHIFT)<0);if(shell)AppendMenuW(menu,MF_SEPARATOR,0,nullptr);
     if(!path.empty()){
         if(!shell)AppendMenuW(menu,MF_STRING,20,tr(L"打开",L"Open"));if(!system)AppendMenuW(menu,MF_STRING,21,tr(L"在文件夹中显示",L"Show in folder"));AppendMenuW(menu,MF_STRING,22,tr(L"更改显示名称…",L"Change display name…"));
@@ -298,7 +344,7 @@ void position_edits(){
 LRESULT CALLBACK edit_keys(HWND window,UINT message,WPARAM wp,LPARAM lp,UINT_PTR id,DWORD_PTR data) {
     if(message==WM_NCPAINT){HDC dc=GetWindowDC(window);RECT rect{};GetWindowRect(window,&rect);OffsetRect(&rect,-rect.left,-rect.top);unique_gdi<HBRUSH> edge(CreateSolidBrush(mixed(g_app.settings.organizer_color,foreground(g_app.settings.organizer_color),190)));FrameRect(dc,&rect,edge.get());InflateRect(&rect,-1,-1);unique_gdi<HBRUSH> inside(CreateSolidBrush(g_app.settings.organizer_color));FrameRect(dc,&rect,inside.get());ReleaseDC(window,dc);return 0;}
     if(message==WM_MOUSEMOVE&&!shelf.mouse_inside)hover_opacity(true);
-    (void)data;if(message==WM_KEYDOWN&&(wp==VK_RETURN||wp==VK_ESCAPE)) { if(id==1) { if(wp==VK_RETURN) commit_title();else { auto edit=std::exchange(shelf.editor,nullptr);shelf.editing_entry.clear();shelf.editing_file=false;shelf.editor_anchor=nullptr;DestroyWindow(edit);schedule_collect(); } }else if(wp==VK_ESCAPE) animate(false);return 0; }
+    (void)data;if(message==WM_KEYDOWN&&(wp==VK_RETURN||wp==VK_ESCAPE)) { if(id==1) { if(window!=shelf.editor)return 0;if(wp==VK_RETURN) commit_title(true);else { auto edit=std::exchange(shelf.editor,nullptr);shelf.editing_entry.clear();shelf.editing_file=false;shelf.editor_anchor=nullptr;DestroyWindow(edit);schedule_collect(); } }else if(wp==VK_ESCAPE) animate(false);return 0; }
     if(message==WM_NCDESTROY) RemoveWindowSubclass(window,edit_keys,id);
     if(message==WM_KILLFOCUS&&id==1&&shelf.editor==window&&shelf.window)PostMessageW(shelf.window,WM_COMMAND,MAKEWPARAM(2,EN_KILLFOCUS),LPARAM(window));
     auto result=DefSubclassProc(window,message,wp,lp);
@@ -361,15 +407,17 @@ LRESULT CALLBACK shelf_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
         else if((!shelf.drag_entry.empty()||!shelf.drag_group.empty())&&!shelf.drag_started&&(std::abs(point.x-shelf.pressed.x)>GetSystemMetrics(SM_CXDRAG)||std::abs(point.y-shelf.pressed.y)>GetSystemMetrics(SM_CYDRAG))){shelf.drag_started=true;if(!shelf.drag_entry.empty()){shelf.drag_groups=true;shelf.expanded=true;shelf.group.clear();ShowWindow(shelf.search,SW_HIDE);reflow();UpdateWindow(window);GetCursorPos(&point);ScreenToClient(window,&point);}}
         hover_to(hit(point));TRACKMOUSEEVENT track{sizeof track,TME_LEAVE,window,0};TrackMouseEvent(&track);if(!shelf.mouse_inside)hover_opacity(true);return 0; }
     case WM_MOUSELEAVE:hover_opacity(false);hover_to(-1);InvalidateRect(window,nullptr,FALSE);return 0;
-    case WM_LBUTTONDOWN: { POINT point{GET_X_LPARAM(lp),GET_Y_LPARAM(lp)};int target=hit(point);shelf.pressed_tile=target;InvalidateRect(window,nullptr,FALSE);if(shelf.editor) commit_title();shelf.drag_group.clear();shelf.drag_entry.clear();shelf.drag_started=false;shelf.pressed=point;shelf.drag_origin=shelf.group;shelf.drag_expanded=shelf.expanded;
+    case WM_LBUTTONDOWN: { if(shelf.editor)commit_title();if(!shelf.model||shelf.window!=window)return 0;POINT point{GET_X_LPARAM(lp),GET_Y_LPARAM(lp)};int target=hit(point);shelf.pressed_tile=target;InvalidateRect(window,nullptr,FALSE);shelf.drag_group.clear();shelf.drag_entry.clear();shelf.drag_started=false;shelf.pressed=point;shelf.drag_origin=shelf.group;shelf.drag_expanded=shelf.expanded;
         if(shelf.moving){shelf.dragging=true;GetCursorPos(&shelf.pressed);SetCapture(window);}
         else if(target>=0){auto tile=shelf.tiles[size_t(target)];if(tile.group&&tile.index<shelf.model->groups.size())shelf.drag_group=shelf.model->groups[tile.index].id;else if(tile.index<shelf.model->entries.size())shelf.drag_entry=shelf.model->entries[tile.index].path;SetCapture(window);}return 0; }
     case WM_LBUTTONUP: {
         if(shelf.dragging) { shelf.dragging=false;ReleaseCapture();RECT rect{};GetWindowRect(window,&rect);g_app.settings.organizer_custom_position=1;g_app.settings.organizer_x=rect.left;g_app.settings.organizer_y=rect.top;place(shelf.height);GetWindowRect(window,&rect);g_app.settings.organizer_x=rect.left;g_app.settings.organizer_y=rect.top;save_config();return 0; }
-        int target=hit(POINT{GET_X_LPARAM(lp),GET_Y_LPARAM(lp)});int pressed=std::exchange(shelf.pressed_tile,-1);InvalidateRect(window,nullptr,FALSE);auto source_group=std::exchange(shelf.drag_group,{}),source_entry=std::exchange(shelf.drag_entry,{});bool dragged=std::exchange(shelf.drag_started,false),groups=std::exchange(shelf.drag_groups,false);if(GetCapture()==window)ReleaseCapture();
-        if(dragged){if(target>=0&&shelf.tiles[size_t(target)].group){auto destination=shelf.tiles[size_t(target)].index;if(!source_entry.empty())model_result(shelf.model->collect(source_entry,shelf.model->groups[destination].id));else if(!source_group.empty()){auto from=std::find_if(shelf.model->groups.begin(),shelf.model->groups.end(),[&](auto const& group){return group.id==source_group;});if(from!=shelf.model->groups.end())model_result(shelf.model->move_group(size_t(from-shelf.model->groups.begin()),destination));}}
+        int pressed=std::exchange(shelf.pressed_tile,-1);InvalidateRect(window,nullptr,FALSE);auto source_group=std::exchange(shelf.drag_group,{}),source_entry=std::exchange(shelf.drag_entry,{});bool dragged=std::exchange(shelf.drag_started,false),groups=std::exchange(shelf.drag_groups,false);if(GetCapture()==window)ReleaseCapture();
+        if(!shelf.model||shelf.window!=window)return 0;
+        int target=hit(POINT{GET_X_LPARAM(lp),GET_Y_LPARAM(lp)});
+        if(dragged){if(target>=0&&shelf.tiles[size_t(target)].group&&shelf.tiles[size_t(target)].current(*shelf.model)){auto destination=shelf.tiles[size_t(target)].index;if(!source_entry.empty())model_result(shelf.model->collect(source_entry,shelf.model->groups[destination].id));else if(!source_group.empty()){auto from=std::find_if(shelf.model->groups.begin(),shelf.model->groups.end(),[&](auto const& group){return group.id==source_group;});if(from!=shelf.model->groups.end())model_result(shelf.model->move_group(size_t(from-shelf.model->groups.begin()),destination));}}
             if(groups){shelf.group=shelf.drag_origin;shelf.expanded=shelf.drag_expanded;ShowWindow(shelf.search,shelf.expanded?SW_SHOW:SW_HIDE);}reflow();schedule_collect();return 0;}
-        if(target>=0&&target==pressed) { auto const tile=shelf.tiles[size_t(target)];if(tile.index==SIZE_MAX) { shelf.group.clear();animate(true);SetForegroundWindow(window);SetFocus(shelf.search); }else if(tile.group) { shelf.group=shelf.model->groups[tile.index].id;animate(true); }else { launch(shelf.model->entries[tile.index]); } }
+        if(target>=0&&target==pressed) { auto const tile=shelf.tiles[size_t(target)];if(!tile.current(*shelf.model)||!tile.matches_press(source_entry,source_group)) return 0;if(tile.index==SIZE_MAX) { shelf.group.clear();animate(true);SetForegroundWindow(window);SetFocus(shelf.search); }else if(tile.group) { shelf.group=shelf.model->groups[tile.index].id;animate(true); }else { launch(shelf.model->entries[tile.index]); } }
         else if(shelf.expanded) { if(!shelf.group.empty()&&GET_Y_LPARAM(lp)<scaled(55)) { auto it=std::find_if(shelf.model->groups.begin(),shelf.model->groups.end(),[](auto const& g){return g.id==shelf.group;});if(it!=shelf.model->groups.end()) { rename_group(size_t(it-shelf.model->groups.begin()));SetWindowSubclass(shelf.editor,edit_keys,1,0); } }else animate(false); }return 0;
     }
     case WM_CAPTURECHANGED:{shelf.pressed_tile=-1;InvalidateRect(window,nullptr,FALSE);bool changed=shelf.drag_groups;shelf.dragging=false;shelf.drag_group.clear();shelf.drag_entry.clear();shelf.drag_started=false;shelf.drag_groups=false;if(changed){shelf.group=shelf.drag_origin;shelf.expanded=shelf.drag_expanded;ShowWindow(shelf.search,shelf.expanded?SW_SHOW:SW_HIDE);reflow();}schedule_collect();return 0;}
@@ -384,7 +432,9 @@ LRESULT CALLBACK shelf_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
         else if(wp==4){float t=std::min(1.f,float(GetTickCount64()-shelf.hover_started)/135.f),ease=1-std::pow(1-t,3);for(auto it=shelf.hovers.begin();it!=shelf.hovers.end();){auto& value=it->second;value.value=value.from+(value.target-value.from)*ease;if(t>=1&&value.target==0)it=shelf.hovers.erase(it);else ++it;}InvalidateRect(window,nullptr,FALSE);if(t>=1)KillTimer(window,4);}
         else if(wp==2) { KillTimer(window,2);shelf.change_started=0;synchronize(); }
         else if(wp==3) { KillTimer(window,3);if(interaction_busy()||native_dialog_open()){SetTimer(window,3,500,nullptr);return 0;}if(g_app.settings.organizer_auto_collect){auto now=std::chrono::steady_clock::now();bool due=std::any_of(shelf.model->entries.begin(),shelf.model->entries.end(),[&](auto const& entry){return entry.loose&&!entry.manual_loose&&entry.due<=now;});if(shelf.model->collect_due(now)){rebuild_loose();reflow();}else if(due){SetTimer(window,3,2000,nullptr);return 0;}}schedule_collect(); }
-        else if(wp==8){if(finish_file_rename()&&shelf.stopping)shutdown();}
+        else if(wp==8){
+            if(finish_file_rename()&&shelf.stopping&&shutdown()&&g_app.settings.organizer_enabled) configure();
+        }
         else if(wp==5){KillTimer(window,5);if(interaction_busy())SetTimer(window,5,200,nullptr);else {rebuild_loose();schedule_collect();reflow();}}
         else if(wp==6&&!interaction_busy()){auto work=monitor_work();if(!EqualRect(&work,&shelf.layout_work))reflow();if(!shelf.fixture&&!floating_preview()){lb::desktop_layer::maintain(window);for(auto const& item:shelf.loose)lb::desktop_layer::maintain(item->window);}}return 0;
     case changed_message:if(wp==shelf.token)desktop_changed();return 0;
@@ -401,54 +451,101 @@ LRESULT CALLBACK shelf_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
 bool show_shelf() {
     wchar_t layer_fixture[2]{};shelf.layer_preview=shelf.preview&&GetEnvironmentVariableW(L"LIGHTBLOCK_ORGANIZER_LAYER_FIXTURE",layer_fixture,2)&&layer_fixture[0]==L'1';
     ++shelf.generation;
-    shelf.model=std::make_unique<Model>(g_app.data);if(!shelf.model->load()) { error_box(g_app.window,tr(L"收纳配置损坏，未修改原文件",L"Organizer configuration is invalid. Existing files were preserved."),E_INVALIDARG);return false; }
+    shelf.model=std::make_unique<Model>(g_app.data);
+    if(!shelf.model->load()) {
+        set_status(L"无法读取收纳配置，已保留原桌面与配置文件。",L"Could not read the organizer settings. Your desktop and settings are preserved.");
+        return false;
+    }
     if(shelf.preview){auto root=std::filesystem::path(g_app.data)/L"sample-desktop";std::error_code error;for(auto name:{L"Documents",L"Pictures",L"Projects",L"Music",L"Videos",L"Notes",L"Archive"}){std::filesystem::create_directories(root/name,error);if(error)return false;}shelf.roots={root.wstring()};}else shelf.roots=desktop_roots();
-    if(!shelf.model->synchronize(shelf.roots,false)) return false;shelf.dpi=GetDpiForSystem();shelf_fonts();
+    if(!shelf.model->synchronize(shelf.roots,false,GetTickCount64()<shelf.protect_empty_until)) return false;shelf.dpi=GetDpiForSystem();shelf_fonts();
     WNDCLASSW cls{};cls.hInstance=g_app.instance;cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);cls.lpfnWndProc=shelf_proc;cls.lpszClassName=L"LightBlockDesktopNative.Organizer";RegisterClassW(&cls);cls.style=CS_DBLCLKS;cls.lpfnWndProc=loose_proc;cls.lpszClassName=L"LightBlockDesktopNative.LooseIcon";RegisterClassW(&cls);
     HWND window=CreateWindowExW((floating_preview()?WS_EX_APPWINDOW:WS_EX_TOOLWINDOW)|WS_EX_LAYERED,L"LightBlockDesktopNative.Organizer",tr(L"轻块桌面 · 收纳",L"Light Block Desktop · Organizer"),WS_POPUP,0,0,scaled(1050),base_height(),floating_preview()?nullptr:GetShellWindow(),nullptr,g_app.instance,nullptr);
     if(!window) return false;shelf.enabled=true;shelf.expanded=false;shelf.mouse_inside=false;shelf.header_motion.reset(0);shelf.height_motion.reset(base_height());shelf.group.clear();appearance(window,scaled(36));place(base_height());SetTimer(window,6,750,nullptr);rebuild_loose();schedule_collect();arrival_anchor.valid=false;if(!shelf.outside)shelf.outside=SetWindowsHookExW(WH_MOUSE_LL,outside_click,g_app.instance,0);shelf.watcher.start(shelf.roots,window,changed_message,shelf.token);desktop_changed();return true;
 }
 bool start_lease(bool restore_only) {
+    auto ready_name=L"Local\\LightBlockNative.ShelfReady."+std::to_wstring(GetCurrentProcessId())+L"."+std::to_wstring(shelf.token+1);
+    shelf.ready.reset(CreateEventW(nullptr,TRUE,FALSE,ready_name.c_str()));
+    if(!shelf.ready) return false;
+    shelf.recovering=restore_only;
     auto stop_name=L"Local\\LightBlockNative.IconStop."+std::to_wstring(GetCurrentProcessId());shelf.stop.reset(CreateEventW(nullptr,TRUE,FALSE,stop_name.c_str()));if(!shelf.stop) return false;ResetEvent(shelf.stop.get());
     FILETIME created{},exited{},kernel{},user{};if(!GetProcessTimes(GetCurrentProcess(),&created,&exited,&kernel,&user)) return false;ULONGLONG timestamp=(ULONGLONG(created.dwHighDateTime)<<32)|created.dwLowDateTime;
     wchar_t exe[LB_PATH*2],data[LB_PATH*2];if(!quote_arg(exe,ARRAYSIZE(exe),g_app.exe)||!quote_arg(data,ARRAYSIZE(data),g_app.data)) return false;
     auto command=std::wstring(exe)+L" --icon-lease --owner "+std::to_wstring(uintptr_t(g_app.window))+L" --token "+std::to_wstring(++shelf.token)+L" --parent-pid "+std::to_wstring(GetCurrentProcessId())+L" --parent-created "+std::to_wstring(timestamp)+L" --data-dir "+data+(restore_only?L" --restore-only":L"");
     STARTUPINFOW startup{sizeof startup};PROCESS_INFORMATION process{};if(!CreateProcessW(g_app.exe,command.data(),nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,g_app.directory,&startup,&process)) return false;CloseHandle(process.hThread);shelf.lease.reset(process.hProcess);SetTimer(g_app.window,17,100,nullptr);return true;
 }
+void retry_after_shell_settles() {
+    if(shelf.session_suspended||g_app.close_requested||(!g_app.settings.organizer_enabled&&!shelf.recovering)) return;
+    shelf.retry_seconds=std::min(60u,std::max(2u,shelf.retry_seconds*2));
+    shelf.retry_pending=true;
+    SetTimer(g_app.window,17,shelf.retry_seconds*1000,nullptr);
+    log_line(L"Desktop unavailable; retrying in %u seconds",shelf.retry_seconds);
+}
 }
 bool configure(bool preview) {
+    if(shelf.session_suspended||g_app.close_requested) return true;
+    shelf.retry_pending=false;
+    if(!shelf.protect_empty_until) shelf.protect_empty_until=GetTickCount64()+90000;
     preview=preview||shelf.preview;
     if(preview&&!g_app.settings.organizer_enabled){shelf.preview=true;return shutdown();}
     if(shelf.lease&&WaitForSingleObject(shelf.lease.get(),0)!=WAIT_OBJECT_0) { if(!g_app.settings.organizer_enabled&&!shelf.preview) shutdown();else if(shelf.window) { reflow();rebuild_loose();appearance(shelf.window,scaled(26));schedule_collect();InvalidateRect(shelf.window,nullptr,FALSE); }return true; }
     shelf.stopping=false;
     if(shelf.window) { if(!g_app.settings.organizer_enabled&&!preview) return shutdown();reflow();rebuild_loose();appearance(shelf.window,scaled(26));schedule_collect();InvalidateRect(shelf.window,nullptr,FALSE);return true; }
     shelf.preview=preview;if(preview) return show_shelf();
-    if(g_app.settings.organizer_enabled) return start_lease(false);
-    std::error_code error;if(std::filesystem::exists(std::filesystem::path(g_app.data)/L"native-desktop-icons.json",error)) return start_lease(true);return true;
+    std::error_code error;
+    bool restore=std::filesystem::exists(std::filesystem::path(g_app.data)/L"native-desktop-icons.json",error);
+    if(!g_app.settings.organizer_enabled&&!restore) return true;
+    if(start_lease(!g_app.settings.organizer_enabled)) return true;
+    retry_after_shell_settles();return false;
 }
 bool has_session() { return bool(shelf.lease); }
+void suspend_for_session_end() {
+    if(shelf.session_suspended) return;
+    shelf.session_suspended=true;
+    // Let Explorer restore its own flag even if a shell rename is still busy.
+    if(shelf.stop) SetEvent(shelf.stop.get());
+    shutdown();
+    if(shelf.lease && WaitForSingleObject(shelf.lease.get(),900)==WAIT_TIMEOUT)
+        log_line(L"Session query: desktop restoration still pending");
+}
+void resume_after_cancelled_session() {
+    if(!std::exchange(shelf.session_suspended,false)||g_app.close_requested) return;
+    if(shelf.lease) tick(17);
+    else if(!shelf.rename) configure();
+}
 bool shutdown() {
+    shelf.retry_pending=false;
     commit_title();if(!finish_file_rename()){shelf.stopping=true;return false;}
     ++shelf.generation;
     shelf.stopping=true;shelf.enabled=false;commit_title();shelf.watcher.stop();for(auto &item:shelf.loose) if(item->window) DestroyWindow(item->window);shelf.loose.clear();if(shelf.window) DestroyWindow(shelf.window);shelf.window=nullptr;shelf.search=nullptr;shelf.editor=nullptr;if(shelf.stop) SetEvent(shelf.stop.get());
-    if(shelf.lease&&WaitForSingleObject(shelf.lease.get(),0)!=WAIT_OBJECT_0) { if(g_app.window) SetTimer(g_app.window,17,100,nullptr);return false; }shelf.lease.reset();shelf.stop.reset();return true;
+    if(shelf.lease&&WaitForSingleObject(shelf.lease.get(),0)!=WAIT_OBJECT_0) { if(g_app.window) SetTimer(g_app.window,17,100,nullptr);return false; }
+    shelf.lease.reset();shelf.stop.reset();shelf.ready.reset();return true;
 }
 void tick(UINT timer) {
-    if(timer!=17) return;if(!shelf.lease) { KillTimer(g_app.window,17);return; }
+    if(timer!=17) return;if(!shelf.lease) {
+        KillTimer(g_app.window,17);
+        if(std::exchange(shelf.retry_pending,false)) configure();
+        return;
+    }
     if(WaitForSingleObject(shelf.lease.get(),0)==WAIT_OBJECT_0) {
+        if(shelf.rename&&!finish_file_rename()) return;
         DWORD code=0;GetExitCodeProcess(shelf.lease.get(),&code);shelf.lease.reset();shelf.stop.reset();KillTimer(g_app.window,17);
-        bool wanted=g_app.settings.organizer_enabled&&!g_app.close_requested,restart=shelf.stopping&&wanted,failed=!shelf.stopping&&wanted;shelf.stopping=false;
-        if(restart) { if(!configure()) { g_app.settings.organizer_enabled=0;save_config();set_status(L"桌面收纳未能重新启动，原桌面已保留",L"Organizer could not restart. Your original desktop was retained."); } }
-        else if(failed) { shutdown();g_app.settings.organizer_enabled=0;save_config();set_status(code?L"桌面控制已退出，原桌面已恢复或等待恢复":L"桌面收纳会话已结束，原桌面已恢复",code?L"Desktop ownership ended. The original desktop was restored or recovery remains pending.":L"Organizer session ended. Your original desktop was restored."); }
+        shelf.ready.reset();
+        bool restart=shelf.stopping, recover=shelf.recovering;
+        shutdown();
+        shelf.stopping=false;
+        if(shelf.session_suspended||g_app.close_requested) return;
+        if(restart&&g_app.settings.organizer_enabled) configure();
+        else if(g_app.settings.organizer_enabled||(recover&&code)) retry_after_shell_settles();
     }
 }
 void desktop_changed() { if(shelf.window){auto now=GetTickCount64();if(!shelf.change_started)shelf.change_started=now;SetTimer(shelf.window,2,now-shelf.change_started>=1000?1:250,nullptr);} }
 void shell_restarted() {
-    if(shelf.preview||!g_app.settings.organizer_enabled||g_app.close_requested) return;
+    if(shelf.preview||!g_app.settings.organizer_enabled||g_app.close_requested||shelf.session_suspended) return;
+    shelf.protect_empty_until=GetTickCount64()+90000;
     // Retire the old IFolderView lease before claiming the replacement Explorer
     // desktop. Its durable receipt keeps the user's original icon visibility.
     // tick() restarts after the old helper has acknowledged restoration.
-    if(shutdown()) {shelf.stopping=false;if(!configure()) {g_app.settings.organizer_enabled=0;save_config();set_status(L"Explorer 桌面暂不可用，可稍后重新开启收纳",L"The Explorer desktop is unavailable. Re-enable the organizer after it recovers.");}}
+    if(shutdown()) {shelf.stopping=false;configure();}
 }
 namespace {
 std::unique_ptr<Model> settings_model;
@@ -481,13 +578,19 @@ int settings_group_action(int action,wchar_t const* identifier,wchar_t const* ar
 }
 bool message(UINT msg,WPARAM wp,LPARAM lp) {
     if(msg!=WM_APP+90&&msg!=WM_APP+91) return false;if(wp!=shelf.token||!shelf.lease) return true;
-    if(msg==WM_APP+90) { if(g_app.settings.organizer_enabled&&!g_app.close_requested&&!shelf.stopping) { if(!shelf.window&&!show_shelf()&&shelf.stop) SetEvent(shelf.stop.get()); }else if(shelf.stop) SetEvent(shelf.stop.get()); }
+    if(msg==WM_APP+90) {
+        if(g_app.settings.organizer_enabled&&!g_app.close_requested&&!shelf.stopping&&!shelf.session_suspended&&shelf.ready&&(shelf.window||show_shelf())) {
+            SetEvent(shelf.ready.get());shelf.retry_seconds=0;
+            SetTimer(g_app.window,17,1500,nullptr);
+        }else if(shelf.stop) SetEvent(shelf.stop.get());
+    }
     else {
         if(shelf.stop) SetEvent(shelf.stop.get());
         // This helper may belong to an earlier off -> on transition. Its result
         // must never replace the user's latest desired state.
-        if(shelf.stopping||g_app.close_requested) return true;
-        g_app.settings.organizer_enabled=0;save_config();if(HRESULT(lp)==HRESULT_FROM_WIN32(ERROR_BUSY)) set_status(L"其他程序正在管理桌面，请先关闭其收纳功能。",L"Another app owns the desktop. Disable its organizer first.");else error_box(g_app.window,tr(L"无法接管桌面，原桌面保持不变",L"Could not claim the desktop. The original desktop is preserved."),HRESULT(lp));
+        if(shelf.stopping||g_app.close_requested||shelf.session_suspended) return true;
+        log_line(L"Organizer helper reported 0x%08lX",DWORD(lp));
+        set_status(L"正在等待 Windows 桌面就绪，将自动重试。",L"Waiting for the Windows desktop. Will retry automatically.");
     }return true;
 }
 bool settings_group_tests(std::wstring const& directory) {
@@ -579,7 +682,30 @@ bool arrival_tests(std::wstring const& directory){
     while(shelf.rename&&!shelf.rename->done)Sleep(5);if(!finish_file_rename())return false;file=desktop/L"Renamed document.txt";
     if(!find()||find()->group!=prior.group||!find()->manual_loose||!std::filesystem::exists(file)||std::filesystem::exists(desktop/L"New document.txt"))return false;
     auto collision=desktop/L"Existing.txt";if(!write_utf8_atomic(collision.c_str(),L"keep"))return false;if(!start_file_rename(file.wstring(),L"Existing.txt"))return false;
-    while(shelf.rename&&!shelf.rename->done)Sleep(5);bool rejected=!shelf.rename->ok;finish_file_rename();return rejected&&std::filesystem::exists(file)&&std::filesystem::exists(collision)&&!start_file_rename(file.wstring(),L"../outside.txt");
+    while(shelf.rename&&!shelf.rename->done)Sleep(5);bool rejected=!shelf.rename->ok;finish_file_rename();
+    if(!rejected||!std::filesystem::exists(file)||!std::filesystem::exists(collision)||start_file_rename(file.wstring(),L"../outside.txt"))return false;
+    auto link=desktop/L"Demo.url", renamed=desktop/L"Approved.url";
+    if(!write_utf8_atomic(link.c_str(),L"[InternetShortcut]\r\nURL=about:blank\r\n"))return false;
+    synchronize();
+    auto edit=[&](wchar_t const* text){
+        shelf.editor=CreateWindowExW(0,L"EDIT",text,WS_CHILD,0,0,100,24,window,HMENU(2),g_app.instance,nullptr);
+        if(!shelf.editor)return false;
+        shelf.editing_entry=link.wstring();shelf.editing_file=true;
+        return SetWindowSubclass(shelf.editor,edit_keys,1,0)!=FALSE;
+    };
+    if(!edit(L"Unconfirmed"))return false;
+    SendMessageW(window,WM_COMMAND,MAKEWPARAM(2,EN_KILLFOCUS),LPARAM(shelf.editor));
+    if(shelf.editor||shelf.rename||!std::filesystem::exists(link))return false;
+    if(!edit(L"Cancelled"))return false;
+    SendMessageW(shelf.editor,WM_KEYDOWN,VK_ESCAPE,0);
+    if(shelf.editor||shelf.rename||!std::filesystem::exists(link))return false;
+    if(!edit(L"Approved"))return false;
+    SendMessageW(shelf.editor,WM_KEYDOWN,VK_RETURN,0);
+    if(!shelf.rename)return false;
+    while(!shelf.rename->done)Sleep(5);
+    bool approved=shelf.rename->ok;finish_file_rename();
+    return approved&&std::filesystem::exists(renamed)&&!std::filesystem::exists(link)&&
+        !std::filesystem::exists(desktop/L"Approved")&&shortcut_extension(L"DEMO.LNK",false)==L".LNK"&&shortcut_extension(L"DEMO.LNK",true).empty();
 }
 bool transition_tests() {
     if(shelf.lease||shelf.window||shelf.stop) return false;auto wanted=g_app.settings.organizer_enabled;bool prior=shelf.stopping;auto token=shelf.token;
@@ -588,7 +714,14 @@ bool transition_tests() {
     if(!message(WM_APP+91,42,HRESULT_FROM_WIN32(ERROR_BUSY))||!g_app.settings.organizer_enabled) return false;
     shelf.stopping=false;if(!message(WM_APP+91,41,HRESULT_FROM_WIN32(ERROR_BUSY))||!g_app.settings.organizer_enabled) return false;
     shelf.stop.reset(CreateEventW(nullptr,TRUE,FALSE,nullptr));if(!shelf.stop) return false;shell_restarted();
-    return shelf.stopping&&g_app.settings.organizer_enabled&&WaitForSingleObject(shelf.stop.get(),0)==WAIT_OBJECT_0&&bool(shelf.lease);
+    if(!shelf.stopping||!g_app.settings.organizer_enabled||WaitForSingleObject(shelf.stop.get(),0)!=WAIT_OBJECT_0||!shelf.lease)return false;
+    // An outstanding fake helper must receive the stop before Windows commits.
+    // Its handle stays live while cancellation returns control to the monitor.
+    ResetEvent(shelf.stop.get());
+    suspend_for_session_end();suspend_for_session_end();
+    bool suspended=shelf.session_suspended&&shelf.stopping&&configure()&&!shelf.window&&g_app.settings.organizer_enabled&&WaitForSingleObject(shelf.stop.get(),0)==WAIT_OBJECT_0;
+    resume_after_cancelled_session();resume_after_cancelled_session();
+    return suspended&&!shelf.session_suspended&&shelf.stopping&&g_app.settings.organizer_enabled;
 }
 namespace {
 bool menu_probe_ok{};int menu_probe_mode{};
@@ -612,7 +745,17 @@ bool interaction_tests(std::wstring const& directory) {
     shelf.menu=shelf.dragging=false;shelf.loose[0]->dragging=false;shelf.drag_group.clear();shelf.editor=nullptr;
     popup_menu=test_popup;menu_probe_mode=0;menu_probe_ok=false;loose_proc(shelf.loose[0]->window,WM_CONTEXTMENU,0,0);if(!menu_probe_ok||shelf.model->entries[0].loose||shelf.menu)return false;
     shelf_proc(window,WM_APP+95,0,0);if(!shelf.loose.empty()||!std::filesystem::exists(entry.path,error))return false;
-    shelf.tiles.push_back({RECT{0,0,100,100},0,false});menu_probe_mode=2;menu_probe_ok=false;context_menu(POINT{},0);if(!menu_probe_ok)return false;
+    shelf.tiles.push_back({RECT{0,0,100,100},0,false,entry.path});menu_probe_mode=2;menu_probe_ok=false;context_menu(POINT{},0);if(!menu_probe_ok)return false;
+    Entry shortcut;shortcut.path=(std::filesystem::path(directory)/L"微信.lnk").wstring();
+    Entry pc;pc.path=L"shell:MyComputerFolder";pc.system=true;
+    shelf.model->entries.push_back(shortcut);shelf.model->entries.push_back(pc);
+    Tile painted{RECT{110,0,180,100},1,false,shortcut.path};
+    shelf.tiles.push_back(painted);POINT inside{135,50};
+    if(hit(inside)<0||!painted.matches_press(shortcut.path,L""))return false;
+    std::swap(shelf.model->entries[1],shelf.model->entries[2]);
+    if(hit(inside)!=-1||painted.matches_press(pc.path,L""))return false;
+    shelf.model->entries.resize(1);
+    if(hit(inside)!=-1)return false;
     // Disable/recreate during a nested popup destroys its target; stale command
     // must be ignored even when the model still exists after window destruction.
     shelf.model->entries[0].loose=true;auto transient=std::make_unique<Loose>();transient->path=entry.path;transient->window=CreateWindowExW(0,L"STATIC",L"",WS_POPUP,0,0,80,90,nullptr,nullptr,g_app.instance,nullptr);if(!transient->window)return false;SetWindowLongPtrW(transient->window,GWLP_USERDATA,LPARAM(transient.get()));HWND target=transient->window;shelf.loose.push_back(std::move(transient));menu_probe_mode=1;menu_probe_ok=false;loose_proc(target,WM_CONTEXTMENU,0,0);if(!menu_probe_ok||!shelf.model->entries[0].loose||!shelf.loose.empty())return false;shelf.menu=false;

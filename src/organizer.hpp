@@ -26,7 +26,7 @@ public:
     bool load();
     bool save() const;
     void initialize_groups();
-    bool synchronize(std::vector<std::wstring> const& roots,bool defer_new);
+    bool synchronize(std::vector<std::wstring> const& roots,bool defer_new,bool protect_empty_roots=false);
     bool collect(std::wstring const& path,std::wstring const& group={});
     bool rename_entry(std::wstring const& path,std::wstring const& name);
     bool restore_entry(std::wstring const& path);
@@ -42,7 +42,10 @@ public:
 bool configure(bool preview=false);
 bool has_session();
 bool transition_tests();
+bool visibility_tests(std::filesystem::path const& directory);
 bool shutdown();
+void suspend_for_session_end();
+void resume_after_cancelled_session();
 void tick(UINT timer);
 void desktop_changed();
 void shell_restarted();

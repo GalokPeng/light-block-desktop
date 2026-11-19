@@ -97,6 +97,13 @@ static void check(BOOL result,const wchar_t *name) {
 }
 int run_organizer_tests(const wchar_t* report){
     passes=failures=0;checks[0]=0;
+    auto root=std::filesystem::path(g_app.data);
+    check(lb::organizer::visibility_tests(root/L"visibility"),L"shutdown-restores-both-original-visibility-states-and-replays-interrupted-receipt");
+    check(lb::organizer::transition_tests(),L"session-query-suspends-lease-and-cancellation-preserves-preference");
+    check(lb::organizer::arrival_tests((root/L"arrivals").wstring()),L"native-edit-focus-loss-escape-enter-and-shortcut-extension");
+    check(lb::files::rename_tests(root/L"rename"),L"atomic-rename-source-identity-occupied-target-and-crash-recovery");
+    check(lb::organizer::interaction_tests((root/L"interaction").wstring()),L"painted-target-cannot-launch-a-reordered-or-removed-icon");
+    check(lb::organizer::entry_tests((root/L"entries").wstring()),L"incomplete-folder-scan-preserves-previous-desktop-and-custom-names");
     check(desktop_layer_tests(),L"organizer-first-show-without-activation");
     check(desktop_layer_runtime_tests(),L"organizer-sixty-repeated-shows-raises-resizes-bypass-repair");
     check(lb::desktop_surface::tests(),L"organizer-alpha-premultiplication");

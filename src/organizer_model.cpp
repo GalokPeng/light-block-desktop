@@ -61,20 +61,53 @@ bool Model::save() const {
     for(auto const& entry:entries) { if(!first) text+=L",";first=false;text+=L"{\"path\":"+quote(entry.path)+L",\"name\":"+quote(entry.name)+L",\"group\":"+quote(entry.group)+L",\"system\":"+(entry.system?L"true":L"false")+L",\"loose\":"+(entry.loose?L"true":L"false")+L",\"external\":"+(entry.external?L"true":L"false")+L",\"custom_name\":"+(entry.custom_name?L"true":L"false")+L",\"manual_loose\":"+(entry.manual_loose?L"true":L"false")+L",\"positioned\":"+(entry.positioned?L"true":L"false")+L",\"x\":"+std::to_wstring(entry.position.x)+L",\"y\":"+std::to_wstring(entry.position.y)+L"}"; }
     text+=L"]}\n";return write_utf8_atomic((directory_/L"organizer.json").c_str(),text.c_str())!=FALSE;
 }
-bool Model::synchronize(std::vector<std::wstring> const& roots,bool defer_new) {
+bool Model::synchronize(std::vector<std::wstring> const& roots,bool defer_new,bool protect_empty_roots) {
+    if(roots.empty()) return false;
     initialize_groups();std::vector<Entry> found;std::unordered_map<std::wstring,size_t> previous;
+    std::set<std::wstring> scanned_roots;
+    bool changed=false;
     for(size_t n=0;n<entries.size();++n) previous.emplace(lower(entries[n].path),n);
     auto append=[&](std::wstring path,std::wstring name,bool directory,bool system,uint64_t modified) {
-        auto existing=previous.find(lower(path));if(existing!=previous.end()) { Entry item=entries[existing->second];item.path=std::move(path);if(!item.custom_name)item.name=std::move(name);item.external=false;item.modified=modified;item.directory=directory;found.push_back(std::move(item));previous.erase(existing);return; }
+        auto existing=previous.find(lower(path));if(existing!=previous.end()) { Entry item=entries[existing->second];changed|=item.external||item.path!=path||(!item.custom_name&&item.name!=name);item.path=std::move(path);if(!item.custom_name)item.name=std::move(name);item.external=false;item.modified=modified;item.directory=directory;found.push_back(std::move(item));previous.erase(existing);return; }
+        changed=true;
         Entry item;item.path=std::move(path);item.name=std::move(name);item.group=classify(item.path,directory,system);item.modified=modified;item.system=system;item.directory=directory;item.loose=defer_new&&!system;item.due=std::chrono::steady_clock::now()+std::chrono::minutes(1);found.push_back(std::move(item));
     };
     append(L"shell:MyComputerFolder",tr(L"此电脑",L"This PC"),false,true,0);append(L"shell:RecycleBinFolder",tr(L"回收站",L"Recycle Bin"),false,true,0);append(L"ms-settings:",tr(L"Windows 设置",L"Windows settings"),false,true,0);
     for(auto const& root:roots) {
-        auto pattern=std::filesystem::path(root)/L"*";WIN32_FIND_DATAW data{};HANDLE find=FindFirstFileW(pattern.c_str(),&data);if(find==INVALID_HANDLE_VALUE) { if(GetLastError()!=ERROR_FILE_NOT_FOUND && GetLastError()!=ERROR_PATH_NOT_FOUND) return false;continue; }
+        auto directory=std::filesystem::path(root).lexically_normal();
+        if(root.empty()) return false;
+        if(!scanned_roots.insert(lower(directory.wstring())).second) continue;
+        auto previously_populated=[&]{
+            return std::any_of(entries.begin(),entries.end(),[&](auto const& e){
+                return !e.system&&!e.external&&!_wcsicmp(std::filesystem::path(e.path).parent_path().c_str(),directory.c_str());
+            });
+        };
+        auto start=found.size();
+        auto pattern=directory/L"*";WIN32_FIND_DATAW data{};HANDLE find=FindFirstFileW(pattern.c_str(),&data);
+        if(find==INVALID_HANDLE_VALUE) {
+            DWORD reason=GetLastError();
+            if(reason==ERROR_FILE_NOT_FOUND) {
+                DWORD attributes=GetFileAttributesW(directory.c_str());
+                if(attributes!=INVALID_FILE_ATTRIBUTES&&(attributes&FILE_ATTRIBUTE_DIRECTORY)) {
+                    if(protect_empty_roots&&previously_populated()) return false;
+                    continue;
+                }
+            }
+            // A redirected desktop may not be mounted during sign-in. Never
+            // commit a partial scan or discard its names, positions or groups.
+            if(root!=roots.front() && (reason==ERROR_PATH_NOT_FOUND||reason==ERROR_FILE_NOT_FOUND) &&
+               !previously_populated()) continue;
+            return false;
+        }
         scope_exit close([&]{FindClose(find);});
         do { if((data.dwFileAttributes&(FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM))||!wcscmp(data.cFileName,L".")||!wcscmp(data.cFileName,L"..")) continue;auto path=(std::filesystem::path(root)/data.cFileName).wstring();bool directory=(data.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)!=0;std::wstring name=data.cFileName;if(!directory && lower(std::filesystem::path(name).extension().wstring())==L".lnk") name=std::filesystem::path(name).stem().wstring();append(std::move(path),std::move(name),directory,false,(uint64_t(data.ftLastWriteTime.dwHighDateTime)<<32)|data.ftLastWriteTime.dwLowDateTime); }while(FindNextFileW(find,&data));
+        if(GetLastError()!=ERROR_NO_MORE_FILES) return false;
+        if(protect_empty_roots&&found.size()==start&&previously_populated()) return false;
     }
-    for(auto const& [path,index]:previous) if(entries[index].external) found.push_back(entries[index]);
+    for(auto const& [path,index]:previous) {
+        if(entries[index].external) found.push_back(entries[index]);else changed=true;
+    }
+    if(!changed){entries=std::move(found);return true;}
     auto before=std::move(entries);entries=std::move(found);if(save())return true;entries=std::move(before);return false;
 }
 bool Model::collect(std::wstring const& path,std::wstring const& group) { for(auto &entry:entries) if(lower(entry.path)==lower(path)) { auto before=entry;if(!group.empty()) { if(!known_group(groups,group)) return false;entry.group=group; }entry.loose=false;entry.manual_loose=false;if(save())return true;entry=std::move(before);return false; }return false; }
@@ -137,10 +170,24 @@ bool entry_tests(std::wstring const& directory) {
     // Batch drop is all-or-nothing, including a late invalid path.
     auto count=model.entries.size();if(model.add_paths({external.wstring(),L"relative-invalid.txt"},group)||model.entries.size()!=count)return false;
     if(!model.restore_entry(L"shell:MyComputerFolder")||!model.synchronize({desktop.wstring()},true)||!find(L"shell:MyComputerFolder")->manual_loose)return false;
+    auto snapshot=root/L"organizer.json";
+    auto stamp=std::filesystem::last_write_time(snapshot);
+    auto expected=model.entries.size();
+    if(!model.synchronize({desktop.wstring(),desktop.wstring()},true)||model.entries.size()!=expected||
+       std::filesystem::last_write_time(snapshot)!=stamp) return false;
+    if(model.synchronize({},true)||model.synchronize({(root/L"offline").wstring()},true)||
+       model.entries.size()!=expected||std::filesystem::last_write_time(snapshot)!=stamp) return false;
+    Model after_outage(root);if(!after_outage.load()||after_outage.entries.size()!=expected)return false;
+    if(!find(document.wstring())||find(document.wstring())->name!=L"显示名")return false;
+    auto parked=root/L"parked-item.txt";
+    std::filesystem::rename(document,parked,error);if(error)return false;
+    if(model.synchronize({desktop.wstring()},true,true)||!find(document.wstring()))return false;
+    std::filesystem::rename(parked,document,error);if(error||!model.synchronize({desktop.wstring()},false,true))return false;
     auto first=model.groups[0].id,second=model.groups[1].id;if(!model.move_group(0,1)||model.groups[0].id!=second||model.groups[1].id!=first)return false;
     // A directory at the file's destination forces a real atomic-write failure.
     // No production paths, ACLs, Explorer windows, or desktop state are touched.
     auto blocked=root/L"blocked";std::filesystem::create_directories(blocked/L"organizer.json",error);if(error)return false;Model failed(blocked);failed.groups=model.groups;failed.entries=model.entries;
+    if(!write_utf8_atomic((desktop/L"new-arrival.txt").c_str(),L"arrived during rescan"))return false;
     auto old=failed.entries;auto old_groups=failed.groups;if(failed.rename_entry(document.wstring(),L"lost")||failed.collect(document.wstring(),group)||failed.restore_entry(document.wstring())||failed.position_entry(document.wstring(),POINT{9,9})||failed.add_paths({external.wstring()},group)||failed.move_group(0,1)||failed.remove_group(group)||failed.synchronize({desktop.wstring()},true))return false;
     if(failed.entries.size()!=old.size()||failed.groups.size()!=old_groups.size())return false;for(size_t n=0;n<old.size();++n)if(failed.entries[n].name!=old[n].name||failed.entries[n].group!=old[n].group||failed.entries[n].loose!=old[n].loose||failed.entries[n].position.x!=old[n].position.x)return false;
     for(size_t n=0;n<old_groups.size();++n)if(failed.groups[n].id!=old_groups[n].id)return false;
