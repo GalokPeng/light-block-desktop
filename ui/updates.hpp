@@ -2,6 +2,7 @@
 #include "ui.hpp"
 #include "../src/version.hpp"
 #include <QtNetwork>
+#include <appmodel.h>
 #include <functional>
 #include <algorithm>
 #include <cmath>
@@ -13,6 +14,12 @@ public:
     static constexpr qint64 maximum_setup=128ll*1024*1024;
     struct Release {QString tag,digest,url; qint64 size{};};
 private:
+    static bool packaged_process() {
+        UINT32 length=0;
+        return GetCurrentPackageFullName(&length,nullptr)==ERROR_INSUFFICIENT_BUFFER;
+    }
+    bool store_managed_=packaged_process();
+    bool store_updates() const {return store_managed_&&!fixture_;}
     QNetworkAccessManager network_{this};QNetworkReply* reply_{};QByteArray body_,prefix_;
     std::unique_ptr<QSaveFile> file_;QCryptographicHash hash_{QCryptographicHash::Sha256};
     QTimer speed_,prepare_;QElapsedTimer elapsed_,prepared_clock_;qint64 activity_{},received_{},total_{};
@@ -122,16 +129,19 @@ private:
 public:
     UpdateService(){speed_.setInterval(1000);connect(&speed_,&QTimer::timeout,this,[this]{auto time=elapsed_.elapsed();bool stalled=time-activity_>(received_?12000:6000);bool slow=time>=10000&&received_<2*1024*1024&&received_*1000/std::max<qint64>(1,time)<64*1024;if(stalled||(slow&&source_index_+1<sources().size()))next_source();});prepare_.setInterval(50);connect(&prepare_,&QTimer::timeout,this,[this]{if(!helper_||WaitForSingleObject(helper_,0)!=WAIT_TIMEOUT){clear_helper(false);fail(ui::tr("更新组件未能就绪","Update helper did not become ready"));return;}if(ready_event_&&WaitForSingleObject(ready_event_,0)==WAIT_OBJECT_0){prepare_.stop();CloseHandle(ready_event_);ready_event_=nullptr;committed_=true;phase_=Phase::Installing;api.action(900);}else if(prepared_clock_.elapsed()>15000){clear_helper(true);fail(ui::tr("准备更新超时，请重试","Preparing the update timed out. Try again."));}});}
     ~UpdateService()override{discard_reply();discard_file();clear_helper(!committed_);}
-    void check(bool force=false){if(LB_PREVIEW_BUILD&&!fixture_)return;if(phase_==Phase::Checking||busy())return;if(!force&&checked_.isValid()&&checked_.secsTo(QDateTime::currentDateTimeUtc())<3600)return;phase_=Phase::Checking;error_.clear();metadata_errors_.clear();release_={};metadata(0);}
+    void check(bool force=false){if(store_updates())return;if(LB_PREVIEW_BUILD&&!fixture_)return;if(phase_==Phase::Checking||busy())return;if(!force&&checked_.isValid()&&checked_.secsTo(QDateTime::currentDateTimeUtc())<3600)return;phase_=Phase::Checking;error_.clear();metadata_errors_.clear();release_={};metadata(0);}
     bool busy()const{return phase_==Phase::Downloading||phase_==Phase::Preparing||phase_==Phase::Installing;}
     void cancel(){if(phase_==Phase::Installing)return;discard_reply();discard_file();speed_.stop();clear_helper(true);phase_=release_.tag.isEmpty()?Phase::Idle:Phase::Available;error_.clear();}
     void quit_failed(){if(phase_!=Phase::Installing)return;committed_=false;clear_helper(true);fail(ui::tr("请先完成当前编辑，再重试更新","Finish the current edit before retrying the update"));}
-    void click(){if(LB_PREVIEW_BUILD&&!fixture_){QDesktopServices::openUrl(QUrl("https://light-block-desktop.vercel.app/preview/"));return;}if(phase_==Phase::Downloading){cancel();return;}if(busy()||phase_==Phase::Checking)return;if(phase_!=Phase::Available){check(true);return;}QString directory=s(state.data)+"/updates";if(!QDir().mkpath(directory)){fail(ui::tr("无法创建更新目录","Cannot create the update folder"));return;}setup_=QDir(directory).absoluteFilePath("Qingkuai-"+release_.tag+"-Setup-x64.exe");source_index_=0;attempt();}
-    QString text()const{if(LB_PREVIEW_BUILD&&!fixture_)return ui::tr("测试版说明","Preview information");switch(phase_){case Phase::Checking:return ui::tr("正在检查更新…","Checking for updates…");case Phase::Latest:return ui::tr("已是最新版本","Up to date");case Phase::Available:return ui::tr("更新至 ","Update to ")+release_.tag;case Phase::Downloading:return ui::tr("更新下载 %1%","Downloading %1%").arg(total_?std::min<qint64>(100,received_*100/total_):0);case Phase::Preparing:return ui::tr("正在准备安装…","Preparing update…");case Phase::Installing:return ui::tr("正在退出并更新…","Closing to update…");case Phase::Error:return ui::tr("检查更新 · 重试","Check updates · Retry");default:return ui::tr("检查更新","Check for updates");}}
-    QString tooltip()const{if(LB_PREVIEW_BUILD&&!fixture_)return ui::tr("测试版不参与正式版自动更新","Preview builds do not participate in stable updates");return !error_.isEmpty()?error_:phase_==Phase::Downloading?ui::tr("来源：%1 · 点击取消","Source: %1 · Click to cancel").arg(source_):ui::tr("从官方发布检查并安装更新","Check and install an official update");}
+    void click(){if(store_updates()){QDesktopServices::openUrl(QUrl("ms-windows-store://downloadsandupdates"));return;}if(LB_PREVIEW_BUILD&&!fixture_){QDesktopServices::openUrl(QUrl("https://light-block-desktop.vercel.app/preview/"));return;}if(phase_==Phase::Downloading){cancel();return;}if(busy()||phase_==Phase::Checking)return;if(phase_!=Phase::Available){check(true);return;}QString directory=s(state.data)+"/updates";if(!QDir().mkpath(directory)){fail(ui::tr("无法创建更新目录","Cannot create the update folder"));return;}setup_=QDir(directory).absoluteFilePath("Qingkuai-"+release_.tag+"-Setup-x64.exe");source_index_=0;attempt();}
+    QString text()const{if(store_updates())return ui::tr("在 Microsoft Store 中更新","Update in Microsoft Store");if(LB_PREVIEW_BUILD&&!fixture_)return ui::tr("测试版说明","Preview information");switch(phase_){case Phase::Checking:return ui::tr("正在检查更新…","Checking for updates…");case Phase::Latest:return ui::tr("已是最新版本","Up to date");case Phase::Available:return ui::tr("更新至 ","Update to ")+release_.tag;case Phase::Downloading:return ui::tr("更新下载 %1%","Downloading %1%").arg(total_?std::min<qint64>(100,received_*100/total_):0);case Phase::Preparing:return ui::tr("正在准备安装…","Preparing update…");case Phase::Installing:return ui::tr("正在退出并更新…","Closing to update…");case Phase::Error:return ui::tr("检查更新 · 重试","Check updates · Retry");default:return ui::tr("检查更新","Check for updates");}}
+    QString tooltip()const{if(store_updates())return ui::tr("打开 Microsoft Store 更新页面","Open updates in Microsoft Store");if(LB_PREVIEW_BUILD&&!fixture_)return ui::tr("测试版不参与正式版自动更新","Preview builds do not participate in stable updates");return !error_.isEmpty()?error_:phase_==Phase::Downloading?ui::tr("来源：%1 · 点击取消","Source: %1 · Click to cancel").arg(source_):ui::tr("从官方发布检查并安装更新","Check and install an official update");}
     bool enabled()const{return phase_!=Phase::Checking&&phase_!=Phase::Preparing&&phase_!=Phase::Installing;}
     static bool tests(QString const& directory) {
-        if(!QDir().mkpath(directory))return false;QJsonObject result;Release out;UpdateService production;if(LB_PREVIEW_BUILD)production.check(true);result["preview_no_update_request"]=!LB_PREVIEW_BUILD||(production.phase_==Phase::Idle&&!production.reply_);
+        if(!QDir().mkpath(directory))return false;QJsonObject result;Release out;
+        UpdateService store;store.store_managed_=true;store.check(true);
+        result["store_channel_delegates_updates"]=store.phase_==Phase::Idle&&!store.reply_&&store.text().contains("Microsoft Store");
+        UpdateService production;if(LB_PREVIEW_BUILD)production.check(true);result["preview_no_update_request"]=!LB_PREVIEW_BUILD||(production.phase_==Phase::Idle&&!production.reply_);
         QJsonObject valid{{"version","v1.1.1"},{"sha256",QString(64,'a')},{"name","Qingkuai-Setup-x64.exe"},{"url",asset_url("v1.1.1")},{"size",4096}};
         auto serialize=[](QJsonObject const& value){return QJsonDocument(value).toJson(QJsonDocument::Compact);};
         result["official_metadata"]=parse_site(serialize(valid),out);auto invalid=valid;invalid["url"]="https://example.com/setup.exe";result["foreign_installer_rejected"]=!parse_site(serialize(invalid),out);

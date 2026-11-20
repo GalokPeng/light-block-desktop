@@ -35,3 +35,11 @@ python tools/check_wallpaper_catalog.py
 `release/` 包含版本化 Setup、固定名 Setup、便携 ZIP、应用源码 ZIP、Qt/FFmpeg 对应源码 ZIP 和 SHA256SUMS。两份 Setup 字节必须一致，安装包不超过 128 MiB，产物不带用户数据或开发缓存。尚未配置代码签名，不宣称安装包已签名。每个公开版本不可静默覆盖；修复后递增版本。
 
 发布完成必须确认 GitHub latest、全部资产与摘要、官网中英文下载与更新 JSON、v1.0.0 下载和归档仍可用。官网旧 `/preview/` 链接跳转正式页面。推送成功不代表发布成功。
+
+## 手动提交 Microsoft Store
+
+在 GitHub 仓库的 Settings → Secrets and variables → Actions → Variables 中，按 Partner Center 的应用标识配置 `STORE_IDENTITY_NAME`、`STORE_IDENTITY_PUBLISHER`、`STORE_PUBLISHER_DISPLAY_NAME` 和已保留的产品显示名 `STORE_DISPLAY_NAME`。这些值会写入安装包清单。此构建无需商店账号令牌或签名私钥。
+
+启用后，Stable release 工作流在 main 或正式标签构建通过时，会使用同一套已测试的程序和运行库生成 x64 MSIX。也可以在 main 上选择 Run workflow，将 publish 保持关闭，单独获取本次构建的产物。
+
+在 Actions 的运行摘要中下载 `microsoft-store-<版本>-x64`，解开 GitHub 外层 ZIP，再把里面的 `.msix` 上传至 Partner Center 对应产品的“提交 → 程序包”。商店更新需要递增包版本。首次提交还需填写商店资料、完整信任能力的用途并通过微软认证。公开仓库的工作流产物对登录 GitHub 的读者可见。[微软上传说明](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/upload-app-packages)

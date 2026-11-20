@@ -11,3 +11,9 @@ Build with `build.ps1`; run `tools/test.ps1`, website tests, release protocol te
 Pushes to main or stable version tags run the pinned-source pipeline. Only an unpublished newer stable version publishes as latest. The staging branch builds without publication. Release the installer, fixed alias, portable ZIP, application and corresponding dependency sources and SHA256SUMS. Never overwrite an already published version. Setup is currently unsigned; do not claim otherwise.
 
 Verify all published assets and digests, the website download and update JSON, and the preserved v1.0.0 download after publishing. Old preview URLs redirect to the stable website. A successful push alone is not release completion.
+
+## Uploading to Microsoft Store
+
+Set the repository Actions variables `STORE_IDENTITY_NAME`, `STORE_IDENTITY_PUBLISHER`, `STORE_PUBLISHER_DISPLAY_NAME` and `STORE_DISPLAY_NAME` using the registered Partner Center identity and reserved display name. The Windows SDK packages the tested x64 runtime for Store updates. Signing credentials and Partner Center access are unnecessary for the build.
+
+Open a successful **Stable release** run on main or a stable version tag. Download the `microsoft-store-<version>-x64` artifact, extract the ZIP and upload the enclosed `.msix` on the product submission’s **Packages** page in Partner Center. Increment the package version for each Store update. Signed-in GitHub users can download public repository artifacts. [Microsoft’s package upload guide](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/upload-app-packages)
