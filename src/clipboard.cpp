@@ -152,7 +152,10 @@ bool publish(Reply &reply) {
     scope_exit cleanup([&]{if(text) GlobalFree(text);});if(!OpenClipboard(g_app.window)) return false;scope_exit close([&]{CloseClipboard();});
     EmptyClipboard();bool good=false;
     if(text) { good=SetClipboardData(CF_UNICODETEXT,text)!=nullptr;if(good) text=nullptr; }
-    else { good=SetClipboardData(CF_BITMAP,reply.bitmap.get())!=nullptr;if(good) reply.bitmap.release(); }
+    else {
+        auto copied=static_cast<HBITMAP>(CopyImage(reply.bitmap.get(),IMAGE_BITMAP,0,0,0));if(!copied) return false;
+        good=SetClipboardData(CF_BITMAP,copied)!=nullptr;if(!good) DeleteObject(copied);
+    }
     if(good) view.written=GetClipboardSequenceNumber();return good;
 }
 HWND add_button(HWND parent,wchar_t const* text,int id) { HWND window=CreateWindowExW(0,L"BUTTON",text,WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,1,1,parent,reinterpret_cast<HMENU>(INT_PTR(id)),g_app.instance,nullptr);SendMessageW(window,WM_SETFONT,WPARAM(g_app.font),TRUE);return window; }

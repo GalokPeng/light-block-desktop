@@ -1,3 +1,10 @@
+# v2.0.8 · 修复截图复制粘贴问题 / Fix screenshot copy-paste
+
+- 修复截图与贴图复制到系统剪贴板后，部分外部应用无法粘贴图片的问题。
+- 修复剪贴板历史中的图片再次复制后无法在外部应用粘贴的问题。
+- Fix an issue where copied screenshots and pinned images could not be pasted into some external applications.
+- Fix the same clipboard-paste problem when copying an image from clipboard history.
+
 # v2.0.7 · 重启后的桌面与旧版升级 / Desktop recovery and profile upgrades
 
 - 关机或注销时提前恢复原有桌面图标显示状态，取消关机后继续收纳。登录时桌面目录暂不可用会重试，避免空扫描覆盖已有分组。

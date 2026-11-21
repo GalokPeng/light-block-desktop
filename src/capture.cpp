@@ -118,7 +118,7 @@ void show_toolbar(Surface &surface) {
     place_toolbar(surface);update_toolbar(surface);
 }
 bool copy_bitmap(HWND owner,HBITMAP bitmap) {
-    auto copied=static_cast<HBITMAP>(CopyImage(bitmap,IMAGE_BITMAP,0,0,LR_CREATEDIBSECTION));if(!copied) return false;
+    auto copied=static_cast<HBITMAP>(CopyImage(bitmap,IMAGE_BITMAP,0,0,0));if(!copied) return false;
     if(!open_image_clipboard(owner)) { DeleteObject(copied);return false; }
     EmptyClipboard();bool ok=SetClipboardData(CF_BITMAP,copied)!=nullptr;CloseClipboard();if(!ok) DeleteObject(copied);return ok;
 }
@@ -362,7 +362,7 @@ LRESULT CALLBACK toolbar_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
         else if(id==21&&surface->document) { commit_text(*surface);surface->document->undo();surface->active=-1;InvalidateRect(surface->window,nullptr,FALSE); }
         else if(id==22) { if(surface->complete) DestroyWindow(surface->window);else if(session&&surface->window==session->window) finish(*session,true,false);else close_toolbar(*surface); }
         else if(id==23) { if(session&&surface->window==session->window) finish(*session,false,true);else save_image(*surface); }
-        else if(id==24&&surface->document) { commit_text(*surface);copy_bitmap(surface->window,surface->document->render());if(session&&surface->window==session->window) DestroyWindow(surface->window); }
+        else if(id==24&&surface->document) { commit_text(*surface);if(copy_surface(*surface)&&session&&surface->window==session->window) DestroyWindow(surface->window); }
         else if(id==25) DestroyWindow(surface->window);
         else if(id==26&&session&&surface->window==session->window) { RECT area=session->selection;OffsetRect(&area,GetSystemMetrics(SM_XVIRTUALSCREEN),GetSystemMetrics(SM_YVIRTUALSCREEN));DestroyWindow(surface->window);lb::recording::start(area); }
         else if(id==27&&session&&surface->window==session->window) { RECT area=session->selection;OffsetRect(&area,GetSystemMetrics(SM_XVIRTUALSCREEN),GetSystemMetrics(SM_YVIRTUALSCREEN));DestroyWindow(surface->window);lb::scroll::start(area); }
