@@ -42,4 +42,4 @@ python tools/check_wallpaper_catalog.py
 
 启用后，Stable release 工作流在 main 或正式标签构建通过时，会使用同一套已测试的程序和运行库生成 x64 MSIX。也可以在 main 上选择 Run workflow，将 publish 保持关闭，单独获取本次构建的产物。
 
-在 Actions 的运行摘要中下载 `microsoft-store-<版本>-x64`，解开 GitHub 外层 ZIP，再把里面的 `.msix` 上传至 Partner Center 对应产品的“提交 → 程序包”。商店更新需要递增包版本。首次提交还需填写商店资料、完整信任能力的用途并通过微软认证。公开仓库的工作流产物对登录 GitHub 的读者可见。[微软上传说明](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/upload-app-packages)
+正式发行时，Release 附件中可直接下载 `Qingkuai-v<版本>-x64.msix`，并对照同页 SHA256SUMS 校验。只运行构建时，在 Actions 的运行摘要中下载 `microsoft-store-<版本>-x64`，解开 GitHub 外层 ZIP，再把里面的 `.msix` 上传至 Partner Center 对应产品的“提交 → 程序包”。商店更新需要递增包版本。首次提交还需填写商店资料、完整信任能力的用途并通过微软认证。公开仓库的工作流产物对登录 GitHub 的读者可见。[微软上传说明](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/upload-app-packages)

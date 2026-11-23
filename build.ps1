@@ -60,7 +60,14 @@ for ($attempt=0; $attempt -lt 10; $attempt++) {
 }
 New-Item -ItemType Directory -Force -Path (Join-Path $dist 'assets') | Out-Null
 Get-ChildItem -LiteralPath (Join-Path $root 'assets') -File | Copy-Item -Destination (Join-Path $dist 'assets') -Force
-Copy-Item -LiteralPath (Join-Path $root 'assets/cursors') -Destination (Join-Path $dist 'assets') -Recurse -Force
+$cursorSource = Join-Path $root 'assets/cursors'
+$cursorDestination = Join-Path $dist 'assets/cursors'
+New-Item -ItemType Directory -Force -Path $cursorDestination | Out-Null
+$cursorManifest = Join-Path $cursorSource 'manifest.json'
+Copy-Item -LiteralPath $cursorManifest -Destination $cursorDestination -Force
+foreach ($theme in (Get-Content -Raw -LiteralPath $cursorManifest | ConvertFrom-Json).themes) {
+    Copy-Item -LiteralPath (Join-Path $cursorSource $theme) -Destination $cursorDestination -Recurse -Force
+}
 Copy-Item -LiteralPath (Join-Path $root 'README.md'),(Join-Path $root 'LICENSE') -Destination $dist -Force
 $runtime = Join-Path $dist 'runtime'
 New-Item -ItemType Directory -Force -Path $runtime | Out-Null

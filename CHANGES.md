@@ -1,3 +1,14 @@
+# v2.0.9 · 存储优化与剪贴板修复 / Smaller installs and more reliable clipboard history
+
+- 精简安装文件。升级时校验并清理旧版程序组件和已知安装包缓存，保留用户壁纸、便签和配置。重复导入相同壁纸时复用已有文件。
+- 从历史记录复制图片时先完成转换，转换失败会保留剪贴板原有内容。剪贴板被短暂占用时会自动重试。
+- 支持仅提供 PNG 的剪贴板图片，保留透明度，可直接打开编辑。长截图历史支持最多 33,554,432 像素、PNG 最大 16 MiB，超限时会提示，仍可从系统剪贴板粘贴。
+- 本页提供用于手动提交 Microsoft Store 的 x64 MSIX 和对应的 SHA-256 校验值。
+- Smaller installs and verified cleanup of obsolete components and cached installers on upgrade. Wallpaper imports reuse identical files. Personal wallpapers, notes and settings are preserved.
+- Copying an image from history prepares it before replacing the clipboard. History retries when another app briefly holds the clipboard.
+- PNG-only images retain transparency and can be opened for editing. History supports long screenshots up to 33,554,432 pixels and 16 MiB of PNG data. Larger images remain available to paste and show a history-limit notice.
+- The x64 MSIX for manual Microsoft Store submission is included with the release checksums.
+
 # v2.0.8 · 修复截图复制粘贴问题 / Fix screenshot copy-paste
 
 - 修复截图与贴图复制到系统剪贴板后，部分外部应用无法粘贴图片的问题。

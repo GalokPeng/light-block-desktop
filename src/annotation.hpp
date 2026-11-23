@@ -64,4 +64,5 @@ bool visual_parity_tests();
 bool dialog_tests(std::wstring const& directory);
 bool save_tests(std::wstring const& directory);
 void edit_clipboard(HWND owner);
+void edit_clipboard_image(unique_gdi<HBITMAP> bitmap);
 }

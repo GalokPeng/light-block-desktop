@@ -128,6 +128,7 @@ int run_self_tests(const wchar_t *report) {
     check(player_result_tests(),L"independent-recording-result-player-tokens-and-decoder-limit");
     check(lb::taskbar::recovery_tests((std::filesystem::path(g_app.data)/L"taskbar-recovery-fixture").wstring()),L"taskbar-persistent-recovery-ownership");
     check(lb::thumbnails::cache_tests(),L"bounded-native-thumbnail-cache");
+    check(library_storage_tests((std::filesystem::path(g_app.data)/L"library-storage-fixture").c_str()),L"wallpaper-import-reuses-verified-content-and-preserves-original");
     check(lb::profile::tests(std::filesystem::path(g_app.data)/L"profile-fixture"),L"compatible-profile-selection-and-desktop-menu");
     check(lb::migration::tests(std::filesystem::path(g_app.data)/L"migration-fixture"),L"python-v1-profile-migration");
     check(lb::static_wallpaper::tests((std::filesystem::path(g_app.data)/L"static-fixture").c_str()),L"static-wallpaper-persist-rollback-cancel");

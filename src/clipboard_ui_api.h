@@ -5,6 +5,7 @@
 /* Extension 2. Call on the UI thread; database/clipboard work runs on its worker.
    Caller owns every buffer. No C++ allocation or handle crosses the DLL boundary. */
 enum { LB_CLIPBOARD_UI_ABI=1, LB_CLIPBOARD_UI_EXTENSION=2 };
+enum { LB_CLIPBOARD_IMAGE_BYTES=16*1024*1024, LB_CLIPBOARD_IMAGE_PIXELS=32*1024*1024 };
 enum ClipboardUiAction { ClipboardEnable=1, ClipboardCapture, ClipboardCopy,
     ClipboardPinImage, ClipboardTogglePin, ClipboardDelete, ClipboardClear };
 struct ClipboardUiState {

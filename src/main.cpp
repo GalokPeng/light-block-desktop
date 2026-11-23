@@ -23,12 +23,12 @@
 #include <map>
 
 struct Hit { RECT rect;int id; };
-static Hit hits[180];static UINT hit_count;static UINT taskbar_created;static LONG cancel_import;static UINT grid_offset,hidden_builtins;
+static Hit hits[180];static UINT hit_count;static UINT taskbar_created;static std::atomic_bool cancel_import;static UINT grid_offset,hidden_builtins;
 static wchar_t removing[LB_PATH];static ULONGLONG remove_started;
 static bool desktop_menu_active{},fixture_mode{};
 static lb::capture::StartGate capture_gate;
 static BOOL capture_previous_transitions=FALSE;
-struct Import { wchar_t source[LB_PATH],dest[LB_PATH],sha1[41];HBITMAP thumb;BOOL ok;DWORD error;int progress;bool apply; };
+struct Import { wchar_t source[LB_PATH],dest[LB_PATH],sha1[41];HANDLE existing;BOOL ok;DWORD error;int progress;bool apply,full; };
 static int px(int n) { return MulDiv(n,(int)g_app.dpi,96); }
 static COLORREF bg(void) { return g_app.dark?RGB(18,23,32):RGB(246,247,250); }
 static COLORREF panel(void) { return g_app.dark?RGB(26,33,45):RGB(255,255,255); }
@@ -194,32 +194,109 @@ static void library_menu(POINT point) {
 static DWORD CALLBACK copy_progress(LARGE_INTEGER total,LARGE_INTEGER transferred,LARGE_INTEGER stream_size,LARGE_INTEGER stream_done,DWORD stream,DWORD reason,HANDLE src,HANDLE dst,LPVOID data) {
     (void)stream_size;(void)stream_done;(void)stream;(void)reason;(void)src;(void)dst;
     auto *i=static_cast<Import*>(data);int p=total.QuadPart?(int)(transferred.QuadPart*100/total.QuadPart):0;
-    if(p!=i->progress) { i->progress=p;PostMessageW(g_app.window,WM_LB_IMPORT,(WPARAM)p,0); }
-    return InterlockedCompareExchange(&cancel_import,0,0)?PROGRESS_CANCEL:PROGRESS_CONTINUE;
+    if(p!=i->progress) { i->progress=p;if(g_app.window) PostMessageW(g_app.window,WM_LB_IMPORT,(WPARAM)p,0); }
+    return cancel_import.load()?PROGRESS_CANCEL:PROGRESS_CONTINUE;
+}
+
+// Check sizes before reading any media. The held handle keeps a verified library
+// file stable until the UI has selected it. Only managed direct children qualify.
+static lb::unique_handle existing_media(Import& job, const wchar_t* directory) {
+    if(GetFileAttributesW(directory)&FILE_ATTRIBUTE_REPARSE_POINT) return {};
+    lb::unique_handle source(CreateFileW(job.source,GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,0,nullptr));
+    LARGE_INTEGER size{};
+    if(!source || !GetFileSizeEx(source.get(),&size)) return {};
+    wchar_t pattern[LB_PATH],source_hash[65]{},candidate[LB_PATH];
+    if(!path_join(pattern,LB_PATH,directory,L"*")) return {};
+    WIN32_FIND_DATAW entry{};
+    HANDLE find=FindFirstFileW(pattern,&entry);
+    if(find==INVALID_HANDLE_VALUE) return {};
+    lb::scope_exit close([&]{FindClose(find);});
+    do {
+        if(cancel_import.load()) break;
+        if(entry.dwFileAttributes&(FILE_ATTRIBUTE_DIRECTORY|FILE_ATTRIBUTE_REPARSE_POINT)) continue;
+        if(entry.nFileSizeHigh!=DWORD(size.HighPart)||entry.nFileSizeLow!=size.LowPart) continue;
+        if(_wcsicmp(PathFindExtensionW(entry.cFileName),PathFindExtensionW(job.source))) continue;
+        if(!path_join(candidate,LB_PATH,directory,entry.cFileName)) continue;
+        if(!*source_hash && !hash_file(job.source,L"SHA256",source_hash,65,&cancel_import)) break;
+        lb::unique_handle locked(CreateFileW(candidate,GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_FLAG_OPEN_REPARSE_POINT,nullptr));
+        BY_HANDLE_FILE_INFORMATION info{};
+        if(!locked||!GetFileInformationByHandle(locked.get(),&info)||(info.dwFileAttributes&FILE_ATTRIBUTE_REPARSE_POINT)) continue;
+        wchar_t digest[65];
+        if(hash_file(candidate,L"SHA256",digest,65,&cancel_import) && !wcscmp(source_hash,digest)) {
+            if(*job.sha1 && (!hash_file(candidate,L"SHA1",digest,65,&cancel_import)||_wcsicmp(digest,job.sha1))) break;
+            StringCchCopyW(job.dest,LB_PATH,candidate);
+            return locked;
+        }
+    } while(FindNextFileW(find,&entry));
+    return {};
+}
+
+static void store_import(Import* i,const wchar_t* directory) {
+    auto existing=existing_media(*i,directory);
+    if(existing) { i->existing=existing.release();i->ok=TRUE;return; }
+    if(cancel_import.load()) { i->error=ERROR_CANCELLED;return; }
+    if(i->full) { i->error=ERROR_TOO_MANY_NAMES;return; }
+    wchar_t temp[LB_PATH];
+    if(FAILED(StringCchPrintfW(temp,LB_PATH,L"%s.partial",i->dest))) { i->error=ERROR_FILENAME_EXCED_RANGE;return; }
+    lb::unique_handle reserved(CreateFileW(temp,GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr));
+    if(!reserved) { i->error=GetLastError();return; }
+    reserved.reset();
+    if(!CopyFileExW(i->source,temp,copy_progress,i,nullptr,0)) i->error=GetLastError();
+    if(!i->error&&*i->sha1) {
+        wchar_t digest[41];
+        if(!hash_file(temp,L"SHA1",digest,41,&cancel_import)||_wcsicmp(digest,i->sha1)) i->error=ERROR_CRC;
+    }
+    if(cancel_import.load()) i->error=ERROR_CANCELLED;
+    if(!i->error && !MoveFileExW(temp,i->dest,MOVEFILE_WRITE_THROUGH)) i->error=GetLastError();
+    i->ok=i->error==ERROR_SUCCESS;
+    if(!i->ok) {
+        SetFileAttributesW(temp,FILE_ATTRIBUTE_NORMAL);
+        DeleteFileW(temp);
+    }
 }
 static DWORD WINAPI import_thread(void *data) {
-    auto *i=static_cast<Import*>(data);CoInitializeEx(NULL,COINIT_MULTITHREADED);wchar_t temp[LB_PATH];StringCchPrintfW(temp,LB_PATH,L"%s.partial",i->dest);
-    i->ok=CopyFileExW(i->source,temp,copy_progress,i,NULL,COPY_FILE_FAIL_IF_EXISTS);
-    if(i->ok&&*i->sha1) { wchar_t actual[41];if(!hash_file(temp,L"SHA1",actual,41)||_wcsicmp(actual,i->sha1)) { i->ok=FALSE;SetLastError(ERROR_CRC); } }
-    if(i->ok&&InterlockedCompareExchange(&cancel_import,0,0)) { i->ok=FALSE;SetLastError(ERROR_CANCELLED); }
-    if(i->ok) i->ok=MoveFileExW(temp,i->dest,MOVEFILE_WRITE_THROUGH);
-    i->error=GetLastError();if(!i->ok) DeleteFileW(temp);
+    auto *i=static_cast<Import*>(data);CoInitializeEx(NULL,COINIT_MULTITHREADED);
+    wchar_t directory[LB_PATH];path_join(directory,LB_PATH,g_app.data,L"media");
+    store_import(i,directory);
     CoUninitialize();
-    if(!PostMessageW(g_app.window,WM_LB_IMPORT,1001,(LPARAM)i)) { if(i->thumb) DeleteObject(i->thumb);free(i); }
+    if(!PostMessageW(g_app.window,WM_LB_IMPORT,1001,(LPARAM)i)) { if(i->existing) CloseHandle(i->existing);free(i); }
     return 0;
+}
+
+bool library_storage_tests(const wchar_t* root) {
+    namespace fs=std::filesystem;
+    auto run=fs::path(root)/(std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(GetTickCount64()));
+    auto dir=run/L"media",source=run/L"source.jpg";
+    if(!ensure_directory(dir.c_str())||!write_utf8_atomic(source.c_str(),L"synthetic A")) return false;
+    auto import=[&](const wchar_t* name,const wchar_t* expected=L"",bool full=false) {
+        Import job{};
+        StringCchCopyW(job.source,LB_PATH,source.c_str());
+        StringCchCopyW(job.dest,LB_PATH,(dir/name).c_str());
+        StringCchCopyW(job.sha1,41,expected);
+        job.full=full;store_import(&job,dir.c_str());
+        if(job.existing) CloseHandle(job.existing);
+        return job.ok?fs::path(job.dest):fs::path{};
+    };
+    auto first=import(L"first.jpg");
+    if(first!=dir/L"first.jpg") return false;
+    wchar_t expected[41];if(!hash_file(source.c_str(),L"SHA1",expected,41)) return false;
+    if(import(L"repeat.jpg",expected,true)!=first || fs::exists(dir/L"repeat.jpg")) return false;
+    if(!import(L"tampered.jpg",L"0000000000000000000000000000000000000000").empty()) return false;
+    if(fs::exists(dir/L"tampered.jpg.partial")||!write_utf8_atomic(source.c_str(),L"synthetic B")) return false;
+    if(!import(L"full.jpg",L"",true).empty()||import(L"second.jpg")!=dir/L"second.jpg") return false;
+    wchar_t original[41];return hash_file(first.c_str(),L"SHA1",original,41)&&wcscmp(original,expected)==0;
 }
 static void import_file(const wchar_t *path,const wchar_t *expected=nullptr,bool apply=false) {
     if(g_app.close_requested) return;
     if(g_app.import_thread) { set_status(L"已有文件正在导入，请稍候",L"An import is already running.");return; }
     if(media_kind(path)==MEDIA_UNKNOWN) { set_status(L"请选择图片、GIF 或 Windows 支持的视频",L"Choose an image, GIF or Windows-supported video.");return; }
-    if(g_app.count>=LB_MAX_ITEMS) { set_status(L"图库已达到 10000 项上限，请先整理现有内容",L"The library has reached 10000 items. Remove unused entries first.");return; }
     auto *i=static_cast<Import*>(calloc(1,sizeof(Import)));if(!i) return;
-    i->apply=apply;
+    i->apply=apply;i->full=g_app.count>=LB_MAX_ITEMS;
     if(expected&&FAILED(StringCchCopyW(i->sha1,ARRAYSIZE(i->sha1),expected))) { free(i);return; }
     StringCchCopyW(i->source,LB_PATH,path);wchar_t directory[LB_PATH],name[300];path_join(directory,LB_PATH,g_app.data,L"media");ensure_directory(directory);
     StringCchPrintfW(name,300,L"%llu-%s",GetTickCount64(),PathFindFileNameW(path));
     if(!path_join(i->dest,LB_PATH,directory,name)) { free(i);return; }
-    InterlockedExchange(&cancel_import,0);g_app.import_thread=CreateThread(NULL,0,import_thread,i,0,NULL);
+    cancel_import=false;g_app.import_thread=CreateThread(NULL,0,import_thread,i,0,NULL);
     if(!g_app.import_thread) free(i);else set_status(L"正在复制原始文件到图库…",L"Copying the original file into your library…");
 }
 static void browse_file(void) {
@@ -292,7 +369,7 @@ static void request_exit(bool session_ending=false) {
         if(!notes_shutdown()&&!session_ending) {lb::frontend::update_exit_failed();return;}
         g_app.close_requested=TRUE;shutdown_started=GetTickCount64();shutdown_logged=0;shutdown_pending.clear();
         log_line(L"shutdown requested session=%d",session_ending);
-        InterlockedExchange(&cancel_import,1);
+        cancel_import=true;
         cancel_capture_start();KillTimer(g_app.window,22);
         lb::particles::shutdown();lb::focus::shutdown();capture_shutdown();launcher_shutdown();settings_close();
         player_stop(TRUE);
@@ -412,7 +489,21 @@ static LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wp,LPARAM lp
     case WM_LB_HELLO:case WM_LB_READY:case WM_LB_ERROR:case WM_LB_POSITION:case WM_LB_DURATION:case WM_LB_STATE:
         player_message(message,wp,lp);if(message==WM_LB_STATE&&desktop_menu_active)lb::profile::desktop_menu(g_app.exe,true,true,g_app.english!=FALSE,g_app.data,!g_app.settings.wallpaper_sound);if(message==WM_LB_READY) lb::focus::message(message,wp,lp);SetPropW(window,L"LB.PlayerPID",(HANDLE)(uintptr_t)g_app.player.pid);SetPropW(window,L"LB.Ready",(HANDLE)(uintptr_t)g_app.player.ready);return 0;
     case WM_LB_IMPORT:
-        if(wp==1001) { Import *i=(Import*)lp;if(g_app.import_thread) { CloseHandle(g_app.import_thread);g_app.import_thread=NULL; }if(i->ok) { add_item(i->dest,PathFindFileNameW(i->source),i->thumb);g_app.selected=g_app.count-1;g_app.filter=g_app.items[g_app.selected].kind;set_status(L"原始文件已复制到图库",L"Original file copied into your library.");if(i->apply&&!g_app.close_requested)player_request(i->dest,TRUE); }else { if(i->thumb) DeleteObject(i->thumb);if(!g_app.close_requested) error_box(window,tr(L"文件导入失败",L"File import failed"),HRESULT_FROM_WIN32(i->error)); }free(i); }
+        if(wp==1001) {
+            auto *i=reinterpret_cast<Import*>(lp);
+            if(g_app.import_thread) { CloseHandle(g_app.import_thread);g_app.import_thread=nullptr; }
+            if(i->ok) {
+                UINT index=0;while(index<g_app.count && _wcsicmp(g_app.items[index].path,i->dest)) ++index;
+                if(index==g_app.count) add_item(i->dest,PathFindFileNameW(i->source),nullptr);
+                if(index<g_app.count) { g_app.selected=index;g_app.filter=g_app.items[index].kind; }
+                if(i->existing) set_status(L"图库中已有相同壁纸",L"This wallpaper is already in your library.");
+                else set_status(L"原始文件已复制到图库",L"Original file copied into your library.");
+                if(i->apply&&!g_app.close_requested) player_request(i->dest,TRUE);
+            } else if(i->error==ERROR_TOO_MANY_NAMES) set_status(L"图库已达到 10000 项上限，请先整理现有内容",L"The library has reached 10000 items. Remove unused entries first.");
+            else if(!g_app.close_requested) error_box(window,tr(L"文件导入失败",L"File import failed"),HRESULT_FROM_WIN32(i->error));
+            if(i->existing) CloseHandle(i->existing);
+            free(i);
+        }
         else { StringCchPrintfW(g_app.status,240,tr(L"正在复制原始文件… %u%%",L"Copying original file… %u%%"),(UINT)wp);InvalidateRect(window,NULL,FALSE); }return 0;
     case WM_DROPFILES: { wchar_t path[LB_PATH];if(DragQueryFileW((HDROP)wp,0,path,LB_PATH)) import_file(path);DragFinish((HDROP)wp);return 0; }
     case WM_LB_TRAY: {

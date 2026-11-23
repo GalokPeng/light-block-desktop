@@ -16,6 +16,7 @@ public:
     void clear();
 };
 bool configure();
+void request_image_editor();
 bool shutdown();
 bool message(UINT message,WPARAM wp,LPARAM lp);
 void show();

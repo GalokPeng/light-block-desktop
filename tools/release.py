@@ -145,8 +145,19 @@ def stage(version, dist):
         copy_file(source / name, target / name)
     for record in verify_ui(source)["files"]:
         copy_file(safe_path(source, record["path"]), safe_path(target, record["path"]))
-    for name in ("assets", "licenses"):
-        shutil.copytree(ROOT / name, target / name, dirs_exist_ok=True)
+    cursor_root = ROOT / "assets/cursors"
+    themes = json.loads((cursor_root / "manifest.json").read_text(encoding="utf-8"))["themes"]
+    for theme in themes:
+        if not (safe_path(cursor_root, theme) / "normal.cur").is_file():
+            raise ValueError(f"Missing cursor artwork for {theme}")
+
+    def obsolete_themes(directory, names):
+        if Path(directory) == cursor_root:
+            return [name for name in names if (cursor_root / name).is_dir() and name not in themes]
+        return []
+
+    shutil.copytree(ROOT / "assets", target / "assets", ignore=obsolete_themes, dirs_exist_ok=True)
+    shutil.copytree(ROOT / "licenses", target / "licenses", dirs_exist_ok=True)
     runtime = source / "runtime"
     layout = (runtime / "taskbar-current.txt").read_text(encoding="ascii").strip()
     if not re.fullmatch(r"LightBlockNativeTaskbar-[a-f0-9]{12}\.dll", layout):
@@ -166,6 +177,12 @@ def stage(version, dist):
     (target / "build-info.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
     if (target / "data").exists() or (target / "data-preview").exists() or any(target.rglob("*.pyc")) or any(target.rglob("python3*.dll")):
         raise ValueError("User data or Python runtime leaked into staging")
+    for line in (ROOT / "installer/retired-files.sha256").read_text(encoding="ascii").splitlines():
+        if line.startswith("#"):
+            continue
+        checksum, path = line.split("  ", 1)
+        if not re.fullmatch(r"[0-9a-f]{64}", checksum) or safe_path(target, path).exists():
+            raise ValueError(f"Invalid retirement entry or active file marked for deletion: {path}")
     return target
 
 
@@ -276,7 +293,7 @@ def bundle(version, dist, output):
     (output / f"{name}-SHA256SUMS.txt").write_text("".join(f"{digest(file)}  {file.name}\n" for file in assets), encoding="ascii")
 
 
-def verify_release(version, output, expected_commit=None):
+def verify_release(version, output, expected_commit=None, require_store=False):
     if (output / "Qingkuai-Preview-Setup-x64.exe").exists():
         raise ValueError("Preview alias is forbidden in stable output")
     names = set()
@@ -286,6 +303,9 @@ def verify_release(version, output, expected_commit=None):
             raise ValueError(f"Invalid release asset: {name}")
         names.add(name)
     required = {f"{prefix(version)}-{suffix}" for suffix in ("Setup-x64.exe", "Windows-x64.zip", "source.zip", "ffmpeg-source.zip", "qt-source.zip")} | {SETUP_ALIAS}
+    store_package = f"{prefix(version)}-x64.msix"
+    if require_store or (output / store_package).exists():
+        required.add(store_package)
     if names != required:
         raise ValueError("Release assets are incomplete")
     portable = f"{prefix(version)}-Windows-x64"
@@ -309,6 +329,7 @@ def main():
     parser.add_argument("command", choices=("version", "numeric-version", "tag", "plan", "stage", "smoke", "bundle", "verify"))
     parser.add_argument("--dist", type=Path, default=ROOT / "dist")
     parser.add_argument("--output", type=Path, default=ROOT / "release")
+    parser.add_argument("--require-store", action="store_true", help="Require a checksummed Store package in the release")
     parser.add_argument("--app", type=Path)
     args = parser.parse_args()
     version = read_version()
@@ -319,7 +340,7 @@ def main():
     elif args.command == "stage": print(stage(version, args.dist.resolve()))
     elif args.command == "smoke": smoke(args.app or args.dist / f"{prefix(version)}-Windows-x64" / EXE_NAME)
     elif args.command == "bundle": bundle(version, args.dist.resolve(), args.output.resolve())
-    else: verify_release(version, args.output.resolve())
+    else: verify_release(version, args.output.resolve(), require_store=args.require_store)
 
 
 if __name__ == "__main__":

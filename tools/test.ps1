@@ -18,6 +18,8 @@ $unit = Join-Path $qa 'unit.json'
 Invoke-NativeTest @('--self-test','--data-dir',(Join-Path $qa 'unit-profile'),'--report',$unit) 180000
 $unitResult = Get-Content -LiteralPath $unit -Raw | ConvertFrom-Json
 if ($unitResult.failed -ne 0) { throw 'Native unit checks failed.' }
+& $PythonPath (Join-Path $root 'tools/test_clipboard_io.py')
+if ($LASTEXITCODE -ne 0) { throw 'Isolated clipboard regression failed.' }
 $probes = @()
 foreach ($name in @('night-drive.jpg','startrail.gif','motion.mp4')) {
     $report = Join-Path $qa ($name+'.json')

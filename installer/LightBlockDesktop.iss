@@ -61,6 +61,8 @@ chinesetraditional.LaunchApp=啟動輕塊桌面
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
 [Files]
 Source: "{#AppDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "retired-files.sha256"; Flags: dontcopy
+Source: "previous-setups.sha256"; Flags: dontcopy
 [Registry]
 #ifndef TestAppId
 Root: HKCU; Subkey: "Software\Classes\DesktopBackground\Shell\LightBlockDesktop.note"; Flags: dontcreatekey uninsdeletekey
@@ -72,3 +74,6 @@ Name: "{group}\{cm:AppTitle}"; Filename: "{app}\轻块桌面.exe"; WorkingDir: "
 Name: "{autodesktop}\{cm:AppTitle}"; Filename: "{app}\轻块桌面.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 [Run]
 Filename: "{app}\轻块桌面.exe"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+#include "storage-cleanup.iss"

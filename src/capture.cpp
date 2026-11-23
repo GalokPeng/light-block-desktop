@@ -1,4 +1,5 @@
 #include "annotation.hpp"
+#include "clipboard.hpp"
 #include "recording.hpp"
 #include "scroll_capture.hpp"
 #include "frontend.hpp"
@@ -120,7 +121,7 @@ void show_toolbar(Surface &surface) {
 bool copy_bitmap(HWND owner,HBITMAP bitmap) {
     auto copied=static_cast<HBITMAP>(CopyImage(bitmap,IMAGE_BITMAP,0,0,0));if(!copied) return false;
     if(!open_image_clipboard(owner)) { DeleteObject(copied);return false; }
-    EmptyClipboard();bool ok=SetClipboardData(CF_BITMAP,copied)!=nullptr;CloseClipboard();if(!ok) DeleteObject(copied);return ok;
+    bool ok=EmptyClipboard()&&SetClipboardData(CF_BITMAP,copied)!=nullptr;CloseClipboard();if(!ok) DeleteObject(copied);return ok;
 }
 bool save_image(Surface &surface) {
     if(!surface.document) return false;commit_text(surface);
@@ -432,7 +433,7 @@ void draw_bitmap(HDC dc,HBITMAP bitmap,RECT destination,int width,int height) {
     StretchBlt(dc,destination.left,destination.top,destination.right-destination.left,destination.bottom-destination.top,source,0,0,width,height,SRCCOPY);SelectObject(source,old);DeleteDC(source);
 }
 void paint_text_selection(Surface const& surface,HDC dc){if(!surface.editing||surface.edit||!surface.document||surface.active<0||size_t(surface.active)>=surface.document->items.size())return;auto const& item=surface.document->items[size_t(surface.active)];if(item.tool!=Tool::text)return;auto rect=item.bounds();POINT a=from_document(surface,{rect.left,rect.top}),b=from_document(surface,{rect.right,rect.bottom});auto viewport=image_viewport(surface);SaveDC(dc);IntersectClipRect(dc,viewport.left,viewport.top,viewport.right,viewport.bottom);unique_gdi<HPEN> pen(CreatePen(PS_DASH,1,RGB(77,155,255)));auto before=SelectObject(dc,pen.get()),brush=SelectObject(dc,GetStockObject(HOLLOW_BRUSH));Rectangle(dc,a.x-2,a.y-2,b.x+2,b.y+2);SelectObject(dc,before);SelectObject(dc,brush);RestoreDC(dc,-1);}
-HWND create_pin(std::unique_ptr<Document> document,RECT screen,bool fit=false,std::function<void(std::vector<Annotation>)> complete={},bool edit=false,bool wheel_sizes=true) {
+HWND create_pin(std::unique_ptr<Document> document,RECT screen,bool fit=false,std::function<void(std::vector<Annotation>)> complete={},bool edit=false,bool wheel_sizes=true,bool copy_on_open=true) {
     auto slot=std::find_if(pins.begin(),pins.end(),[](auto const& pin){return !pin;});
     if(slot==pins.end()) { error_box(g_app.window,tr(L"最多同时显示 12 张贴图",L"Up to twelve pins can be open at once"),E_OUTOFMEMORY);return nullptr; }
     auto pin=std::make_unique<Pin>();pin->wheel_sizes=wheel_sizes;pin->resizable=fit&&!complete;pin->long_image=fit&&!wheel_sizes&&!complete;
@@ -442,7 +443,7 @@ HWND create_pin(std::unique_ptr<Document> document,RECT screen,bool fit=false,st
     cls.lpszClassName=L"LightBlockDesktopNative.Pin";cls.style=CS_DBLCLKS;cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);RegisterClassW(&cls);auto pointer=pin.get();*slot=std::move(pin);
     int margin=px(5);HWND window=CreateWindowExW(WS_EX_TOPMOST|WS_EX_TOOLWINDOW,cls.lpszClassName,tr(L"轻块贴图",L"Light Block Pin"),WS_POPUP,
         screen.left-margin,screen.top-margin,screen.right-screen.left+2*margin,screen.bottom-screen.top+2*margin,nullptr,nullptr,g_app.instance,pointer);
-    if(window) { pointer->window=window;margin=pin_margin(*pointer);SetWindowPos(window,nullptr,screen.left-margin,screen.top-margin,screen.right-screen.left+2*margin,screen.bottom-screen.top+2*margin,SWP_NOZORDER|SWP_NOACTIVATE);ShowWindow(window,SW_SHOWNOACTIVATE);if(!pointer->complete)copy_surface(*pointer);if(pointer->complete||edit)show_toolbar(*pointer); }else slot->reset();return window;
+    if(window) { pointer->window=window;margin=pin_margin(*pointer);SetWindowPos(window,nullptr,screen.left-margin,screen.top-margin,screen.right-screen.left+2*margin,screen.bottom-screen.top+2*margin,SWP_NOZORDER|SWP_NOACTIVATE);ShowWindow(window,SW_SHOWNOACTIVATE);if(copy_on_open&&!pointer->complete)copy_surface(*pointer);if(pointer->complete||edit)show_toolbar(*pointer); }else slot->reset();return window;
 }
 void finish(Capture &surface,bool pin,bool save) {
     if(!surface.document) return;commit_text(surface);
@@ -778,10 +779,9 @@ void capture_start(HWND owner,bool record) {
 }
 void capture_shutdown(void) { if(session) DestroyWindow(session->window);for(auto &pin:pins) if(pin) DestroyWindow(pin->window); }
 void capture_pin_bitmap(HBITMAP bitmap,RECT location,bool fit,bool edit,bool wheel_sizes) { create_pin(std::make_unique<lb::capture::Document>(bitmap),location,fit,{},edit,wheel_sizes); }
-void lb::capture::edit_clipboard(HWND owner) {
-    unique_gdi<HBITMAP> copied;if(OpenClipboard(owner)){auto bitmap=HBITMAP(GetClipboardData(CF_BITMAP));BITMAP info{};if(bitmap&&GetObjectW(bitmap,sizeof info,&info)&&info.bmWidth>0&&info.bmHeight>0&&uint64_t(info.bmWidth)*info.bmHeight<=32*1024*1024)copied.reset(HBITMAP(CopyImage(bitmap,IMAGE_BITMAP,0,0,LR_CREATEDIBSECTION)));CloseClipboard();}
-    if(!copied){set_status(L"剪贴板中没有可编辑的图片。",L"There is no editable image on the clipboard.");return;}
-    BITMAP info{};GetObjectW(copied.get(),sizeof info,&info);POINT cursor{};GetCursorPos(&cursor);MONITORINFO monitor{sizeof monitor};GetMonitorInfoW(MonitorFromPoint(cursor,MONITOR_DEFAULTTONEAREST),&monitor);int x=monitor.rcWork.left+std::max(0L,(monitor.rcWork.right-monitor.rcWork.left-info.bmWidth)/2),y=monitor.rcWork.top+std::max(0L,(monitor.rcWork.bottom-monitor.rcWork.top-info.bmHeight)/2);HWND window=create_pin(std::make_unique<Document>(copied.release()),RECT{x,y,x+info.bmWidth,y+info.bmHeight},true);for(auto& pin:pins)if(pin&&pin->window==window){show_toolbar(*pin);break;}
+void lb::capture::edit_clipboard(HWND) { lb::clipboard::request_image_editor(); }
+void lb::capture::edit_clipboard_image(unique_gdi<HBITMAP> copied) {
+    BITMAP info{};GetObjectW(copied.get(),sizeof info,&info);POINT cursor{};GetCursorPos(&cursor);MONITORINFO monitor{sizeof monitor};GetMonitorInfoW(MonitorFromPoint(cursor,MONITOR_DEFAULTTONEAREST),&monitor);int x=monitor.rcWork.left+std::max(0L,(monitor.rcWork.right-monitor.rcWork.left-info.bmWidth)/2),y=monitor.rcWork.top+std::max(0L,(monitor.rcWork.bottom-monitor.rcWork.top-info.bmHeight)/2);create_pin(std::make_unique<Document>(copied.release()),RECT{x,y,x+info.bmWidth,y+info.bmHeight},true,{},true,true,false);
 }
 HWND lb::capture::edit_project(HBITMAP bitmap,RECT location,std::vector<Annotation> items,std::function<void(std::vector<Annotation>)> complete,Tool initial,Document::History history,std::function<void(Document::History)> retain_history) { auto document=std::make_unique<Document>(bitmap);document->items=std::move(items);document->restore_history(std::move(history));document->changed();auto window=create_pin(std::move(document),location,false,std::move(complete));if(auto surface=current_surface(window)){surface->retain_history=std::move(retain_history);select_tool(*surface,initial);}return window; }
 bool lb::capture::editor_tests() {

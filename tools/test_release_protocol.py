@@ -37,6 +37,19 @@ class StableReleaseContract(unittest.TestCase):
             manifest.write_text("".join(f"{release.digest(output / name)}  {name}\n" for name in names), encoding="ascii")
             release.verify_release(version, output, expected_commit="a" * 40)
             with self.assertRaises(ValueError):
+                release.verify_release(version, output, require_store=True)
+            msix = output / f"{release.prefix(version)}-x64.msix"
+            msix.write_bytes(b"synthetic Store package")
+            with self.assertRaises(ValueError):
+                release.verify_release(version, output)
+            with manifest.open("a", encoding="ascii") as stream:
+                stream.write(f"{release.digest(msix)}  {msix.name}\n")
+            release.verify_release(version, output, expected_commit="a" * 40, require_store=True)
+            msix.write_bytes(b"changed")
+            with self.assertRaises(ValueError):
+                release.verify_release(version, output, require_store=True)
+            msix.write_bytes(b"synthetic Store package")
+            with self.assertRaises(ValueError):
                 release.verify_release(version, output, expected_commit="b" * 40)
             (output / "Qingkuai-Preview-Setup-x64.exe").write_bytes(b"must never be distributed as stable")
             with self.assertRaises(ValueError):

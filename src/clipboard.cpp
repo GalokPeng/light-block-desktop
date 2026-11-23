@@ -1,4 +1,6 @@
 #include "clipboard.hpp"
+#include "annotation.hpp"
+#include <chrono>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -7,9 +9,9 @@
 namespace lb::clipboard {
 namespace {
 constexpr UINT completed=WM_APP+130;
-enum class Action { capture,list,copy,preview,pin,remove,clear,inspect };
+enum class Action { capture,list,copy,preview,pin,remove,clear,inspect,edit };
 struct Job { Action action{};DWORD sequence{};int64_t id{};uint64_t query_id{};std::wstring query;bool ui{};uint64_t selection_id{}; };
-struct Reply { std::vector<Item> items;std::optional<Item> copied;unique_gdi<HBITMAP> bitmap;uint64_t query_id{};HRESULT error{S_OK};bool copy{},preview{},ui{};Action action{};uint64_t selection_id{}; };
+struct Reply { std::vector<Item> items;std::optional<Item> copied;unique_gdi<HBITMAP> bitmap;uint64_t query_id{};DWORD sequence{};HRESULT error{S_OK};bool copy{},preview{},ui{};Action action{};uint64_t selection_id{}; };
 struct Worker {
     std::mutex mutex;std::condition_variable condition;std::deque<Job> jobs;std::deque<Reply> replies;
     std::thread thread;std::atomic_bool done{},failed{};bool stop{};
@@ -21,11 +23,9 @@ void request_ui(Action action,int64_t id=0,DWORD sequence=0);
 int px(int value) { return MulDiv(value,int(g_app.dpi),96); }
 std::filesystem::path directory() { auto path=std::filesystem::path(g_app.data)/L"clipboard";if(!ensure_directory(path.c_str())) throw winrt::hresult_error(E_ACCESSDENIED);return path; }
 std::vector<BYTE> read_bytes(std::filesystem::path const& path) {
-    unique_handle file(CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr));LARGE_INTEGER size{};if(!file||!GetFileSizeEx(file.get(),&size)||size.QuadPart<=0||size.QuadPart>5*1024*1024) return {};
+    unique_handle file(CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr));LARGE_INTEGER size{};if(!file||!GetFileSizeEx(file.get(),&size)||size.QuadPart<=0) return {};
+    if(size.QuadPart>LB_CLIPBOARD_IMAGE_BYTES) throw winrt::hresult_error(HRESULT_FROM_WIN32(ERROR_FILE_TOO_LARGE));
     std::vector<BYTE> result(size_t(size.QuadPart));DWORD read=0;if(!ReadFile(file.get(),result.data(),DWORD(result.size()),&read,nullptr)||read!=result.size()) return {};return result;
-}
-bool write_bytes(std::filesystem::path const& path,std::vector<BYTE> const& bytes) {
-    unique_handle file(CreateFileW(path.c_str(),GENERIC_WRITE,0,nullptr,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr));DWORD written=0;return file&&WriteFile(file.get(),bytes.data(),DWORD(bytes.size()),&written,nullptr)&&written==bytes.size();
 }
 bool excluded() {
     if(IsClipboardFormatAvailable(RegisterClipboardFormatW(L"ExcludeClipboardContentFromMonitorProcessing"))) return true;
@@ -34,40 +34,120 @@ bool excluded() {
         if(!data||GlobalSize(data)<sizeof(DWORD)) return true;auto pointer=static_cast<DWORD const*>(GlobalLock(data));if(!pointer) return true;DWORD flag=*pointer;GlobalUnlock(data);if(!flag) return true;
     }return false;
 }
+void check_pixels(uint64_t width,uint64_t height) {
+    if(width && height>uint64_t(LB_CLIPBOARD_IMAGE_PIXELS)/width)
+        throw winrt::hresult_error(HRESULT_FROM_WIN32(ERROR_FILE_TOO_LARGE));
+}
+UINT32 big_endian(BYTE const* p) {
+    return (UINT32(p[0])<<24)|(UINT32(p[1])<<16)|(UINT32(p[2])<<8)|p[3];
+}
+// GlobalSize may include allocator padding. Keep exactly the PNG through IEND.
+std::vector<BYTE> registered_png(size_t limit) {
+    for(auto name:{L"PNG",L"image/png"}) {
+        UINT format=RegisterClipboardFormatW(name);
+        if(!IsClipboardFormatAvailable(format)) continue;
+        HGLOBAL handle=GetClipboardData(format);
+        size_t size=handle?GlobalSize(handle):0;
+        BYTE const* data=handle?static_cast<BYTE const*>(GlobalLock(handle)):nullptr;
+        if(!data) continue;
+        scope_exit unlock([&]{GlobalUnlock(handle);});
+        static constexpr BYTE signature[]={137,80,78,71,13,10,26,10};
+        if(size<33||memcmp(data,signature,8)||big_endian(data+8)!=13||memcmp(data+12,"IHDR",4)) continue;
+        check_pixels(big_endian(data+16),big_endian(data+20));
+        for(size_t offset=8;size-offset>=12;) {
+            size_t length=big_endian(data+offset);
+            if(length>size-offset-12) break;
+            size_t end=offset+length+12;
+            if(end>limit) throw winrt::hresult_error(HRESULT_FROM_WIN32(ERROR_FILE_TOO_LARGE));
+            if(!memcmp(data+offset+4,"IEND",4)) {
+                if(!length) return {data,data+end};
+                break;
+            }
+            offset=end;
+        }
+    }
+    return {};
+}
+unique_gdi<HBITMAP> decode(std::vector<BYTE>& bytes) {
+    if(bytes.empty()||bytes.size()>UINT_MAX) return {};
+    winrt::com_ptr<IWICImagingFactory> factory;
+    winrt::com_ptr<IWICStream> stream;
+    winrt::com_ptr<IWICBitmapDecoder> decoder;
+    winrt::com_ptr<IWICBitmapFrameDecode> frame;
+    winrt::com_ptr<IWICFormatConverter> converter;
+    GUID format{};UINT width{},height{};
+    if(FAILED(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_IWICImagingFactory,factory.put_void()))||
+       FAILED(factory->CreateStream(stream.put()))||FAILED(stream->InitializeFromMemory(bytes.data(),UINT(bytes.size())))||
+       FAILED(factory->CreateDecoderFromStream(stream.get(),nullptr,WICDecodeMetadataCacheOnDemand,decoder.put()))||
+       FAILED(decoder->GetContainerFormat(&format))||!IsEqualGUID(format,GUID_ContainerFormatPng)||
+       FAILED(decoder->GetFrame(0,frame.put()))||FAILED(frame->GetSize(&width,&height))||!width||!height) return {};
+    check_pixels(width,height);
+    if(FAILED(factory->CreateFormatConverter(converter.put()))||
+       FAILED(converter->Initialize(frame.get(),GUID_WICPixelFormat32bppPBGRA,WICBitmapDitherTypeNone,nullptr,0,WICBitmapPaletteTypeCustom))) return {};
+    BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=LONG(width);
+    info.bmiHeader.biHeight=-LONG(height);info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
+    void* pixels=nullptr;unique_gdi<HBITMAP> result(CreateDIBSection(nullptr,&info,DIB_RGB_COLORS,&pixels,nullptr,0));
+    if(!result||FAILED(converter->CopyPixels(nullptr,width*4,width*height*4,static_cast<BYTE*>(pixels)))) return {};
+    return result;
+}
 unique_gdi<HBITMAP> dib_snapshot() {
     if(IsClipboardFormatAvailable(CF_BITMAP)) {
-        HBITMAP source=static_cast<HBITMAP>(GetClipboardData(CF_BITMAP));BITMAP info{};if(source&&GetObjectW(source,sizeof info,&info)&&info.bmWidth>0&&info.bmHeight>0&&uint64_t(info.bmWidth)*info.bmHeight<=20000000) return unique_gdi<HBITMAP>(static_cast<HBITMAP>(CopyImage(source,IMAGE_BITMAP,0,0,LR_CREATEDIBSECTION)));
+        HBITMAP source=static_cast<HBITMAP>(GetClipboardData(CF_BITMAP));BITMAP info{};if(source&&GetObjectW(source,sizeof info,&info)&&info.bmWidth>0&&info.bmHeight>0) {check_pixels(info.bmWidth,info.bmHeight);return unique_gdi<HBITMAP>(static_cast<HBITMAP>(CopyImage(source,IMAGE_BITMAP,0,0,LR_CREATEDIBSECTION)));}
     }
     UINT format=IsClipboardFormatAvailable(CF_DIBV5)?CF_DIBV5:CF_DIB;if(!IsClipboardFormatAvailable(format)) return {};
-    HGLOBAL data=GetClipboardData(format);SIZE_T size=data?GlobalSize(data):0;if(size<sizeof(BITMAPINFOHEADER)||size>100*1024*1024) return {};auto bytes=static_cast<BYTE const*>(GlobalLock(data));if(!bytes) return {};scope_exit unlock([&]{GlobalUnlock(data);});auto header=reinterpret_cast<BITMAPINFOHEADER const*>(bytes);
+    HGLOBAL data=GetClipboardData(format);
+    SIZE_T size=data?GlobalSize(data):0;
+    if(size<sizeof(BITMAPINFOHEADER)) return {};
+    if(size>size_t(LB_CLIPBOARD_IMAGE_PIXELS)*4+65536)
+        throw winrt::hresult_error(HRESULT_FROM_WIN32(ERROR_FILE_TOO_LARGE));
+    auto bytes=static_cast<BYTE const*>(GlobalLock(data));
+    if(!bytes) return {};
+    scope_exit unlock([&]{GlobalUnlock(data);});auto header=reinterpret_cast<BITMAPINFOHEADER const*>(bytes);
     if(header->biSize<40||header->biSize>size||header->biWidth<1||header->biHeight==LONG_MIN||header->biPlanes!=1||(header->biBitCount!=24&&header->biBitCount!=32)||(header->biCompression!=BI_RGB&&header->biCompression!=BI_BITFIELDS)) return {};
-    int height=abs(header->biHeight);if(!height||uint64_t(header->biWidth)*height>20000000||header->biClrUsed>256) return {};
+    int height=abs(header->biHeight);check_pixels(header->biWidth,height);if(!height||header->biClrUsed>256) return {};
     size_t offset=header->biSize+(header->biSize==40&&header->biCompression==BI_BITFIELDS?12:0)+size_t(header->biClrUsed)*4;uint64_t stride=((uint64_t(header->biWidth)*header->biBitCount+31)/32)*4;
     if(offset>size||stride*height>size-offset) return {};
     HDC dc=GetDC(nullptr);auto bitmap=unique_gdi<HBITMAP>(CreateDIBitmap(dc,header,CBM_INIT,bytes+offset,reinterpret_cast<BITMAPINFO const*>(bytes),DIB_RGB_COLORS));ReleaseDC(nullptr,dc);return bitmap;
 }
-std::optional<Item> snapshot(DWORD expected) {
-    if(!OpenClipboard(nullptr)) throw winrt::hresult_error(HRESULT_FROM_WIN32(ERROR_BUSY));
+// This runs on the clipboard worker. A newer copy supersedes a pending retry.
+bool open_sequence(DWORD sequence) {
+    for(unsigned delay:{0u,10u,25u,50u,100u,200u,300u,400u}) {
+        if(delay) std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+        if(GetClipboardSequenceNumber()!=sequence) return false;
+        if(OpenClipboard(nullptr)) return true;
+    }
+    throw winrt::hresult_error(HRESULT_FROM_WIN32(ERROR_BUSY));
+}
+std::optional<Item> snapshot(DWORD expected,unique_gdi<HBITMAP>* editor=nullptr,bool try_png=true) {
+    if(!open_sequence(expected)) return {};
     unique_gdi<HBITMAP> bitmap;Item item;
     {
         scope_exit close([&]{CloseClipboard();});
-        if(GetClipboardSequenceNumber()!=expected||excluded()) return {};
-        bitmap=dib_snapshot();
-        if(!bitmap&&IsClipboardFormatAvailable(CF_UNICODETEXT)) {
+        if(GetClipboardSequenceNumber()!=expected||(!editor&&excluded())) return {};
+        if(try_png) item.image=registered_png(editor?size_t(LB_CLIPBOARD_IMAGE_PIXELS)*4+65536:LB_CLIPBOARD_IMAGE_BYTES);
+        if(item.image.empty()) bitmap=dib_snapshot();
+        if(item.image.empty()&&!bitmap) {
+            if(editor||!IsClipboardFormatAvailable(CF_UNICODETEXT)) return {};
             HGLOBAL data=GetClipboardData(CF_UNICODETEXT);SIZE_T bytes=data?GlobalSize(data):0;if(bytes<sizeof(wchar_t)||bytes>5*1024*1024) return {};
-            auto text=static_cast<wchar_t const*>(GlobalLock(data));if(!text) return {};scope_exit unlock([&]{GlobalUnlock(data);});size_t length=wcsnlen(text,bytes/sizeof(wchar_t));if(length==bytes/sizeof(wchar_t)) return {};item.text.assign(text,length);
+            auto text=static_cast<wchar_t const*>(GlobalLock(data));if(!text) return {};scope_exit unlock([&]{GlobalUnlock(data);});
+            size_t length=wcsnlen(text,bytes/sizeof(wchar_t));if(length==bytes/sizeof(wchar_t)) return {};item.text.assign(text,length);
             if(std::all_of(item.text.begin(),item.text.end(),[](wchar_t c){return iswspace(c)!=0;})) return {};
-        }else if(!bitmap) return {};
+            return item;
+        }
     }
-    if(bitmap) {
-        auto path=directory()/L"incoming.png";scope_exit clean([&]{DeleteFileW(path.c_str());});if(!save_png(bitmap.get(),path.c_str())) return {};item.image=read_bytes(path);if(item.image.empty()) return {};BITMAP info{};GetObjectW(bitmap.get(),sizeof info,&info);item.kind=1;item.text=std::wstring(tr(L"图片 ",L"Image "))+std::to_wstring(info.bmWidth)+L" × "+std::to_wstring(info.bmHeight);
-    }return item;
-}
-unique_gdi<HBITMAP> decode(std::vector<BYTE> const& bytes) {
-    auto path=directory()/L"selected.png";scope_exit clean([&]{DeleteFileW(path.c_str());});if(!write_bytes(path,bytes)) return {};
-    Image image;if(FAILED(image_open(&image,path.c_str()))||uint64_t(image.width)*image.height>20000000) return {};
-    BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=LONG(image.width);info.bmiHeader.biHeight=-LONG(image.height);info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
-    void *pixels=nullptr;unique_gdi<HBITMAP> result(CreateDIBSection(nullptr,&info,DIB_RGB_COLORS,&pixels,nullptr,0));if(result) memcpy(pixels,image.pixels.get(),image.bytes);return result;
+    if(!item.image.empty()) {
+        bitmap=decode(item.image);
+        if(!bitmap) return snapshot(expected,editor,false);
+    }
+    if(editor) { *editor=std::move(bitmap);return {}; }
+    if(item.image.empty()) {
+        auto path=directory()/L"incoming.png";scope_exit clean([&]{DeleteFileW(path.c_str());});
+        if(!save_png(bitmap.get(),path.c_str())) throw winrt::hresult_error(E_FAIL);
+        item.image=read_bytes(path);if(item.image.empty()) throw winrt::hresult_error(E_FAIL);
+    }
+    BITMAP info{};GetObjectW(bitmap.get(),sizeof info,&info);item.kind=1;
+    item.text=std::wstring(tr(L"图片 ",L"Image "))+std::to_wstring(info.bmWidth)+L" × "+std::to_wstring(info.bmHeight);
+    return item;
 }
 void start_worker() {
     if(worker&&worker->done) { if(worker->thread.joinable()) worker->thread.join();worker.reset(); }
@@ -75,16 +155,18 @@ void start_worker() {
     state->thread=std::thread([state] {
         com_apartment apartment(COINIT_MULTITHREADED);scope_exit done([&]{state->done=true;});
         try {
-            Store store(directory()/L"history.sqlite3");
+            std::optional<Store> store;
             for(;;) {
                 Job job;{ std::unique_lock lock(state->mutex);state->condition.wait(lock,[&]{return state->stop||!state->jobs.empty();});if(state->stop) return;job=std::move(state->jobs.front());state->jobs.pop_front(); }
-                Reply reply;reply.query_id=job.query_id;reply.ui=job.ui;reply.action=job.action;reply.selection_id=job.selection_id;
+                Reply reply;reply.sequence=job.sequence;reply.query_id=job.query_id;reply.ui=job.ui;reply.action=job.action;reply.selection_id=job.selection_id;
                 try {
-                    if(job.action==Action::capture) { auto item=snapshot(job.sequence);if(item) store.add(*item); }
-                    else if(job.action==Action::pin) store.toggle_pin(job.id);
-                    else if(job.action==Action::remove) store.remove(job.id);else if(job.action==Action::clear) store.clear();
-                    else if(job.action==Action::copy||job.action==Action::preview||job.action==Action::inspect) { reply.copied=store.get(job.id);reply.copy=job.action==Action::copy;reply.preview=job.action==Action::preview;if(job.action!=Action::inspect&&reply.copied&&reply.copied->kind) reply.bitmap=decode(reply.copied->image); }
-                    if(job.action!=Action::inspect) reply.items=store.list(job.query);
+                    if(job.action!=Action::edit&&!store) store.emplace(directory()/L"history.sqlite3");
+                    if(job.action==Action::edit) snapshot(job.sequence,&reply.bitmap);
+                    else if(job.action==Action::capture) { auto item=snapshot(job.sequence);if(item&&!store->add(*item)) throw winrt::hresult_error(HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_QUOTA)); }
+                    else if(job.action==Action::pin) store->toggle_pin(job.id);
+                    else if(job.action==Action::remove) store->remove(job.id);else if(job.action==Action::clear) store->clear();
+                    else if(job.action==Action::copy||job.action==Action::preview||job.action==Action::inspect) { reply.copied=store->get(job.id);reply.copy=job.action==Action::copy;reply.preview=job.action==Action::preview;if(job.action!=Action::inspect&&reply.copied&&reply.copied->kind) reply.bitmap=decode(reply.copied->image); }
+                    if(job.action!=Action::inspect&&job.action!=Action::edit) reply.items=store->list(job.query);
                 }catch(winrt::hresult_error const& error) { reply.error=error.code(); }catch(...) { reply.error=E_FAIL; }
                 { std::lock_guard lock(state->mutex);if(state->stop) return;if(state->replies.size()>=8) state->replies.pop_front();state->replies.push_back(std::move(reply)); }
                 PostMessageW(g_app.window,completed,0,0);
@@ -143,20 +225,39 @@ void refresh_rows(std::vector<Item> rows) {
     for(size_t n=0;n<view.rows.size();++n) { auto &row=view.rows[n];std::wstring label=row.text;std::replace(label.begin(),label.end(),L'\n',L' ');std::replace(label.begin(),label.end(),L'\r',L' ');LVITEMW item{};item.mask=LVIF_TEXT;item.iItem=int(n);item.pszText=label.data();int index=ListView_InsertItem(view.list,&item);ListView_SetItemText(view.list,index,1,const_cast<wchar_t*>(row.kind?tr(L"图片",L"Image"):tr(L"文字",L"Text")));ListView_SetItemText(view.list,index,2,const_cast<wchar_t*>(row.pinned?L"★":L""));if(row.id==previous) ListView_SetItemState(view.list,index,LVIS_SELECTED|LVIS_FOCUSED,LVIS_SELECTED|LVIS_FOCUSED); }
     SendMessageW(view.list,WM_SETREDRAW,TRUE,0);InvalidateRect(view.list,nullptr,TRUE);
 }
-bool publish(Reply &reply) {
-    if(!reply.copied) return false;
-    HGLOBAL text=nullptr;
-    if(!reply.copied->kind) {
-        auto const& value=reply.copied->text;text=GlobalAlloc(GMEM_MOVEABLE,(value.size()+1)*sizeof(wchar_t));if(!text) return false;void *pointer=GlobalLock(text);if(!pointer) { GlobalFree(text);return false; }memcpy(pointer,value.c_str(),(value.size()+1)*sizeof(wchar_t));GlobalUnlock(text);
-    }else if(!reply.bitmap) return false;
-    scope_exit cleanup([&]{if(text) GlobalFree(text);});if(!OpenClipboard(g_app.window)) return false;scope_exit close([&]{CloseClipboard();});
-    EmptyClipboard();bool good=false;
-    if(text) { good=SetClipboardData(CF_UNICODETEXT,text)!=nullptr;if(good) text=nullptr; }
-    else {
-        auto copied=static_cast<HBITMAP>(CopyImage(reply.bitmap.get(),IMAGE_BITMAP,0,0,0));if(!copied) return false;
-        good=SetClipboardData(CF_BITMAP,copied)!=nullptr;if(!good) DeleteObject(copied);
+HGLOBAL clipboard_block(void const* bytes,size_t length) {
+    auto block=GlobalAlloc(GMEM_MOVEABLE,length);
+    if(!block) return nullptr;
+    auto data=GlobalLock(block);
+    if(!data) { GlobalFree(block);return nullptr; }
+    memcpy(data,bytes,length);GlobalUnlock(block);return block;
+}
+HRESULT publish(Reply& reply) {
+    if(!reply.copied||!IsWindow(g_app.window)) return E_FAIL;
+    auto& item=*reply.copied;
+    unique_gdi<HBITMAP> bitmap;
+    HGLOBAL block=nullptr;
+    scope_exit free_block([&]{if(block) GlobalFree(block);});
+    UINT format=CF_UNICODETEXT;
+    if(item.kind) {
+        if(!reply.bitmap) return E_FAIL;
+        bitmap.reset(static_cast<HBITMAP>(CopyImage(reply.bitmap.get(),IMAGE_BITMAP,0,0,0)));
+        if(!bitmap) return E_FAIL;
+        format=RegisterClipboardFormatW(L"PNG");
+        if(format&&!item.image.empty()) block=clipboard_block(item.image.data(),item.image.size());
+    } else {
+        block=clipboard_block(item.text.c_str(),(item.text.size()+1)*sizeof(wchar_t));
+        if(!block) return E_FAIL;
     }
-    if(good) view.written=GetClipboardSequenceNumber();return good;
+    // Finish allocations and bitmap conversion before relinquishing the old content.
+    if(!OpenClipboard(g_app.window)) return HRESULT_FROM_WIN32(ERROR_BUSY);
+    scope_exit close([&]{CloseClipboard();});
+    if(!EmptyClipboard()) return E_FAIL;
+    bool good=false;
+    if(block&&SetClipboardData(format,block)) {block=nullptr;good=true;}
+    if(bitmap&&SetClipboardData(CF_BITMAP,bitmap.get())) {bitmap.release();good=true;}
+    if(good) view.written=GetClipboardSequenceNumber();
+    return good?S_OK:E_FAIL;
 }
 HWND add_button(HWND parent,wchar_t const* text,int id) { HWND window=CreateWindowExW(0,L"BUTTON",text,WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,1,1,parent,reinterpret_cast<HMENU>(INT_PTR(id)),g_app.instance,nullptr);SendMessageW(window,WM_SETFONT,WPARAM(g_app.font),TRUE);return window; }
 LRESULT CALLBACK proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
@@ -189,6 +290,10 @@ LRESULT CALLBACK proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
     }return DefWindowProcW(window,message,wp,lp);
 }
 }
+void request_image_editor() {
+    try {request(Action::edit,0,GetClipboardSequenceNumber());}
+    catch(...) {set_status(L"无法读取剪贴板图片。",L"Could not read the clipboard image.");}
+}
 bool configure() {
     try {
         if(g_app.settings.clipboard_enabled) { start_worker();if(!view.listening) { view.listening=AddClipboardFormatListener(g_app.window)!=FALSE;if(!view.listening) return false; } }
@@ -198,16 +303,43 @@ bool configure() {
 }
 bool message(UINT message,WPARAM wp,LPARAM lp) {
     (void)wp;(void)lp;
-    if(message==WM_CLIPBOARDUPDATE) { DWORD sequence=GetClipboardSequenceNumber();if(view.listening&&sequence!=view.written&&sequence!=view.captured) { view.captured=sequence;try { request(Action::capture,0,sequence); }catch(...) { set_status(L"剪贴板记录暂不可用",L"Clipboard recording is unavailable."); } }return true; }
+    if(message==WM_CLIPBOARDUPDATE) { DWORD sequence=GetClipboardSequenceNumber();if(view.listening&&sequence!=view.written&&sequence!=view.captured) { try { request(Action::capture,0,sequence); }catch(...) { set_status(L"剪贴板记录暂不可用",L"Clipboard recording is unavailable."); } }return true; }
     if(message!=completed) return false;
     if(!worker) return true;if(worker->failed) { g_app.settings.clipboard_enabled=0;configure();save_config();service.busy=service.detail_busy=false;status_ui(tr(L"历史数据库无法打开，未开始记录。",L"History database is unavailable. Recording did not start."),true);if(view.status) SetWindowTextW(view.status,service.status.c_str());return true; }
     std::deque<Reply> replies;{ std::lock_guard lock(worker->mutex);replies=std::move(worker->replies); }
     for(auto &reply:replies) {
+        if(reply.action==Action::edit) {
+            if(reply.error==HRESULT_FROM_WIN32(ERROR_FILE_TOO_LARGE)) set_status(L"图片超过可编辑尺寸。",L"This image exceeds the editing limit.");
+            else if(reply.error==HRESULT_FROM_WIN32(ERROR_BUSY)) set_status(L"剪贴板仍被占用，请再试一次。",L"The clipboard is still busy. Please try again.");
+            else if(reply.bitmap) capture::edit_clipboard_image(std::move(reply.bitmap));
+            else set_status(L"剪贴板中没有可编辑的图片。",L"There is no editable image on the clipboard.");
+            continue;
+        }
+        if(reply.action==Action::capture&&SUCCEEDED(reply.error)) view.captured=reply.sequence;
+        if(reply.action==Action::capture&&(reply.error==HRESULT_FROM_WIN32(ERROR_FILE_TOO_LARGE)||reply.error==HRESULT_FROM_WIN32(ERROR_BUSY)||reply.error==HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_QUOTA))) {
+            if(reply.ui&&reply.query_id==service.query_id) service.busy=false;
+            bool oversized=reply.error==HRESULT_FROM_WIN32(ERROR_FILE_TOO_LARGE);
+            bool busy=reply.error==HRESULT_FROM_WIN32(ERROR_BUSY);
+            auto zh=oversized?L"图片超出历史上限（约 3355 万像素或 PNG 16 MiB）。已跳过记录，仍可从系统剪贴板粘贴。":
+                busy?L"剪贴板持续被占用，本次未收录。请稍后重试。":L"历史记录空间不足。可取消固定部分记录后重试。";
+            auto en=oversized?L"Image exceeds the history limit (33.55 megapixels or 16 MiB PNG). Skipped; pasting is still available.":
+                busy?L"Clipboard remained busy. Please retry.":L"History is full. Unpin some entries and retry.";
+            status_ui(tr(zh,en),true);set_status(zh,en);
+            if(view.status) SetWindowTextW(view.status,tr(zh,en));
+            continue;
+        }
         if(FAILED(reply.error)) { if(reply.ui) {if(reply.action==Action::inspect&&reply.selection_id==service.selection_id)service.detail_busy=false;else if(reply.query_id==service.query_id)service.busy=false;status_ui(tr(L"该操作未完成；已保存的历史保持不变。",L"Operation could not finish. Saved history is preserved."),true);}if(view.status) SetWindowTextW(view.status,tr(L"该操作未完成；已保存的历史保持不变。",L"Operation could not finish. Saved history is preserved."));continue; }
         if(reply.ui&&reply.action==Action::inspect) {if(reply.selection_id==service.selection_id&&service.active) {service.detail=std::move(reply.copied);service.detail_busy=false;++service.detail_revision;}continue;}
         if(reply.ui&&reply.query_id==service.query_id) {service.rows=std::move(reply.items);service.busy=false;++service.revision;if(service.selected&&std::none_of(service.rows.begin(),service.rows.end(),[](auto const& item){return item.id==service.selected;}))select_ui(0);if(reply.action==Action::capture)status_ui(tr(L"记录已更新；空白、重复或受保护的内容会跳过。",L"History updated. Empty, duplicate or protected content is skipped."));else if(reply.action==Action::remove)status_ui(tr(L"已删除所选记录。",L"Selected entry deleted."));else if(reply.action==Action::clear)status_ui(tr(L"已清空未固定的记录。",L"Unpinned entries cleared."));}
         else if(!reply.ui&&reply.query_id==view.query_id) refresh_rows(std::move(reply.items));
-        if(reply.copy) { bool copied=publish(reply);auto message=copied?tr(L"已复制，可以切回应用粘贴。",L"Copied. Switch to an app to paste."):tr(L"剪贴板正在使用，请重试。",L"Clipboard is busy. Please try again.");if(reply.ui)status_ui(message,!copied);if(view.status) SetWindowTextW(view.status,message); }
+        if(reply.copy) {
+            HRESULT result=publish(reply);
+            auto message=SUCCEEDED(result)?tr(L"已复制，可以切回应用粘贴。",L"Copied. Switch to an app to paste."):
+                result==HRESULT_FROM_WIN32(ERROR_BUSY)?tr(L"剪贴板正在使用，请重试。",L"Clipboard is busy. Please try again."):
+                tr(L"未能复制所选记录，请重试。",L"Could not copy this entry. Please try again.");
+            if(reply.ui)status_ui(message,FAILED(result));
+            if(view.status) SetWindowTextW(view.status,message);
+        }
         else if(reply.preview&&reply.bitmap) { BITMAP info{};GetObjectW(reply.bitmap.get(),sizeof info,&info);POINT point;GetCursorPos(&point);capture_pin_bitmap(reply.bitmap.release(),RECT{point.x,point.y,point.x+info.bmWidth,point.y+info.bmHeight},true); }
     }return true;
 }

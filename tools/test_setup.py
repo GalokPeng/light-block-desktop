@@ -1,6 +1,7 @@
 """Isolated Inno installs; never registers, replaces or uninstalls the real AppId."""
 import argparse
 import ctypes
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -19,6 +20,51 @@ def display_name(app_id):
         except FileNotFoundError:
             pass
     return None
+
+
+def seed_storage_upgrade(app, version):
+    """Model a former release, a modified install and a partially downloaded update."""
+    files = {}
+
+    def put(path, data):
+        path = app / path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        files[path] = data
+        return path
+
+    retired = put("assets/cursors/frost/normal.cur", (ROOT / "assets/cursors/frost/normal.cur").read_bytes())
+    put("assets/cursors/frost/help.cur", b"user-modified cursor")
+    put("_internal/user-created.txt", b"user-owned")
+    stale_module = b"old media module fixture"
+    module_hash = hashlib.sha256(stale_module).hexdigest()
+    old_module = put(f"LightBlockMedia-{module_hash[:12]}.dll", stale_module)
+    put("LightBlockUi-0123456789ab.dll", b"modified DLL")
+    updates = "data/profile-v2/updates/"
+    old_updates = "isolated-legacy/updates/"
+    for tag in ("0.1.1", "0.1.2", "0.1.3"):
+        data = b"previously installed " + tag.encode()
+        put("runtime/setup-receipts/" + tag + ".sha256", hashlib.sha256(data).hexdigest().encode())
+        prefix = old_updates if tag == "0.1.2" else updates
+        put(prefix + f"Qingkuai-v{tag}-Setup-x64.exe", data if tag != "0.1.3" else b"modified")
+    put(updates + f"Qingkuai-v{version}-Setup-x64.exe", b"current")
+    put(updates + "Qingkuai-v0.1.1-Setup-x64.exe.partial", b"partial")
+    put(updates + "Qingkuai-v1.0.0-Setup-x64.exe", b"wrong checksum for official release")
+    put(updates + "Qingkuai-v99.0.0-Setup-x64.exe", b"future")
+    removed = {retired, old_module, app / (updates + "Qingkuai-v0.1.1-Setup-x64.exe")}
+    return removed, {path: value for path, value in files.items() if path not in removed}
+
+
+def check_storage_upgrade(app, fixture):
+    removed, kept = fixture
+    if any(path.exists() for path in removed):
+        raise RuntimeError(f"Verified retired files still present: {[p for p in removed if p.exists()]}")
+    if any(path.read_bytes() != value for path, value in kept.items()):
+        raise RuntimeError("Disk cleanup modified a protected file")
+    manifest = json.loads((app / "assets/cursors/manifest.json").read_text(encoding="utf-8"))
+    for theme in manifest["themes"]:
+        if not (app / "assets/cursors" / theme / "normal.cur").is_file():
+            raise RuntimeError("Active cursor artwork missing after upgrade")
 
 
 def verify_setup(setup, app_id, folder, language, title):
@@ -46,7 +92,9 @@ def verify_setup(setup, app_id, folder, language, title):
             target = data / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(value)
+        storage = seed_storage_upgrade(app, read_version())
         install()
+        check_storage_upgrade(app, storage)
         if any((data / name).read_bytes() != value for name, value in preserved.items()):
             raise RuntimeError("Upgrade changed user data")
         if stable_data.read_bytes() != b'{"version":"1.0.0","keep":"stable fixture"}':

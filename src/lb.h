@@ -204,6 +204,7 @@ bool online_message(UINT message,WPARAM wp,LPARAM lp);
 void online_start(int index,int preview);
 UINT online_catalog_test(void);
 void library_import(const wchar_t *path);
+bool library_storage_tests(const wchar_t *root);
 void library_import_checked(const wchar_t *path,const wchar_t *sha1);
 void library_import_apply_checked(const wchar_t *path,const wchar_t *sha1);
 

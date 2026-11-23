@@ -116,28 +116,36 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'In-app update regression failed.' }
           python tools/release.py verify
           if ($LASTEXITCODE -ne 0) { throw 'Release checksum verification failed.' }
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: stable-${{ needs.plan.outputs.version }}
-          path: release/*
-          if-no-files-found: error
-          compression-level: 0
       - name: Build MSIX for manual Partner Center submission
         id: store
-        if: vars.STORE_IDENTITY_NAME != '' && github.ref != 'refs/heads/cpp-preview'
+        if: needs.plan.outputs.publish == 'true' || (vars.STORE_IDENTITY_NAME != '' && github.ref != 'refs/heads/cpp-preview')
         shell: pwsh
         env:
           STORE_IDENTITY_NAME: ${{ vars.STORE_IDENTITY_NAME }}
           STORE_IDENTITY_PUBLISHER: ${{ vars.STORE_IDENTITY_PUBLISHER }}
           STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
           STORE_DISPLAY_NAME: ${{ vars.STORE_DISPLAY_NAME }}
-        run: python tools/build_store_msix.py
+          APP_VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          python tools/build_store_msix.py --output release
+          if ($LASTEXITCODE -ne 0) { throw 'Store package build failed.' }
+          $name = "Qingkuai-v$env:APP_VERSION-x64.msix"
+          $hash = (Get-FileHash -LiteralPath "release/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
+          Add-Content -LiteralPath "release/Qingkuai-v$env:APP_VERSION-SHA256SUMS.txt" -Value "$hash  $name" -Encoding ascii
+          python tools/release.py verify --require-store
+          if ($LASTEXITCODE -ne 0) { throw 'Store release checksum verification failed.' }
       - name: Upload Microsoft Store package
         if: steps.store.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: microsoft-store-${{ needs.plan.outputs.version }}-x64
-          path: build/store-package/Qingkuai-v${{ needs.plan.outputs.version }}-x64.msix
+          path: release/Qingkuai-v${{ needs.plan.outputs.version }}-x64.msix
+          if-no-files-found: error
+          compression-level: 0
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: stable-${{ needs.plan.outputs.version }}
+          path: release/*
           if-no-files-found: error
           compression-level: 0
       - name: Preserve build and installation evidence
@@ -179,7 +187,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           APP_VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          python tools/release.py verify
+          python tools/release.py verify --require-store
           if ($LASTEXITCODE -ne 0) { throw 'Published artifact validation failed.' }
           $tag = "v$env:APP_VERSION"
           $sumFile = Join-Path release "Qingkuai-v$env:APP_VERSION-SHA256SUMS.txt"
@@ -199,5 +207,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed; inspect existing draft/tag before retry.' }
           $published = gh release view $tag --repo $env:GITHUB_REPOSITORY --json isPrerelease --jq '.isPrerelease'
           if ($LASTEXITCODE -ne 0 -or $published -ne 'false') { throw 'Expected a stable release.' }
+          $storeName = "Qingkuai-v$env:APP_VERSION-x64.msix"
+          $storeDigest = (Get-FileHash -LiteralPath "release/$storeName" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $releaseJson = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not verify the published Store package.' }
+          $storeAsset = @(($releaseJson | ConvertFrom-Json).assets | Where-Object name -eq $storeName)
+          if ($storeAsset.Count -ne 1 -or $storeAsset[0].digest -ne "sha256:$storeDigest") {
+            throw 'The public release is missing its verified Store package.'
+          }
           $latest = gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" --jq '.tag_name'
           if ($LASTEXITCODE -ne 0 -or $latest -ne $tag) { throw 'Latest release did not advance.' }
