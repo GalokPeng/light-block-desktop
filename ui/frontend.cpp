@@ -97,6 +97,7 @@ static Qt::Key qt_key(int vk) {
     return Qt::Key(MapVirtualKeyW(UINT(vk),MAPVK_VK_TO_CHAR)&0xffff);
 }
 class Main:public QMainWindow {
+    bool release_after_close_{};
     QStackedWidget *pages_{},*tools_{},*library_stack_{};QWidget *root_{};QFrame* sidebar_{};LocalLibraryView* local_grid_{};Preview* preview_{};QLineEdit *search_{};QLabel *meta_{},*monitor_details_{},*status_{},*heading_{},*eyebrow_{};QPushButton* nav_[6]{};QPushButton* library_tabs_[2]{};QPushButton *theme_{},*language_{},*import_{},*github_{},*apply_wallpaper_{};QComboBox *fit_{},*monitor_{};QTimer refresh_;std::map<int,QWidget*> fields_;std::map<int,QTimer*> pending_;std::map<int,int> values_;int selected_{-1},filter_{-1};uint32_t revision_{};bool rebuilding_{};QList<LocalWallpaper> items_;uint32_t thumbnail_revision_{};int page_{},rendered_language_{-1};std::map<int,QPointer<QWidget>> tool_pages_;uint64_t image_generation_{};ImageLoader* metadata_loader_{};QString blocked_preview_path_;OnlinePage* online_{};PointerSettings* pointer_settings_{};GroupSettings* group_settings_{};
     QString t(char const* zh,char const* en) { return ui::tr(zh,en); }
     QString setting_value(int id,int value) { if(id==8){QStringList names{t("小","Small"),t("中","Medium"),t("大","Large")};return names[std::clamp(value,0,2)];}if(id==11)return QString::number(qRound(value*100./255))+"%";UiSetting descriptor{};if(id==16||(api.setting(id,&descriptor)&&descriptor.section==1&&descriptor.kind==2&&descriptor.high==100))return QString::number(value)+"%";if(id==15)return QString::number(value)+" px";return QString::number(value); }
@@ -188,7 +189,7 @@ public:
     Main() { setWindowTitle(s(state.english?LB_PRODUCT_ENGLISH:LB_PRODUCT_NAME));setWindowIcon(QIcon(s(state.directory)+"/assets/app.ico"));setMinimumSize(960,620);auto available=QGuiApplication::primaryScreen()?QGuiApplication::primaryScreen()->availableGeometry().size():QSize(1250,850);resize(QSize(1250,850).boundedTo(available-QSize(40,60)));setAcceptDrops(true);build();style();refresh_.setInterval(200);connect(&refresh_,&QTimer::timeout,this,[this]{refresh_state();});refresh_.start(); }
     void navigate(int page) { if(!flush_pending()) return;if(page!=0) suspend_preview();page_=page;char const* headingsZh[]={"壁纸","美化","截屏与录屏","工具","设置","关于"};char const* headingsEn[]={"Wallpapers","Appearance","Capture and recording","Tools","Settings","About"};heading_->setText(t(headingsZh[page],headingsEn[page]));setWindowTitle(s(state.english?LB_PRODUCT_ENGLISH:LB_PRODUCT_NAME));pages_->setCurrentIndex(page);nav_[page]->setChecked(true);if(page==0) resume_gif();if(page==3) tools_->setCurrentIndex(0);import_->setVisible(page==0||page==3);import_->setText(page==3?t("＋  新建便签","＋  New note"):t("＋  导入壁纸","＋  Import"));disconnect(import_,nullptr,this,nullptr);connect(import_,&QPushButton::clicked,this,[this]{if(page_==3) api.action(700);else import_files();}); }
     void show_tool_page(int action) { if(action==706){navigate(0);suspend_preview();library_stack_->setCurrentIndex(1);library_tabs_[1]->setChecked(true);}else{navigate(3);open_tool(action==702?0:action==707?1:action==708?3:action==710?5:4);}show_page(-1); }
-    void show_page(int page) { if(page>=0&&page<6) navigate(page);showNormal();ShowWindow(reinterpret_cast<HWND>(winId()),SW_RESTORE);raise();activateWindow();refresh_.start();refresh_state(); }
+    void show_page(int page) { release_after_close_=false;if(page>=0&&page<6) navigate(page);showNormal();ShowWindow(reinterpret_cast<HWND>(winId()),SW_RESTORE);raise();activateWindow();refresh_.start();refresh_state(); }
     uintptr_t preview_host() { return uintptr_t(preview_->host->winId()); }
     void show_notes() { navigate(3);auto page=notes_page();tools_->addWidget(page);tools_->setCurrentWidget(page); }
     void refresh_state() {
@@ -198,7 +199,14 @@ public:
         if(thumbnail_revision_!=state.thumbnail_revision){thumbnail_revision_=state.thumbnail_revision;if(local_grid_)local_grid_->thumbnails_changed();if(selected_>=0&&selected_<items_.size()&&items_[selected_].kind!=0&&preview_->host->isHidden()&&api.thumbnail){auto image=bitmap(api.thumbnail(selected_));if(!image.isNull()){preview_->image=image;preview_->update();}}}
         if(revision_!=state.library_revision||items_.size()!=state.count) { QString prior=selected_>=0&&selected_<items_.size()?items_[selected_].path:QString{};revision_=state.library_revision;items_.clear();for(int n=0;n<state.count;++n) { UiItem item{};if(api.item(n,&item)) items_.push_back(LocalWallpaper::from(item,n)); }int target=items_.isEmpty()?-1:std::clamp(state.selected,0,int(items_.size())-1);bool changed=target<0||prior!=items_[target].path;selected_=target;cards();if(changed&&target>=0) select(target);else if(target<0) { ++image_generation_;if(local_visible())api.preview(-1,0);preview_->host->hide();preview_->play->hide();preview_->image={};preview_->title.clear();preview_->update();meta_->clear();apply_wallpaper_->setProperty("metadataPending",false);apply_wallpaper_->setEnabled(false);apply_wallpaper_->setToolTip({}); } }else if(state.selected!=selected_&&state.selected>=0&&state.selected<items_.size()) select(state.selected);
     }
-    void closeEvent(QCloseEvent* event) override { if(!flush_pending()) { event->ignore();return; }hide();refresh_.stop();event->ignore();QTimer::singleShot(0,qApp,[self=this]{if(main_window.get()==self) main_window.reset();}); }
+    void closeEvent(QCloseEvent* event) override {
+        event->ignore();
+        if(!flush_pending())return;
+        release_after_close_=true;refresh_.stop();hide();
+        QTimer::singleShot(0,qApp,[self=QPointer<Main>(this)]{
+            if(self&&main_window.get()==self.data()&&self->release_after_close_&&!self->isVisible())main_window.reset();
+        });
+    }
     void showEvent(QShowEvent*) override { resume_gif(); }
     void hideEvent(QHideEvent*) override { suspend_preview();refresh_.stop(); }
     void dragEnterEvent(QDragEnterEvent* e) override { if(e->mimeData()->hasUrls()) e->acceptProposedAction(); }
