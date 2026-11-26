@@ -1,3 +1,12 @@
+# v2.1.0 · 桌面收纳、图库与空间管理 / Organizer, gallery and storage
+
+- 右键固定最多十个收纳项到首排，拖动固定项可调整顺序。分组支持按文件名或扩展名匹配新文件，一次撤销可恢复刚才的收纳、移动分组或移除快捷入口。
+- 收纳按变化区域重绘，后台扫描桌面。图库优先准备可见封面，在后台调整尺寸并局部刷新。
+- 设置新增存储空间统计。清理前显示可回收的封面缓存大小，个人壁纸、录屏和剪贴板历史保留。
+- Pin and reorder up to ten organizer items, match new files with per-group filename patterns, and undo the last collection, group move or shortcut removal.
+- Desktop scanning and cover preparation run in the background. The shelf and gallery redraw affected items.
+- Settings now shows storage by category and the size of regenerable covers you can clear.
+
 # v2.0.9 · 存储优化与剪贴板修复 / Smaller installs and more reliable clipboard history
 
 - 精简安装文件。升级时校验并清理旧版程序组件和已知安装包缓存，保留用户壁纸、便签和配置。重复导入相同壁纸时复用已有文件。

@@ -64,6 +64,7 @@ bool snapshots(QString const& directory) {
     if(items_.size()>5) { select(5);preview_->host->show();preview_->play->hide();suspend_preview();bool reset=preview_->host->isHidden()&&!preview_->play->isHidden();report["hidden_preview_restores_play_action"]=reset;ok=reset&&ok;select(0); }
     auto focusPage=new FocusPage;focusPage->resize(880,610);focusPage->ensurePolished();focusPage->layout()->activate();bool focus=focusPage->fixture_tests(directory);delete focusPage;report["focus_ui"]=focus;ok=focus&&ok;
     auto filePage=new FileWorkbench;bool files=filePage->fixture_tests(directory);delete filePage;report["file_previews"]=files;ok=files&&ok;
+    bool storage_ok=storage::fixture_tests();report["storage_measure_and_safe_cover_cleanup"]=storage_ok;ok=storage_ok&&ok;
     bool local_library=LocalLibraryView::fixture_tests(directory);report["local_library_virtualization"]=local_library;ok=local_library&&ok;
     // The decoration fixture owns its theme while it pumps Qt events. A Main
     // refresh would legitimately replace that theme from the backend and break

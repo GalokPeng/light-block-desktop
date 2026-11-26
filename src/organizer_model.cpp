@@ -23,6 +23,10 @@ void Model::initialize_groups() {
     for(size_t n=0;n<8;++n) groups.push_back({ids[n],tr(zh[n],en[n]),colors[n],true});
 }
 std::wstring Model::classify(std::wstring const& path,bool directory,bool system) const {
+    if(!system&&!directory){
+        auto filename=std::filesystem::path(path).filename().wstring();
+        for(auto const& group:groups)if(!group.patterns.empty()&&PathMatchSpecW(filename.c_str(),group.patterns.c_str()))return group.id;
+    }
     if(system) return known_group(groups,L"system")?L"system":L"other";if(directory) return known_group(groups,L"folders")?L"folders":L"other";
     auto extension=lower(std::filesystem::path(path).extension().wstring());
     std::pair<wchar_t const*,wchar_t const*> types[]={
@@ -38,6 +42,7 @@ bool Model::load() {
     std::vector<Group> next_groups;std::vector<Entry> next_entries;std::set<std::wstring> ids,paths;
     for(int n=group_array+1;n<json.tokens[group_array].next;n=json.tokens[n].next) {
         Group group{string(json,n,"id"),string(json,n,"name"),COLORREF(json_integer(&json,json_property(&json,n,"color"),RGB(166,228,202))),false};
+        group.patterns=string(json,n,"patterns");if(group.patterns.size()>240)return false;
         int automatic=json_property(&json,n,"automatic");group.automatic=automatic>=0&&json.tokens[automatic].type==JSON_TRUE;
         if(group.id.empty()||group.id.size()>100||group.name.size()>120||!ids.insert(group.id).second||group.color>0xffffff||next_groups.size()>=128) return false;next_groups.push_back(std::move(group));
     }
@@ -46,71 +51,150 @@ bool Model::load() {
         int system=json_property(&json,n,"system"),external=json_property(&json,n,"external"),loose=json_property(&json,n,"loose");
         entry.system=system>=0&&json.tokens[system].type==JSON_TRUE;entry.external=external>=0&&json.tokens[external].type==JSON_TRUE;entry.loose=loose>=0&&json.tokens[loose].type==JSON_TRUE;
         auto boolean=[&](char const* key){int value=json_property(&json,n,key);return value>=0&&json.tokens[value].type==JSON_TRUE;};
+        entry.pin=int(json_integer(&json,json_property(&json,n,"pin"),0));if(entry.pin<0||entry.pin>10)return false;
         entry.custom_name=boolean("custom_name");entry.manual_loose=boolean("manual_loose")&&entry.loose;entry.positioned=boolean("positioned");entry.position={LONG(json_integer(&json,json_property(&json,n,"x"),0)),LONG(json_integer(&json,json_property(&json,n,"y"),0))};
         if(entry.system) { if(entry.path!=L"shell:MyComputerFolder"&&entry.path!=L"shell:RecycleBinFolder"&&entry.path!=L"ms-settings:") return false; }
         else if(!absolute_file(entry.path)) return false;
         if(!known_group(next_groups,entry.group)||!paths.insert(lower(entry.path)).second||next_entries.size()>=10000) return false;
         entry.due=std::chrono::steady_clock::now()+std::chrono::minutes(1);next_entries.push_back(std::move(entry));
     }
-    groups=std::move(next_groups);entries=std::move(next_entries);initialize_groups();return true;
+    ++revision;groups=std::move(next_groups);entries=std::move(next_entries);initialize_groups();return true;
 }
-bool Model::save() const {
+bool Model::save() {
+    ++revision;
     std::wstring text=L"{\"schema\":1,\"groups\":[";bool first=true;
-    for(auto const& group:groups) { if(!first) text+=L",";first=false;text+=L"{\"id\":"+quote(group.id)+L",\"name\":"+quote(group.name)+L",\"color\":"+std::to_wstring(group.color)+L",\"automatic\":"+(group.automatic?L"true":L"false")+L"}"; }
+    for(auto const& group:groups) { if(!first) text+=L",";first=false;text+=L"{\"id\":"+quote(group.id)+L",\"name\":"+quote(group.name)+L",\"patterns\":"+quote(group.patterns)+L",\"color\":"+std::to_wstring(group.color)+L",\"automatic\":"+(group.automatic?L"true":L"false")+L"}"; }
     text+=L"],\"entries\":[";first=true;
-    for(auto const& entry:entries) { if(!first) text+=L",";first=false;text+=L"{\"path\":"+quote(entry.path)+L",\"name\":"+quote(entry.name)+L",\"group\":"+quote(entry.group)+L",\"system\":"+(entry.system?L"true":L"false")+L",\"loose\":"+(entry.loose?L"true":L"false")+L",\"external\":"+(entry.external?L"true":L"false")+L",\"custom_name\":"+(entry.custom_name?L"true":L"false")+L",\"manual_loose\":"+(entry.manual_loose?L"true":L"false")+L",\"positioned\":"+(entry.positioned?L"true":L"false")+L",\"x\":"+std::to_wstring(entry.position.x)+L",\"y\":"+std::to_wstring(entry.position.y)+L"}"; }
+    for(auto const& entry:entries) { if(!first) text+=L",";first=false;text+=L"{\"path\":"+quote(entry.path)+L",\"name\":"+quote(entry.name)+L",\"group\":"+quote(entry.group)+(entry.pin?L",\"pin\":"+std::to_wstring(entry.pin):L"")+L",\"system\":"+(entry.system?L"true":L"false")+L",\"loose\":"+(entry.loose?L"true":L"false")+L",\"external\":"+(entry.external?L"true":L"false")+L",\"custom_name\":"+(entry.custom_name?L"true":L"false")+L",\"manual_loose\":"+(entry.manual_loose?L"true":L"false")+L",\"positioned\":"+(entry.positioned?L"true":L"false")+L",\"x\":"+std::to_wstring(entry.position.x)+L",\"y\":"+std::to_wstring(entry.position.y)+L"}"; }
     text+=L"]}\n";return write_utf8_atomic((directory_/L"organizer.json").c_str(),text.c_str())!=FALSE;
 }
+std::vector<RootListing> scan_roots(std::vector<std::wstring> const& roots,std::atomic_bool const* cancelled) {
+    std::vector<RootListing> result;
+    std::set<std::wstring> seen;
+    for(auto const& path:roots) {
+        if(cancelled&&cancelled->load())return {};
+        if(!seen.insert(lower(std::filesystem::path(path).lexically_normal().wstring())).second)continue;
+        auto& root=result.emplace_back();
+        root.path=path;
+        if(path.empty()){root.error=ERROR_INVALID_NAME;continue;}
+        WIN32_FIND_DATAW data{};
+        auto pattern=std::filesystem::path(path)/L"*";
+        HANDLE find=FindFirstFileW(pattern.c_str(),&data);
+        if(find==INVALID_HANDLE_VALUE){
+            root.error=GetLastError();
+            if(root.error==ERROR_FILE_NOT_FOUND){
+                auto attributes=GetFileAttributesW(path.c_str());
+                if(attributes!=INVALID_FILE_ATTRIBUTES&&(attributes&FILE_ATTRIBUTE_DIRECTORY))root.error=0;
+            }
+            continue;
+        }
+        scope_exit close([&]{FindClose(find);});
+        do {
+            if(cancelled&&cancelled->load())return {};
+            if((data.dwFileAttributes&(FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM))||
+               !wcscmp(data.cFileName,L".")||!wcscmp(data.cFileName,L".."))continue;
+            auto& item=root.files.emplace_back();
+            auto file=std::filesystem::path(path)/data.cFileName;
+            item.path=file.wstring();
+            item.directory=(data.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)!=0;
+            item.name=!item.directory&&!_wcsicmp(file.extension().c_str(),L".lnk")?file.stem().wstring():data.cFileName;
+            item.modified=(uint64_t(data.ftLastWriteTime.dwHighDateTime)<<32)|data.ftLastWriteTime.dwLowDateTime;
+        }while(FindNextFileW(find,&data));
+        auto error=GetLastError();
+        if(error!=ERROR_NO_MORE_FILES)root.error=error;
+    }
+    return result;
+}
 bool Model::synchronize(std::vector<std::wstring> const& roots,bool defer_new,bool protect_empty_roots) {
-    if(roots.empty()) return false;
+    return apply_scan(scan_roots(roots),defer_new,protect_empty_roots);
+}
+bool Model::apply_scan(std::vector<RootListing> const& roots,bool defer_new,bool protect_empty_roots) {
+    if(roots.empty())return false;
     initialize_groups();std::vector<Entry> found;std::unordered_map<std::wstring,size_t> previous;
-    std::set<std::wstring> scanned_roots;
-    bool changed=false;
+    bool changed=false,metadata_changed=false;
     for(size_t n=0;n<entries.size();++n) previous.emplace(lower(entries[n].path),n);
     auto append=[&](std::wstring path,std::wstring name,bool directory,bool system,uint64_t modified) {
-        auto existing=previous.find(lower(path));if(existing!=previous.end()) { Entry item=entries[existing->second];changed|=item.external||item.path!=path||(!item.custom_name&&item.name!=name);item.path=std::move(path);if(!item.custom_name)item.name=std::move(name);item.external=false;item.modified=modified;item.directory=directory;found.push_back(std::move(item));previous.erase(existing);return; }
+        auto existing=previous.find(lower(path));if(existing!=previous.end()) { Entry item=entries[existing->second];metadata_changed|=item.modified!=modified||item.directory!=directory;changed|=item.external||item.path!=path||(!item.custom_name&&item.name!=name);item.path=std::move(path);if(!item.custom_name)item.name=std::move(name);item.external=false;item.modified=modified;item.directory=directory;found.push_back(std::move(item));previous.erase(existing);return; }
         changed=true;
         Entry item;item.path=std::move(path);item.name=std::move(name);item.group=classify(item.path,directory,system);item.modified=modified;item.system=system;item.directory=directory;item.loose=defer_new&&!system;item.due=std::chrono::steady_clock::now()+std::chrono::minutes(1);found.push_back(std::move(item));
     };
     append(L"shell:MyComputerFolder",tr(L"此电脑",L"This PC"),false,true,0);append(L"shell:RecycleBinFolder",tr(L"回收站",L"Recycle Bin"),false,true,0);append(L"ms-settings:",tr(L"Windows 设置",L"Windows settings"),false,true,0);
     for(auto const& root:roots) {
-        auto directory=std::filesystem::path(root).lexically_normal();
-        if(root.empty()) return false;
-        if(!scanned_roots.insert(lower(directory.wstring())).second) continue;
-        auto previously_populated=[&]{
-            return std::any_of(entries.begin(),entries.end(),[&](auto const& e){
-                return !e.system&&!e.external&&!_wcsicmp(std::filesystem::path(e.path).parent_path().c_str(),directory.c_str());
+        if(root.error|| (protect_empty_roots&&root.files.empty())){
+            bool populated=std::any_of(entries.begin(),entries.end(),[&](auto const& e){
+                return !e.system&&!e.external&&!_wcsicmp(std::filesystem::path(e.path).parent_path().c_str(),root.path.c_str());
             });
-        };
-        auto start=found.size();
-        auto pattern=directory/L"*";WIN32_FIND_DATAW data{};HANDLE find=FindFirstFileW(pattern.c_str(),&data);
-        if(find==INVALID_HANDLE_VALUE) {
-            DWORD reason=GetLastError();
-            if(reason==ERROR_FILE_NOT_FOUND) {
-                DWORD attributes=GetFileAttributesW(directory.c_str());
-                if(attributes!=INVALID_FILE_ATTRIBUTES&&(attributes&FILE_ATTRIBUTE_DIRECTORY)) {
-                    if(protect_empty_roots&&previously_populated()) return false;
-                    continue;
-                }
-            }
-            // A redirected desktop may not be mounted during sign-in. Never
-            // commit a partial scan or discard its names, positions or groups.
-            if(root!=roots.front() && (reason==ERROR_PATH_NOT_FOUND||reason==ERROR_FILE_NOT_FOUND) &&
-               !previously_populated()) continue;
-            return false;
+            // A missing optional public desktop is fine until it has held entries.
+            if(root.error && &root!=&roots.front() && !populated &&
+               (root.error==ERROR_FILE_NOT_FOUND||root.error==ERROR_PATH_NOT_FOUND))continue;
+            if(root.error||populated)return false;
         }
-        scope_exit close([&]{FindClose(find);});
-        do { if((data.dwFileAttributes&(FILE_ATTRIBUTE_HIDDEN|FILE_ATTRIBUTE_SYSTEM))||!wcscmp(data.cFileName,L".")||!wcscmp(data.cFileName,L"..")) continue;auto path=(std::filesystem::path(root)/data.cFileName).wstring();bool directory=(data.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)!=0;std::wstring name=data.cFileName;if(!directory && lower(std::filesystem::path(name).extension().wstring())==L".lnk") name=std::filesystem::path(name).stem().wstring();append(std::move(path),std::move(name),directory,false,(uint64_t(data.ftLastWriteTime.dwHighDateTime)<<32)|data.ftLastWriteTime.dwLowDateTime); }while(FindNextFileW(find,&data));
-        if(GetLastError()!=ERROR_NO_MORE_FILES) return false;
-        if(protect_empty_roots&&found.size()==start&&previously_populated()) return false;
+        for(auto const& file:root.files)append(file.path,file.name,file.directory,false,file.modified);
     }
     for(auto const& [path,index]:previous) {
         if(entries[index].external) found.push_back(entries[index]);else changed=true;
     }
-    if(!changed){entries=std::move(found);return true;}
+    if(!changed){
+        // Enumeration order may vary. Preserve live indices when only timestamps changed.
+        if(metadata_changed){
+            std::unordered_map<std::wstring,size_t> by_path;
+            for(size_t i=0;i<entries.size();++i)by_path.emplace(entries[i].path,i);
+            for(auto const& item:found){auto& entry=entries[by_path.at(item.path)];entry.modified=item.modified;entry.directory=item.directory;}
+            ++revision;
+        }
+        return true;
+    }
     auto before=std::move(entries);entries=std::move(found);if(save())return true;entries=std::move(before);return false;
 }
-bool Model::collect(std::wstring const& path,std::wstring const& group) { for(auto &entry:entries) if(lower(entry.path)==lower(path)) { auto before=entry;if(!group.empty()) { if(!known_group(groups,group)) return false;entry.group=group; }entry.loose=false;entry.manual_loose=false;if(save())return true;entry=std::move(before);return false; }return false; }
+bool Model::set_patterns(std::wstring const& id,std::wstring patterns){
+    auto group=std::find_if(groups.begin(),groups.end(),[&](auto const& g){return g.id==id;});
+    if(group==groups.end()||patterns.size()>240||patterns.find_first_of(L"/\\:\r\n")!=std::wstring::npos)return false;
+    auto previous=group->patterns;group->patterns=std::move(patterns);
+    if(save())return true;
+    group->patterns=std::move(previous);return false;
+}
+bool Model::set_pin(std::wstring const& path,int position){
+    auto item=std::find_if(entries.begin(),entries.end(),[&](auto const& e){return e.path==path&&!e.loose;});
+    if(item==entries.end()||position<0||position>10)return false;
+    std::vector<Entry*> pinned;
+    for(auto& e:entries)if(e.pin&& &e!=&*item)pinned.push_back(&e);
+    if(position&&pinned.size()>=10)return false;
+    std::sort(pinned.begin(),pinned.end(),[](auto a,auto b){return a->pin<b->pin;});
+    auto before=entries;
+    if(position)pinned.insert(pinned.begin()+std::min<size_t>(position-1,pinned.size()),&*item);
+    item->pin=0;
+    for(size_t n=0;n<pinned.size();++n)pinned[n]->pin=int(n+1);
+    if(save())return true;
+    entries=std::move(before);return false;
+}
+bool Model::collect(std::wstring const& path,std::wstring const& group){
+    for(auto& entry:entries)if(!_wcsicmp(entry.path.c_str(),path.c_str())){
+        if(!group.empty()&&!known_group(groups,group))return false;
+        auto before=entry;
+        if(!group.empty())entry.group=group;
+        entry.loose=false;entry.manual_loose=false;
+        if(save()){undo_entry_=std::move(before);undo_removed_=false;return true;}
+        entry=std::move(before);return false;
+    }
+    return false;
+}
+bool Model::undo(){
+    if(!undo_entry_)return false;
+    auto const& prior=*undo_entry_;
+    auto found=std::find_if(entries.begin(),entries.end(),[&](auto const& e){return !_wcsicmp(e.path.c_str(),prior.path.c_str());});
+    if(!known_group(groups,prior.group))return false;
+    auto before=entries;
+    if(undo_removed_){
+        if(found!=entries.end()||GetFileAttributesW(prior.path.c_str())==INVALID_FILE_ATTRIBUTES)return false;
+        entries.push_back(prior);found=std::prev(entries.end());found->pin=0;
+    }else if(found==entries.end())return false;
+    found->group=prior.group;found->loose=prior.loose;found->manual_loose=prior.manual_loose;
+    found->position=prior.position;found->positioned=prior.positioned;
+    if(prior.pin&&!found->pin&&std::none_of(entries.begin(),entries.end(),[&](auto const& e){return e.pin==prior.pin;}))found->pin=prior.pin;
+    if(found->loose)found->due=std::chrono::steady_clock::now()+std::chrono::minutes(1);
+    if(save()){undo_entry_.reset();return true;}
+    entries=std::move(before);return false;
+}
 bool Model::rename_entry(std::wstring const& path,std::wstring const& name) {
     if(name.size()>240||name.find_first_of(L"\r\n")!=std::wstring::npos)return false;
     for(auto& entry:entries)if(!_wcsicmp(entry.path.c_str(),path.c_str())){auto before=entry;entry.name=name;entry.custom_name=true;if(save())return true;entry=std::move(before);return false;}return false;
@@ -121,8 +205,9 @@ bool Model::restore_entry(std::wstring const& path) {
     // These are references, never filesystem moves. Desktop items remain visible
     // through a loose icon while Explorer's icon layer is hidden. Explicit restore
     // is persistent and must not be undone by the one-minute collection timer.
-    if(found->external&&!found->system)entries.erase(found);else {found->loose=true;found->manual_loose=true;}
-    if(save())return true;entries=std::move(before);return false;
+    auto prior=*found;bool removed=found->external&&!found->system;
+    if(removed)entries.erase(found);else {found->pin=0;found->loose=true;found->manual_loose=true;}
+    if(save()){undo_entry_=std::move(prior);undo_removed_=removed;return true;}entries=std::move(before);return false;
 }
 bool Model::position_entry(std::wstring const& path,POINT position) {
     for(auto& entry:entries)if(!_wcsicmp(entry.path.c_str(),path.c_str())){auto before=entry;entry.positioned=true;entry.position=position;if(save())return true;entry=std::move(before);return false;}return false;
@@ -142,11 +227,36 @@ bool Model::move_group(size_t from,size_t to) { if(from>=groups.size()||to>=grou
 std::vector<size_t> Model::view(int order,std::wstring const& query,std::wstring const& group) const {
     std::vector<size_t> result;auto search=lower(query);
     for(size_t n=0;n<entries.size();++n) { auto const& item=entries[n];if(item.loose||(!group.empty()&&item.group!=group)) continue;if(!search.empty() && lower(item.name).find(search)==std::wstring::npos) { auto found=std::find_if(groups.begin(),groups.end(),[&](auto const& g){return g.id==item.group;});if(found==groups.end()||lower(found->name).find(search)==std::wstring::npos) continue; }result.push_back(n); }
-    std::stable_sort(result.begin(),result.end(),[&](size_t a,size_t b) { auto const& x=entries[a];auto const& y=entries[b];int px=system_priority(x),py=system_priority(y);if(px!=py) return px<py;if(order==1&&x.modified!=y.modified) return x.modified>y.modified;return StrCmpLogicalW(x.name.c_str(),y.name.c_str())<0; });return result;
+    std::stable_sort(result.begin(),result.end(),[&](size_t a,size_t b) { auto const& x=entries[a];auto const& y=entries[b];if(x.pin!=y.pin)return (x.pin?x.pin:11)<(y.pin?y.pin:11);int px=system_priority(x),py=system_priority(y);if(px!=py) return px<py;if(order==1&&x.modified!=y.modified) return x.modified>y.modified;return StrCmpLogicalW(x.name.c_str(),y.name.c_str())<0; });return result;
 }
 size_t Model::collect_due(std::chrono::steady_clock::time_point now) { std::vector<size_t> changed;for(size_t n=0;n<entries.size();++n)if(entries[n].loose&&!entries[n].manual_loose&&entries[n].due<=now){entries[n].loose=false;changed.push_back(n);}if(changed.empty()||save())return changed.size();for(auto n:changed)entries[n].loose=true;return 0; }
+static bool workflow_tests(std::filesystem::path const& dir){
+    std::error_code error;std::filesystem::create_directories(dir,error);if(error)return false;
+    Model model(dir);model.initialize_groups();
+    if(!model.set_patterns(L"documents",L"Minutes*.docx;*.PDF")||
+       model.classify(L"Minutes 01.docx",false)!=L"documents"||model.classify(L"report.pdf",false)!=L"documents")return false;
+    if(!model.set_patterns(L"images",L"*.abc")||model.classify(L"new.ABC",false)!=L"images")return false;
+    for(int i=0;i<11;++i){
+        auto path=(dir/(std::to_wstring(i)+L".txt")).wstring();
+        model.entries.push_back({path,std::to_wstring(i),L"documents",uint64_t(i)});
+    }
+    for(int i=0;i<10;++i)if(!model.set_pin(model.entries[i].path,10))return false;
+    if(model.set_pin(model.entries[10].path,10)||!model.set_pin(model.entries[6].path,1))return false;
+    if(model.view(0,L"").front()!=6||model.view(1,L"").front()!=6)return false;
+    Model loaded(dir);if(!loaded.load()||loaded.view(1,L"").front()!=6||loaded.classify(L"image.abc",false)!=L"images")return false;
+    auto path=loaded.entries[10].path;loaded.entries[10].loose=true;loaded.entries[10].position={20,35};loaded.entries[10].positioned=true;
+    if(!loaded.collect(path,L"media")||!loaded.can_undo())return false;
+    loaded.entries[1].name=L"Later change";
+    if(!loaded.undo()||loaded.can_undo()||loaded.entries[10].group!=L"documents"||loaded.entries[10].position.y!=35||
+       !loaded.entries[10].loose||loaded.entries[1].name!=L"Later change")return false;
+    if(!write_utf8_atomic(path.c_str(),L"keep"))return false;
+    loaded.entries[10].external=true;
+    if(!loaded.restore_entry(path)||loaded.entries.size()!=10||!loaded.undo()||loaded.entries.size()!=11)return false;
+    return std::filesystem::exists(path);
+}
 bool model_tests(std::wstring const& directory) {
     std::error_code error;std::filesystem::create_directories(directory,error);if(error) return false;Model model(directory);model.initialize_groups();
+    if(!workflow_tests(std::filesystem::path(directory)/L"workflow"))return false;
     if(model.classify(L"C:\\a.PDF",false)!=L"documents"||model.classify(L"C:\\a",true)!=L"folders") return false;
     model.entries={{L"C:\\test10.txt",L"test10",L"documents",10,false,false,false,{}},{L"shell:MyComputerFolder",L"此电脑",L"system",0,true,false,false,{}},{L"C:\\test2.txt",L"test2",L"documents",20,false,false,false,{}}};
     auto sorted=model.view(0,L"");if(sorted.size()!=3||sorted[0]!=1||sorted[1]!=2) return false;auto timed=model.view(1,L"");if(timed[0]!=1||timed[1]!=2) return false;

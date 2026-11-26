@@ -98,6 +98,8 @@ static void check(BOOL result,const wchar_t *name) {
 int run_organizer_tests(const wchar_t* report){
     passes=failures=0;checks[0]=0;
     auto root=std::filesystem::path(g_app.data);
+    check(lb::organizer::model_tests((root/L"model").wstring()),L"pin-order-rules-persistence-undo-preserves-other-files");
+    check(lb::icon_cache_tests(),L"icon-size-fallback-replaced-by-sharp-icon");
     check(lb::organizer::visibility_tests(root/L"visibility"),L"shutdown-restores-both-original-visibility-states-and-replays-interrupted-receipt");
     check(lb::organizer::transition_tests(),L"session-query-suspends-lease-and-cancellation-preserves-preference");
     check(lb::organizer::arrival_tests((root/L"arrivals").wstring()),L"native-edit-focus-loss-escape-enter-and-shortcut-extension");

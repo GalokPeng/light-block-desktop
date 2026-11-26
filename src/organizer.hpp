@@ -1,6 +1,8 @@
 #pragma once
 #include "lb.h"
 #include <chrono>
+#include <optional>
+#include <atomic>
 #include <functional>
 #include <filesystem>
 #include <unordered_map>
@@ -15,18 +17,33 @@ struct Entry {
     bool directory{};
     bool custom_name{},manual_loose{},positioned{};
     POINT position{};
+    int pin{};
 };
-struct Group { std::wstring id,name;COLORREF color{};bool automatic{}; };
+struct Group { std::wstring id,name;COLORREF color{};bool automatic{};std::wstring patterns; };
+struct RootListing {
+    std::wstring path;
+    DWORD error{};
+    std::vector<Entry> files;
+};
+std::vector<RootListing> scan_roots(std::vector<std::wstring> const& roots,std::atomic_bool const* cancelled=nullptr);
 class Model {
     std::filesystem::path directory_;
+    std::optional<Entry> undo_entry_;
+    bool undo_removed_{};
 public:
     std::vector<Entry> entries;
     std::vector<Group> groups;
     explicit Model(std::filesystem::path directory):directory_(std::move(directory)) {}
     bool load();
-    bool save() const;
+    uint64_t revision{};
+    bool save();
+    bool apply_scan(std::vector<RootListing> const& roots,bool defer_new,bool protect_empty_roots);
     void initialize_groups();
     bool synchronize(std::vector<std::wstring> const& roots,bool defer_new,bool protect_empty_roots=false);
+    bool set_pin(std::wstring const& path,int position);
+    bool set_patterns(std::wstring const& group,std::wstring patterns);
+    bool can_undo()const{return undo_entry_.has_value();}
+    bool undo();
     bool collect(std::wstring const& path,std::wstring const& group={});
     bool rename_entry(std::wstring const& path,std::wstring const& name);
     bool restore_entry(std::wstring const& path);

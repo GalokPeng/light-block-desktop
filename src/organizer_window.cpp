@@ -39,6 +39,56 @@ struct ArrivalAnchor {
     bool recent(ULONGLONG now)const{return valid&&now>=captured&&now-captured<=30000;}
 } arrival_anchor;
 struct RenameJob {std::thread worker;std::atomic_bool done{};bool ok{};std::wstring source,target;};
+// Cached indices belong to one committed model revision. Search retains one
+// result so typing cannot grow the cache without a bound.
+struct ShelfViews {
+    uint64_t revision=UINT64_MAX;
+    std::optional<std::vector<size_t>> by_name,by_time;
+    std::wstring query,group;
+    int order=-1;
+    std::vector<size_t> filtered;
+    using Covers=std::unordered_map<std::wstring,std::vector<size_t>>;
+    std::optional<Covers> covers;
+    void refresh(Model const& model){
+        if(revision==model.revision)return;
+        by_name.reset();by_time.reset();covers.reset();filtered.clear();order=-1;
+        revision=model.revision;
+    }
+    std::vector<size_t> const& list(Model const& model,int sort,std::wstring_view search,std::wstring_view selected){
+        refresh(model);
+        if(search.empty()&&selected.empty()){
+            auto& sorted=sort==1?by_time:by_name;
+            if(!sorted)sorted=model.view(sort,L"");
+            return *sorted;
+        }
+        if(sort!=order||search!=query||selected!=group){
+            order=sort;query=search;group=selected;
+            filtered=model.view(sort,query,group);
+        }
+        return filtered;
+    }
+    size_t pinned_count(Model const& model){
+        auto const& name=list(model,0,L"",L"");
+        size_t n=0;while(n<name.size()&&model.entries[name[n]].pin)++n;
+        return n;
+    }
+    Covers const& group_covers(Model const& model){
+        refresh(model);
+        if(!covers){
+            covers.emplace();
+            for(auto index:list(model,0,L"",L"")){
+                auto& cover=(*covers)[model.entries[index].group];
+                if(cover.size()<4)cover.push_back(index);
+            }
+        }
+        return *covers;
+    }
+};
+struct DirectoryScan {
+    std::atomic_bool done{},cancelled{};
+    uint64_t serial{},revision{};
+    std::vector<RootListing> listing;
+};
 struct Shelf {
     std::unique_ptr<Model> model;
     HWND window{},search{},editor{},editor_anchor{};
@@ -46,8 +96,13 @@ struct Shelf {
     std::vector<Tile> tiles;
     std::vector<std::wstring> roots;
     IconCache icons;
+    ShelfViews views;
+    SIZE painted{};
+    uint64_t painted_revision{};
     std::vector<std::unique_ptr<Loose>> loose;
     DirectoryWatch watcher;
+    uint64_t change_serial{};
+    std::shared_ptr<DirectoryScan> scan,startup_scan;
     unique_handle lease,stop,ready;
     unsigned retry_seconds{};
     bool retry_pending{},recovering{};
@@ -115,14 +170,15 @@ RECT monitor_work() {
     for(auto name:{L"Shell_TrayWnd",L"Shell_SecondaryTrayWnd"})for(HWND bar=nullptr;(bar=FindWindowExW(nullptr,bar,name,nullptr));){RECT bounds{};if(GetWindowRect(bar,&bounds))work=reserve_taskbar(work,info.rcMonitor,bounds);}
     return work;
 }
-int width() { RECT work=monitor_work();size_t count=shelf.model?(g_app.settings.organizer_view==2?shelf.model->groups.size():shelf.model->view(g_app.settings.organizer_view,L"",L"").size()):10;int cells=std::clamp(int(count)+1,4,11);return std::max(1,std::min(cell_size()*cells+scaled(24),int(work.right-work.left)-scaled(32))); }
+int width(RECT work) { size_t count=shelf.model?(g_app.settings.organizer_view==2?shelf.model->groups.size()+shelf.views.pinned_count(*shelf.model):shelf.views.list(*shelf.model,g_app.settings.organizer_view,L"",L"").size()):10;int cells=std::clamp(int(count)+1,4,11);return std::max(1,std::min(cell_size()*cells+scaled(24),int(work.right-work.left)-scaled(32))); }
+int width(){return width(monitor_work());}
 void place(int height) {
     if(shelf.dragging&&shelf.moving) return;
-    RECT work=monitor_work(),bounds=shelf_bounds(work,width(),height,g_app.settings.organizer_alignment,scaled(22),g_app.settings.organizer_custom_position!=0,g_app.settings.organizer_x,g_app.settings.organizer_y);
+    RECT work=monitor_work(),bounds=shelf_bounds(work,width(work),height,g_app.settings.organizer_alignment,scaled(22),g_app.settings.organizer_custom_position!=0,g_app.settings.organizer_x,g_app.settings.organizer_y);
     RECT current{};GetWindowRect(shelf.window,&current);bool changed=!EqualRect(&current,&bounds);
     if(changed){if(floating_preview()||shelf.fixture)SetWindowPos(shelf.window,HWND_TOP,bounds.left,bounds.top,bounds.right-bounds.left,bounds.bottom-bounds.top,SWP_NOACTIVATE|SWP_NOREDRAW);else lb::desktop_layer::place(shelf.window,bounds.left,bounds.top,bounds.right-bounds.left,bounds.bottom-bounds.top,SWP_NOREDRAW);}
     shelf.height=bounds.bottom-bounds.top;shelf.layout_work=work;position_edits();
-    if(changed)RedrawWindow(shelf.window,nullptr,nullptr,RDW_INVALIDATE|RDW_UPDATENOW);
+    if(changed)InvalidateRect(shelf.window,nullptr,FALSE);
     if(!shelf.fixture&&!IsWindowVisible(shelf.window))ShowWindow(shelf.window,SW_SHOWNA);
 }
 LRESULT CALLBACK outside_click(int code,WPARAM wp,LPARAM lp) {
@@ -136,9 +192,12 @@ LRESULT CALLBACK outside_click(int code,WPARAM wp,LPARAM lp) {
     if(code==HC_ACTION&&(wp==WM_LBUTTONDOWN||wp==WM_RBUTTONDOWN)&&!interaction_busy()&&shelf.expanded) { RECT bounds{};GetWindowRect(shelf.window,&bounds);auto point=reinterpret_cast<MSLLHOOKSTRUCT*>(lp)->pt;if(!PtInRect(&bounds,point)) PostMessageW(shelf.window,WM_APP+94,0,0); }
     return CallNextHookEx(shelf.outside,code,wp,lp);
 }
-int expanded_height(){RECT work=monitor_work();wchar_t query[260]{};if(shelf.search)GetWindowTextW(shelf.search,query,260);size_t count=show_groups(query)?shelf.model->groups.size():shelf.model->view(g_app.settings.organizer_view,query,shelf.group).size();return metrics().expanded_height(int(count),width(),std::max(base_height(),int(work.bottom-work.top)-scaled(80)),scaled(58));}
+int expanded_height(){RECT work=monitor_work();wchar_t query[260]{};if(shelf.search)GetWindowTextW(shelf.search,query,260);size_t count=show_groups(query)?shelf.model->groups.size()+shelf.views.pinned_count(*shelf.model):shelf.views.list(*shelf.model,g_app.settings.organizer_view,query,shelf.group).size();return metrics().expanded_height(int(count),width(),std::max(base_height(),int(work.bottom-work.top)-scaled(80)),scaled(58));}
 void reflow(){if(!shelf.window)return;KillTimer(shelf.window,1);KillTimer(shelf.window,4);shelf.hovered=shelf.pressed_tile=-1;shelf.hovers.clear();shelf.tiles.clear();shelf.scroll=0;shelf.target=shelf.expanded?expanded_height():base_height();shelf.height_motion.reset(shelf.target);shelf.header_motion.reset(shelf.expanded?scaled(48):0);place(shelf.target);InvalidateRect(shelf.window,nullptr,FALSE);}
-void hover_to(int index){if(index==shelf.hovered)return;shelf.hovered=index;for(auto& pair:shelf.hovers){pair.second.from=pair.second.value;pair.second.target=0;}if(index>=0){auto& value=shelf.hovers[index];value.from=value.value;value.target=1;}shelf.hover_started=GetTickCount64();if(shelf.reduced_motion){for(auto& pair:shelf.hovers)pair.second.value=pair.second.target;InvalidateRect(shelf.window,nullptr,FALSE);}else SetTimer(shelf.window,4,16,nullptr);}
+void invalidate_tile(int index){
+    if(index>=0&&size_t(index)<shelf.tiles.size())InvalidateRect(shelf.window,&shelf.tiles[size_t(index)].bounds,FALSE);
+}
+void hover_to(int index){if(index==shelf.hovered)return;shelf.hovered=index;for(auto& pair:shelf.hovers){pair.second.from=pair.second.value;pair.second.target=0;}if(index>=0){auto& value=shelf.hovers[index];value.from=value.value;value.target=1;}shelf.hover_started=GetTickCount64();if(shelf.reduced_motion){for(auto& pair:shelf.hovers){pair.second.value=pair.second.target;invalidate_tile(pair.first);}}else SetTimer(shelf.window,4,16,nullptr);}
 void hover_opacity(bool inside){shelf.mouse_inside=inside;shelf.opacity_motion.aim(std::min(255,g_app.settings.organizer_opacity+(inside?24:0)));shelf.opacity_tick=GetTickCount64();if(shelf.reduced_motion){shelf.opacity_motion.reset(shelf.opacity_motion.target);InvalidateRect(shelf.window,nullptr,FALSE);}else SetTimer(shelf.window,7,16,nullptr);}
 void animate(bool expanded) {
     shelf.expanded=expanded;shelf.scroll=0;
@@ -147,7 +206,8 @@ void animate(bool expanded) {
     shelf.animation=GetTickCount64();if(shelf.reduced_motion){shelf.height_motion.reset(shelf.target);shelf.header_motion.reset(shelf.header_motion.target);place(shelf.target);}else SetTimer(shelf.window,1,16,nullptr);
     position_edits();
     ShowWindow(shelf.search,expanded?SW_SHOWNOACTIVATE:SW_HIDE);if(!expanded) { shelf.group.clear();SetWindowTextW(shelf.search,L""); }
-    if(expanded&&!shelf.outside) shelf.outside=SetWindowsHookExW(WH_MOUSE_LL,outside_click,g_app.instance,0);
+    InvalidateRect(shelf.window,nullptr,FALSE);
+    if(expanded&&!shelf.fixture&&!shelf.outside) shelf.outside=SetWindowsHookExW(WH_MOUSE_LL,outside_click,g_app.instance,0);
     // Keep the hook while collapsed so a desktop New menu still has an anchor.
 }
 void schedule_collect() {
@@ -176,55 +236,101 @@ void draw_entry(HDC dc,Entry const& entry,RECT cell,float hover,COLORREF backgro
     auto plate=mixed(g_app.settings.icon_color,background,150);if(hover>0||pressed)plate=mixed(plate,foreground(background),255-int(hover*18)-(pressed?12:0));
     draw_plate(dc,tile,scaled(18),plate,mixed(plate,background,180));
     HICON icon=icon_for(entry,int(std::ceil(icon_size*1.17)));if(icon){int size=icon_size+zoom;DrawIconEx(dc,cx-size/2,top+(tile_side-size)/2,icon,size,size,0,nullptr,DI_NORMAL);}
+    if(entry.pin){
+        RECT badge{tile.right-scaled(18),tile.top,tile.right+scaled(1),tile.top+scaled(16)};
+        rounded(dc,badge,scaled(9),RGB(36,83,71),RGB(144,204,182));
+        auto rank=std::to_wstring(entry.pin);
+        draw_text(dc,rank.c_str(),badge,shelf.small,RGB(247,255,250),DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    }
     RECT label{cell.left+scaled(2),cell.bottom-m.label,cell.right-scaled(2),cell.bottom-scaled(2)};draw_text(dc,entry.name.c_str(),label,shelf.small,foreground(background),DT_CENTER|DT_SINGLELINE|DT_END_ELLIPSIS);
 
 }
-void paint(HWND window) {
-    PAINTSTRUCT ps;BeginPaint(window,&ps);RECT client{};GetClientRect(window,&client);
-    if(!shelf.model||!shelf.surface.reserve(client.right,client.bottom)){EndPaint(window,&ps);return;}
-    HDC dc=shelf.surface.dc();COLORREF background=g_app.settings.organizer_color;
-    unique_gdi<HBRUSH> brush(CreateSolidBrush(background));FillRect(dc,&client,brush.get());
+void render_frame(HWND window,RECT client,RECT damage) {
+    if(!shelf.model||!shelf.surface.reserve(client.right,client.bottom))return;
+    RECT dirty=client;
+    if(shelf.painted.cx==client.right&&shelf.painted.cy==client.bottom&&
+       shelf.painted_revision==shelf.model->revision&&!shelf.tiles.empty()&&!IsRectEmpty(&damage)){
+        if(!IntersectRect(&dirty,&client,&damage))return;
+    }
+    bool full=EqualRect(&dirty,&client);
+    HDC dc=shelf.surface.dc();
+    int saved=SaveDC(dc);IntersectClipRect(dc,dirty.left,dirty.top,dirty.right,dirty.bottom);
+    COLORREF background=g_app.settings.organizer_color;
+    unique_gdi<HBRUSH> brush(CreateSolidBrush(background));FillRect(dc,&dirty,brush.get());
     if(g_app.settings.organizer_glass){COLORREF top=mixed(background,RGB(226,242,247),230),bottom=mixed(background,RGB(18,27,37),235);TRIVERTEX vertices[]={{0,0,COLOR16(GetRValue(top)<<8),COLOR16(GetGValue(top)<<8),COLOR16(GetBValue(top)<<8),0},{client.right,client.bottom,COLOR16(GetRValue(bottom)<<8),COLOR16(GetGValue(bottom)<<8),COLOR16(GetBValue(bottom)<<8),0}};GRADIENT_RECT mesh{0,1};GradientFill(dc,vertices,2,&mesh,1,GRADIENT_FILL_RECT_V);}
     {unique_gdi<HPEN> edge(CreatePen(PS_SOLID,1,mixed(background,RGB(225,242,250),220)));auto pen=SelectObject(dc,edge.get()),fill=SelectObject(dc,GetStockObject(NULL_BRUSH));RoundRect(dc,1,1,client.right-1,client.bottom-1,scaled(36),scaled(36));SelectObject(dc,pen);SelectObject(dc,fill);}
     int cell=cell_size(),row=row_size(),columns=metrics().columns(client.right);wchar_t query[260]{};GetWindowTextW(shelf.search,query,260);
-    bool groups=show_groups(query);auto entries=shelf.model->view(g_app.settings.organizer_view,query,shelf.group);size_t count=groups?shelf.model->groups.size():entries.size();
-    int top=scaled(10)+int(std::lround(shelf.header_motion.value)),limit=shelf.expanded?columns*std::max(1,int(client.bottom-top-scaled(6))/row):std::min(10,columns-1);size_t first=shelf.expanded?size_t(std::max(0,shelf.scroll))*size_t(columns):0;
-    auto content=[&](HDC dc){shelf.tiles.clear();
-    for(size_t n=first;n<count&&n<first+size_t(limit);++n) {
-        size_t at=n-first;int x=scaled(12)+int(at%size_t(columns))*cell,y=top+int(at/size_t(columns))*row;RECT bounds{x,y,x+cell,y+row};
-        auto hover_it=shelf.hovers.find(int(shelf.tiles.size()));float hover=hover_it==shelf.hovers.end()?0.f:hover_it->second.value;
-        bool pressed=shelf.pressed_tile==int(shelf.tiles.size())&&shelf.hovered==shelf.pressed_tile;
-        if(groups) {
-            auto const& group=shelf.model->groups[n];int side=metrics().tile,cx=(bounds.left+bounds.right)/2,top_tile=bounds.top+scaled(5);RECT tile{cx-side/2,top_tile,cx+(side+1)/2,top_tile+side};draw_plate(dc,tile,scaled(14),mixed(group.color,background,120),mixed(group.color,background,85));
-            auto group_entries=shelf.model->view(0,L"",group.id);int gap=scaled(4),mini=(side-scaled(14)-gap)/2,grid=2*mini+gap,origin_x=cx-grid/2,origin_y=top_tile+(side-grid)/2;
-            for(size_t k=0;k<std::min<size_t>(4,group_entries.size());++k)if(auto icon=icon_for(shelf.model->entries[group_entries[k]],int(std::ceil(mini*1.1)))){int zoom=int(mini*(.1f*hover-(pressed?.06f:0.f)));DrawIconEx(dc,origin_x+int(k%2)*(mini+gap)-zoom/2,origin_y+int(k/2)*(mini+gap)-zoom/2,icon,mini+zoom,mini+zoom,0,nullptr,DI_NORMAL);}
-            draw_text(dc,group.name.c_str(),RECT{bounds.left+scaled(2),bounds.bottom-metrics().label,bounds.right-scaled(2),bounds.bottom-scaled(2)},shelf.small,foreground(background),DT_CENTER|DT_SINGLELINE|DT_END_ELLIPSIS);shelf.tiles.push_back({bounds,n,true,group.id});
-        } else { draw_entry(dc,shelf.model->entries[entries[n]],bounds,hover,background,pressed);shelf.tiles.push_back({bounds,entries[n],false,shelf.model->entries[entries[n]].path}); }
+    bool groups=show_groups(query);
+    if(full){
+        auto const* entries=groups?nullptr:&shelf.views.list(*shelf.model,g_app.settings.organizer_view,query,shelf.group);
+        size_t pins=groups&&!shelf.drag_groups?shelf.views.pinned_count(*shelf.model):0;
+        size_t count=groups?pins+shelf.model->groups.size():entries->size();
+        int top=scaled(10)+int(std::lround(shelf.header_motion.value));
+        int limit=shelf.expanded?columns*std::max(1,int(client.bottom-top-scaled(6))/row):std::min(10,columns-1);
+        size_t first=shelf.expanded?size_t(std::max(0,shelf.scroll))*size_t(columns):0;
+        shelf.tiles.clear();
+        for(size_t n=first;n<count&&n<first+size_t(limit);++n){
+            size_t at=n-first;
+            int x=scaled(12)+int(at%size_t(columns))*cell,y=top+int(at/size_t(columns))*row;
+            bool group_tile=groups&&n>=pins;
+            size_t index=group_tile?n-pins:groups?shelf.views.list(*shelf.model,0,L"",L"")[n]:(*entries)[n];
+            auto const& identity=group_tile?shelf.model->groups[index].id:shelf.model->entries[index].path;
+            shelf.tiles.push_back({{x,y,x+cell,y+row},index,group_tile,identity});
+        }
+        if(!shelf.expanded)shelf.tiles.push_back({{client.right-cell-scaled(12),scaled(10),client.right-scaled(12),scaled(10)+row},SIZE_MAX,false});
     }
-    if(!shelf.expanded) { RECT search{client.right-cell-scaled(12),scaled(10),client.right-scaled(12),scaled(10)+row};int cx=(search.left+search.right)/2,cy=search.top+scaled(5)+metrics().tile/2,r=scaled(10);unique_gdi<HPEN> pen(CreatePen(PS_SOLID,scaled(2),foreground(background)));auto prior=SelectObject(dc,pen.get()),prior_brush=SelectObject(dc,GetStockObject(NULL_BRUSH));Ellipse(dc,cx-r,cy-r,cx+r,cy+r);MoveToEx(dc,cx+scaled(7),cy+scaled(7),nullptr);LineTo(dc,cx+scaled(15),cy+scaled(15));SelectObject(dc,prior_brush);SelectObject(dc,prior);draw_text(dc,tr(L"搜索",L"Search"),RECT{search.left,search.bottom-metrics().label,search.right,search.bottom-scaled(2)},shelf.small,foreground(background),DT_CENTER|DT_SINGLELINE);shelf.tiles.push_back({search,SIZE_MAX,false}); }
+    auto content=[&](HDC dc){
+    for(size_t i=0;i<shelf.tiles.size();++i){
+        auto const& item=shelf.tiles[i];RECT bounds=item.bounds,intersection{};
+        if(item.index==SIZE_MAX||!IntersectRect(&intersection,&dirty,&bounds))continue;
+        auto hover_it=shelf.hovers.find(int(i));float hover=hover_it==shelf.hovers.end()?0.f:hover_it->second.value;
+        bool pressed=shelf.pressed_tile==int(i)&&shelf.hovered==shelf.pressed_tile;
+        if(item.group) {
+            auto const& group=shelf.model->groups[item.index];int side=metrics().tile,cx=(bounds.left+bounds.right)/2,top_tile=bounds.top+scaled(5);RECT tile{cx-side/2,top_tile,cx+(side+1)/2,top_tile+side};draw_plate(dc,tile,scaled(14),mixed(group.color,background,120),mixed(group.color,background,85));
+            auto const& covers=shelf.views.group_covers(*shelf.model);auto cover=covers.find(group.id);int gap=scaled(4),mini=(side-scaled(14)-gap)/2,grid=2*mini+gap,origin_x=cx-grid/2,origin_y=top_tile+(side-grid)/2;
+            for(size_t k=0;cover!=covers.end()&&k<cover->second.size();++k)if(auto icon=icon_for(shelf.model->entries[cover->second[k]],int(std::ceil(mini*1.1)))){int zoom=int(mini*(.1f*hover-(pressed?.06f:0.f)));DrawIconEx(dc,origin_x+int(k%2)*(mini+gap)-zoom/2,origin_y+int(k/2)*(mini+gap)-zoom/2,icon,mini+zoom,mini+zoom,0,nullptr,DI_NORMAL);}
+            draw_text(dc,group.name.c_str(),RECT{bounds.left+scaled(2),bounds.bottom-metrics().label,bounds.right-scaled(2),bounds.bottom-scaled(2)},shelf.small,foreground(background),DT_CENTER|DT_SINGLELINE|DT_END_ELLIPSIS);
+        } else { draw_entry(dc,shelf.model->entries[item.index],bounds,hover,background,pressed); }
+    }
+    if(!shelf.expanded&&shelf.tiles.back().bounds.left<dirty.right) { RECT search=shelf.tiles.back().bounds;int cx=(search.left+search.right)/2,cy=search.top+scaled(5)+metrics().tile/2,r=scaled(10);unique_gdi<HPEN> pen(CreatePen(PS_SOLID,scaled(2),foreground(background)));auto prior=SelectObject(dc,pen.get()),prior_brush=SelectObject(dc,GetStockObject(NULL_BRUSH));Ellipse(dc,cx-r,cy-r,cx+r,cy+r);MoveToEx(dc,cx+scaled(7),cy+scaled(7),nullptr);LineTo(dc,cx+scaled(15),cy+scaled(15));SelectObject(dc,prior_brush);SelectObject(dc,prior);draw_text(dc,tr(L"搜索",L"Search"),RECT{search.left,search.bottom-metrics().label,search.right,search.bottom-scaled(2)},shelf.small,foreground(background),DT_CENTER|DT_SINGLELINE); }
     if(shelf.expanded&&!shelf.group.empty()) { auto found=std::find_if(shelf.model->groups.begin(),shelf.model->groups.end(),[](auto const& group){return group.id==shelf.group;});if(found!=shelf.model->groups.end()) draw_text(dc,found->name.c_str(),RECT{scaled(24),scaled(12),client.right-scaled(360),scaled(48)},shelf.heading,mixed(foreground(background),background,int(std::clamp(shelf.header_motion.value/std::max(1,scaled(48)),0.,1.)*255)),DT_SINGLELINE|DT_VCENTER); }
     };
     BYTE opacity=BYTE(std::clamp(shelf.opacity_motion.value,0.,255.));
     bool separate=opacity<255&&shelf.content_black.reserve(client.right,client.bottom)&&shelf.content_white.reserve(client.right,client.bottom);
     if(separate){
-        FillRect(shelf.content_black.dc(),&client,HBRUSH(GetStockObject(BLACK_BRUSH)));
-        FillRect(shelf.content_white.dc(),&client,HBRUSH(GetStockObject(WHITE_BRUSH)));
-        content(shelf.content_black.dc());content(shelf.content_white.dc());GdiFlush();
-        for(int y=0;y<client.bottom;++y)for(int x=0;x<client.right;++x){
+        int black=SaveDC(shelf.content_black.dc()),white=SaveDC(shelf.content_white.dc());
+        for(auto pass:{shelf.content_black.dc(),shelf.content_white.dc()})IntersectClipRect(pass,dirty.left,dirty.top,dirty.right,dirty.bottom);
+        FillRect(shelf.content_black.dc(),&dirty,HBRUSH(GetStockObject(BLACK_BRUSH)));
+        FillRect(shelf.content_white.dc(),&dirty,HBRUSH(GetStockObject(WHITE_BRUSH)));
+        content(shelf.content_black.dc());content(shelf.content_white.dc());
+        RestoreDC(shelf.content_black.dc(),black);RestoreDC(shelf.content_white.dc(),white);GdiFlush();
+        for(int y=dirty.top;y<dirty.bottom;++y)for(int x=dirty.left;x<dirty.right;++x){
             auto& pixel=shelf.surface.pixels()[size_t(y)*shelf.surface.stride()+x];
             pixel=lb::desktop_surface::composite(pixel,shelf.content_black.pixels()[size_t(y)*shelf.content_black.stride()+x],shelf.content_white.pixels()[size_t(y)*shelf.content_white.stride()+x],opacity);
         }
     }else content(dc);
-    shelf.surface.present(window,client.right,client.bottom,255,float(scaled(18)),!separate);EndPaint(window,&ps);
+    RestoreDC(dc,saved);
+    if(shelf.surface.present(window,client.right,client.bottom,255,float(scaled(18)),!separate,full?nullptr:&dirty)){
+        shelf.painted={client.right,client.bottom};
+        shelf.painted_revision=shelf.model->revision;
+    }else shelf.painted={};
+}
+void paint(HWND window){
+    PAINTSTRUCT ps{};BeginPaint(window,&ps);
+    RECT client{};GetClientRect(window,&client);
+    render_frame(window,client,ps.rcPaint);
+    EndPaint(window,&ps);
 }
 int hit(POINT point) { for(size_t n=0;n<shelf.tiles.size();++n) if(PtInRect(&shelf.tiles[n].bounds,point)&&shelf.model&&shelf.tiles[n].current(*shelf.model)) return int(n);return -1; }
 bool model_result(bool ok) { if(!ok)set_status(L"收纳更改未能保存，已恢复原状态；原文件未改动。",L"Organizer changes could not be saved and were reverted. Files are untouched.");return ok; }
 void launch(Entry const& entry) { ShellExecuteW(shelf.window,L"open",entry.path.c_str(),nullptr,nullptr,SW_SHOWNORMAL);animate(false); }
 void rebuild_loose();
-void synchronize() {
-    if(interaction_busy()){if(shelf.window)SetTimer(shelf.window,2,200,nullptr);return;}
+void apply_listing(std::vector<RootListing> const& listing) {
+    if(!shelf.model)return;
+    auto revision=shelf.model->revision;
     std::set<std::wstring> before;if(shelf.model&&arrival_anchor.recent(GetTickCount64()))for(auto const& entry:shelf.model->entries)before.insert(entry.path);
-    if(shelf.model && shelf.model->synchronize(shelf.roots,true,GetTickCount64()<shelf.protect_empty_until)) {
+    if(shelf.model->apply_scan(listing,true,GetTickCount64()<shelf.protect_empty_until)) {
+        if(revision==shelf.model->revision)return;
         if(arrival_anchor.recent(GetTickCount64())) {
             auto entries=shelf.model->entries;unsigned placed=0;
             for(auto& entry:shelf.model->entries)if(entry.loose&&!entry.positioned&&!before.contains(entry.path)) {
@@ -235,6 +341,34 @@ void synchronize() {
         }
         rebuild_loose();schedule_collect();reflow();
     }else if(shelf.window) SetTimer(shelf.window,2,5000,nullptr);
+}
+std::shared_ptr<DirectoryScan> begin_scan(std::vector<std::wstring> const& roots){
+    try{
+        auto job=std::make_shared<DirectoryScan>();
+        std::thread([job,roots]{
+            try{job->listing=scan_roots(roots,&job->cancelled);}catch(...){job->listing.clear();}
+            job->done=true;
+        }).detach();
+        return job;
+    }catch(...){return {};}
+}
+void synchronize(){
+    if(!shelf.window||!shelf.model||shelf.scan)return;
+    if(interaction_busy()){SetTimer(shelf.window,2,200,nullptr);return;}
+    shelf.scan=begin_scan(shelf.roots);
+    if(!shelf.scan){SetTimer(shelf.window,2,5000,nullptr);return;}
+    shelf.scan->serial=shelf.change_serial;shelf.scan->revision=shelf.model->revision;
+    SetTimer(shelf.window,9,50,nullptr);
+}
+void finish_scan(){
+    if(!shelf.scan||!shelf.scan->done)return;
+    KillTimer(shelf.window,9);
+    auto job=std::move(shelf.scan);
+    if(job->serial!=shelf.change_serial||job->revision!=shelf.model->revision||interaction_busy()){
+        SetTimer(shelf.window,2,100,nullptr);
+        return;
+    }
+    apply_listing(job->listing);
 }
 bool finish_file_rename(){
     if(!shelf.rename)return true;if(!shelf.rename->done)return false;
@@ -292,7 +426,13 @@ void context_menu(POINT point,int tile) {
     // references, across that nested loop (refresh/disable can replace either).
     if(tile>=0&&size_t(tile)<shelf.tiles.size()&&shelf.tiles[size_t(tile)].current(*shelf.model)){auto item=shelf.tiles[size_t(tile)];bounds=item.bounds;if(item.group&&item.index<shelf.model->groups.size())group_id=shelf.model->groups[item.index].id;else if(item.index<shelf.model->entries.size()){auto const& entry=shelf.model->entries[item.index];path=entry.path;group_id=entry.group;system=entry.system;external=entry.external;}}
     lb::shell_menu::Menu native;bool shell=!path.empty()&&native.append(shelf.window,menu,path,GetKeyState(VK_SHIFT)<0);if(shell)AppendMenuW(menu,MF_SEPARATOR,0,nullptr);
+    AppendMenuW(menu,MF_STRING|(shelf.model->can_undo()?0:MF_GRAYED),26,tr(L"撤销上一次收纳",L"Undo last organizer action"));
     if(!path.empty()){
+        auto& entries=shelf.model->entries;
+        auto found=std::find_if(entries.begin(),entries.end(),[&](auto const& e){return e.path==path;});
+        bool pinned=found!=entries.end()&&found->pin;
+        bool full=std::count_if(entries.begin(),entries.end(),[](auto const& e){return e.pin!=0;})>=10;
+        AppendMenuW(menu,MF_STRING|(!pinned&&full?MF_GRAYED:0),pinned?25:24,pinned?tr(L"取消首排固定",L"Unpin from front row"):tr(L"固定到首排",L"Pin to front row"));
         if(!shell)AppendMenuW(menu,MF_STRING,20,tr(L"打开",L"Open"));if(!system)AppendMenuW(menu,MF_STRING,21,tr(L"在文件夹中显示",L"Show in folder"));AppendMenuW(menu,MF_STRING,22,tr(L"更改显示名称…",L"Change display name…"));
         HMENU move=CreatePopupMenu();for(auto const& group:shelf.model->groups)if(group.id!=group_id){targets.push_back(group.id);AppendMenuW(move,MF_STRING,100+targets.size()-1,group.name.empty()?tr(L"未命名分组",L"Untitled group"):group.name.c_str());}if(!targets.empty())AppendMenuW(menu,MF_POPUP,UINT_PTR(move),tr(L"移至分组",L"Move to group"));else DestroyMenu(move);
         AppendMenuW(menu,MF_STRING,23,external&&!system?tr(L"移除快捷入口（保留原文件）",L"Remove shortcut (keep file)"):tr(L"还原到原桌面",L"Restore to desktop"));AppendMenuW(menu,MF_SEPARATOR,0,nullptr);
@@ -305,6 +445,8 @@ void context_menu(POINT point,int tile) {
     if(!path.empty()&&id>=100&&size_t(id-100)<targets.size()){model_result(shelf.model->collect(path,targets[size_t(id-100)]));reflow();}
     else if(!path.empty()&&id==20){auto found=std::find_if(shelf.model->entries.begin(),shelf.model->entries.end(),[&](auto const& e){return e.path==path;});if(found!=shelf.model->entries.end())launch(*found);}
     else if(!path.empty()&&id==21&&!system){PIDLIST_ABSOLUTE item=nullptr;if(SUCCEEDED(SHParseDisplayName(path.c_str(),nullptr,&item,0,nullptr))){SHOpenFolderAndSelectItems(item,0,nullptr,0);CoTaskMemFree(item);}}
+    else if((id==24||id==25)&&!path.empty()){model_result(shelf.model->set_pin(path,id==24?10:0));reflow();}
+    else if(id==26){if(model_result(shelf.model->undo()))PostMessageW(shelf.window,WM_APP+95,0,0);}
     else if(!path.empty()&&id==22)rename_entry(path,bounds);
     else if(!path.empty()&&id==23){model_result(shelf.model->restore_entry(path));PostMessageW(shelf.window,WM_APP+95,0,0);}
     else if(id>=1&&id<=3&&group_index()<shelf.model->groups.size()) {
@@ -315,7 +457,7 @@ void context_menu(POINT point,int tile) {
     else if(id==10) {auto before=*shelf.model;shelf.group=shelf.model->create_group(tr(L"新分组",L"New group")).id;if(model_result(shelf.model->save())){animate(true);rename_group(shelf.model->groups.size()-1);}else {*shelf.model=std::move(before);shelf.group.clear();}}
     else if(id>=11&&id<=13) { g_app.settings.organizer_view=id-11;g_app.settings.organizer_views[std::clamp(g_app.settings.organizer_alignment,0,2)]=id-11;save_config();animate(false); }
     else if(id==14) { shelf.moving=true;set_status(L"可拖动收纳背景移动位置，按 Esc 结束",L"Drag the shelf background to move it. Escape finishes."); }
-    else if(id==15) synchronize();else if(id==16) note_create(shelf.window);else if(id==17) settings_show(1);
+    else if(id==15) desktop_changed();else if(id==16) note_create(shelf.window);else if(id==17) settings_show(1);
     else if(id==18) { g_app.settings.organizer_enabled=0;save_config();shutdown(); }
     if(guard.alive())InvalidateRect(shelf.window,nullptr,FALSE);
 }
@@ -353,9 +495,27 @@ LRESULT CALLBACK edit_keys(HWND window,UINT message,WPARAM wp,LPARAM lp,UINT_PTR
 }
 void rebuild_loose() {
     if(interaction_busy()){if(shelf.window)SetTimer(shelf.window,5,200,nullptr);return;}
-    for(auto it=shelf.loose.begin();it!=shelf.loose.end();) { bool found=std::any_of(shelf.model->entries.begin(),shelf.model->entries.end(),[&](auto const& entry){return entry.loose&&entry.path==(*it)->path;});if(!found) { if((*it)->window) DestroyWindow((*it)->window);it=shelf.loose.erase(it); }else ++it; }
-    RECT work=monitor_work();int loose_width=std::max(scaled(184),cell_size()),loose_height=row_size()+scaled(30);for(auto const& item:shelf.loose)if(item->window){SetWindowPos(item->window,nullptr,0,0,loose_width,loose_height,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);auto found=std::find_if(shelf.model->entries.begin(),shelf.model->entries.end(),[&](auto const& e){return e.path==item->path;});if(found!=shelf.model->entries.end()&&!found->manual_loose&&g_app.settings.organizer_auto_collect)item->hint=true;InvalidateRect(item->window,nullptr,FALSE);}size_t count=shelf.loose.size();
-    for(auto const& entry:shelf.model->entries) if(entry.loose&&!std::any_of(shelf.loose.begin(),shelf.loose.end(),[&](auto const& item){return item->path==entry.path;})) {
+    std::unordered_map<std::wstring,Entry const*> pending;
+    for(auto const& entry:shelf.model->entries)if(entry.loose)pending.emplace(entry.path,&entry);
+    RECT work=monitor_work();
+    int loose_width=std::max(scaled(184),cell_size()),loose_height=row_size()+scaled(30);
+    std::erase_if(shelf.loose,[&](auto const& item){
+        auto found=pending.find(item->path);
+        if(found==pending.end()){
+            if(item->window)DestroyWindow(item->window);
+            return true;
+        }
+        if(item->window){
+            RECT size{};GetClientRect(item->window,&size);
+            if(size.right!=loose_width||size.bottom!=loose_height)
+                SetWindowPos(item->window,nullptr,0,0,loose_width,loose_height,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+            if(!found->second->manual_loose&&g_app.settings.organizer_auto_collect)item->hint=true;
+            InvalidateRect(item->window,nullptr,FALSE);
+        }
+        pending.erase(found);return false;
+    });
+    size_t count=shelf.loose.size();
+    for(auto const& entry:shelf.model->entries)if(entry.loose&&pending.contains(entry.path)){
         auto item=std::make_unique<Loose>();item->path=entry.path;int rows=std::max(1,int(work.bottom-work.top)/(loose_height+scaled(8)));item->position={work.left+scaled(18)+int(count/size_t(rows))*(loose_width+scaled(8)),work.top+scaled(12)+int(count%size_t(rows))*(loose_height+scaled(8))};if(entry.positioned){MONITORINFO info{sizeof info};if(GetMonitorInfoW(MonitorFromPoint(entry.position,MONITOR_DEFAULTTONEAREST),&info))item->position={std::clamp(entry.position.x,info.rcWork.left,std::max(info.rcWork.left,info.rcWork.right-loose_width)),std::clamp(entry.position.y,info.rcWork.top,std::max(info.rcWork.top,info.rcWork.bottom-loose_height))};}++count;
         item->window=CreateWindowExW((floating_preview()?WS_EX_APPWINDOW:WS_EX_TOOLWINDOW)|WS_EX_LAYERED,L"LightBlockDesktopNative.LooseIcon",entry.name.c_str(),WS_POPUP,item->position.x,item->position.y,loose_width,loose_height,floating_preview()?nullptr:GetShellWindow(),nullptr,g_app.instance,item.get());if(item->window) { SetLayeredWindowAttributes(item->window,0,255,LWA_ALPHA);lb::window_shape::own_frame(item->window);lb::window_shape::clip(item->window,scaled(18));if(floating_preview()&&!shelf.fixture)SetWindowPos(item->window,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);else lb::desktop_layer::place(item->window,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|(shelf.fixture?0:SWP_SHOWWINDOW));SetTimer(item->window,1,g_app.settings.organizer_auto_collect&&!entry.manual_loose?1000:10000,nullptr);shelf.loose.push_back(std::move(item)); }
     }
@@ -397,14 +557,14 @@ LRESULT CALLBACK shelf_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
     switch(message) {
     case WM_WINDOWPOSCHANGING:if(!shelf.fixture&&!floating_preview())lb::desktop_layer::protect_position(*reinterpret_cast<WINDOWPOS*>(lp),lb::desktop_layer::host());break;
     case WM_MOUSEACTIVATE:return MA_NOACTIVATE;
-    case WM_CREATE:shelf.window=window;DragAcceptFiles(window,TRUE);shelf.search=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_LAYERED|WS_EX_CLIENTEDGE,L"EDIT",L"",WS_POPUP|ES_AUTOHSCROLL|WS_TABSTOP,0,0,scaled(360),scaled(32),window,nullptr,g_app.instance,nullptr);SetWindowLongPtrW(shelf.search,GWLP_ID,1);lb::window_shape::own_frame(shelf.search);SendMessageW(shelf.search,WM_SETFONT,WPARAM(shelf.font),TRUE);SendMessageW(shelf.search,EM_SETCUEBANNER,TRUE,LPARAM(tr(L"搜索桌面与分组",L"Search desktop and groups")));SetWindowSubclass(shelf.search,edit_keys,2,0);shelf.icons.start(window,WM_APP+93);return 0;
+    case WM_CREATE:shelf.painted={};shelf.views={};shelf.window=window;DragAcceptFiles(window,TRUE);shelf.search=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_LAYERED|WS_EX_CLIENTEDGE,L"EDIT",L"",WS_POPUP|ES_AUTOHSCROLL|WS_TABSTOP,0,0,scaled(360),scaled(32),window,nullptr,g_app.instance,nullptr);SetWindowLongPtrW(shelf.search,GWLP_ID,1);lb::window_shape::own_frame(shelf.search);SendMessageW(shelf.search,WM_SETFONT,WPARAM(shelf.font),TRUE);SendMessageW(shelf.search,EM_SETCUEBANNER,TRUE,LPARAM(tr(L"搜索桌面与分组",L"Search desktop and groups")));SetWindowSubclass(shelf.search,edit_keys,2,0);shelf.icons.start(window,WM_APP+93);return 0;
     case WM_ERASEBKGND:return 1;
     case WM_PAINT:paint(window);return 0;
     case WM_SIZE:position_edits();InvalidateRect(window,nullptr,FALSE);return 0;
     case WM_WINDOWPOSCHANGED:position_edits();break;
     case WM_CTLCOLOREDIT:SetBkColor(HDC(wp),g_app.settings.organizer_color);SetTextColor(HDC(wp),foreground(g_app.settings.organizer_color));return LRESULT(shelf.edit_brush);
     case WM_MOUSEMOVE: { POINT point{GET_X_LPARAM(lp),GET_Y_LPARAM(lp)};if(shelf.dragging&&shelf.moving) { POINT cursor;GetCursorPos(&cursor);RECT rect{};GetWindowRect(window,&rect);SetWindowPos(window,nullptr,rect.left+cursor.x-shelf.pressed.x,rect.top+cursor.y-shelf.pressed.y,0,0,SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);shelf.pressed=cursor; }
-        else if((!shelf.drag_entry.empty()||!shelf.drag_group.empty())&&!shelf.drag_started&&(std::abs(point.x-shelf.pressed.x)>GetSystemMetrics(SM_CXDRAG)||std::abs(point.y-shelf.pressed.y)>GetSystemMetrics(SM_CYDRAG))){shelf.drag_started=true;if(!shelf.drag_entry.empty()){shelf.drag_groups=true;shelf.expanded=true;shelf.group.clear();ShowWindow(shelf.search,SW_HIDE);reflow();UpdateWindow(window);GetCursorPos(&point);ScreenToClient(window,&point);}}
+        else if((!shelf.drag_entry.empty()||!shelf.drag_group.empty())&&!shelf.drag_started&&(std::abs(point.x-shelf.pressed.x)>GetSystemMetrics(SM_CXDRAG)||std::abs(point.y-shelf.pressed.y)>GetSystemMetrics(SM_CYDRAG))){shelf.drag_started=true;bool pinned=std::any_of(shelf.model->entries.begin(),shelf.model->entries.end(),[&](auto const& e){return e.pin&&e.path==shelf.drag_entry;});if(!shelf.drag_entry.empty()&&!pinned){shelf.drag_groups=true;shelf.expanded=true;shelf.group.clear();ShowWindow(shelf.search,SW_HIDE);reflow();UpdateWindow(window);GetCursorPos(&point);ScreenToClient(window,&point);}}
         hover_to(hit(point));TRACKMOUSEEVENT track{sizeof track,TME_LEAVE,window,0};TrackMouseEvent(&track);if(!shelf.mouse_inside)hover_opacity(true);return 0; }
     case WM_MOUSELEAVE:hover_opacity(false);hover_to(-1);InvalidateRect(window,nullptr,FALSE);return 0;
     case WM_LBUTTONDOWN: { if(shelf.editor)commit_title();if(!shelf.model||shelf.window!=window)return 0;POINT point{GET_X_LPARAM(lp),GET_Y_LPARAM(lp)};int target=hit(point);shelf.pressed_tile=target;InvalidateRect(window,nullptr,FALSE);shelf.drag_group.clear();shelf.drag_entry.clear();shelf.drag_started=false;shelf.pressed=point;shelf.drag_origin=shelf.group;shelf.drag_expanded=shelf.expanded;
@@ -415,7 +575,12 @@ LRESULT CALLBACK shelf_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
         int pressed=std::exchange(shelf.pressed_tile,-1);InvalidateRect(window,nullptr,FALSE);auto source_group=std::exchange(shelf.drag_group,{}),source_entry=std::exchange(shelf.drag_entry,{});bool dragged=std::exchange(shelf.drag_started,false),groups=std::exchange(shelf.drag_groups,false);if(GetCapture()==window)ReleaseCapture();
         if(!shelf.model||shelf.window!=window)return 0;
         int target=hit(POINT{GET_X_LPARAM(lp),GET_Y_LPARAM(lp)});
-        if(dragged){if(target>=0&&shelf.tiles[size_t(target)].group&&shelf.tiles[size_t(target)].current(*shelf.model)){auto destination=shelf.tiles[size_t(target)].index;if(!source_entry.empty())model_result(shelf.model->collect(source_entry,shelf.model->groups[destination].id));else if(!source_group.empty()){auto from=std::find_if(shelf.model->groups.begin(),shelf.model->groups.end(),[&](auto const& group){return group.id==source_group;});if(from!=shelf.model->groups.end())model_result(shelf.model->move_group(size_t(from-shelf.model->groups.begin()),destination));}}
+        if(dragged){
+            if(target>=0&&!source_entry.empty()&&!shelf.tiles[size_t(target)].group&&shelf.tiles[size_t(target)].current(*shelf.model)&&shelf.tiles[size_t(target)].index<shelf.model->entries.size()){
+                int rank=shelf.model->entries[shelf.tiles[size_t(target)].index].pin;
+                if(rank)model_result(shelf.model->set_pin(source_entry,rank));
+            }
+            if(target>=0&&shelf.tiles[size_t(target)].group&&shelf.tiles[size_t(target)].current(*shelf.model)){auto destination=shelf.tiles[size_t(target)].index;if(!source_entry.empty())model_result(shelf.model->collect(source_entry,shelf.model->groups[destination].id));else if(!source_group.empty()){auto from=std::find_if(shelf.model->groups.begin(),shelf.model->groups.end(),[&](auto const& group){return group.id==source_group;});if(from!=shelf.model->groups.end())model_result(shelf.model->move_group(size_t(from-shelf.model->groups.begin()),destination));}}
             if(groups){shelf.group=shelf.drag_origin;shelf.expanded=shelf.drag_expanded;ShowWindow(shelf.search,shelf.expanded?SW_SHOW:SW_HIDE);}reflow();schedule_collect();return 0;}
         if(target>=0&&target==pressed) { auto const tile=shelf.tiles[size_t(target)];if(!tile.current(*shelf.model)||!tile.matches_press(source_entry,source_group)) return 0;if(tile.index==SIZE_MAX) { shelf.group.clear();animate(true);SetForegroundWindow(window);SetFocus(shelf.search); }else if(tile.group) { shelf.group=shelf.model->groups[tile.index].id;animate(true); }else { launch(shelf.model->entries[tile.index]); } }
         else if(shelf.expanded) { if(!shelf.group.empty()&&GET_Y_LPARAM(lp)<scaled(55)) { auto it=std::find_if(shelf.model->groups.begin(),shelf.model->groups.end(),[](auto const& g){return g.id==shelf.group;});if(it!=shelf.model->groups.end()) { rename_group(size_t(it-shelf.model->groups.begin()));SetWindowSubclass(shelf.editor,edit_keys,1,0); } }else animate(false); }return 0;
@@ -424,31 +589,51 @@ LRESULT CALLBACK shelf_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
     case WM_CONTEXTMENU: { POINT point;GetCursorPos(&point);POINT local=point;ScreenToClient(window,&local);context_menu(point,hit(local));return 0; }
     case WM_DROPFILES:{HDROP drop=reinterpret_cast<HDROP>(wp);scope_exit finish([&]{DragFinish(drop);});POINT point{};DragQueryPoint(drop,&point);std::wstring group=shelf.group;int target=hit(point);if(target>=0&&shelf.tiles[size_t(target)].group)group=shelf.model->groups[shelf.tiles[size_t(target)].index].id;if(group.empty())group=L"other";UINT count=DragQueryFileW(drop,0xffffffff,nullptr,0);if(count>10000)return 0;std::vector<std::wstring> paths;for(UINT n=0;n<count;++n){UINT length=DragQueryFileW(drop,n,nullptr,0);if(!length||length>=LB_PATH)return 0;std::wstring path(length+1,L'\0');DragQueryFileW(drop,n,path.data(),length+1);path.resize(length);paths.push_back(std::move(path));}if(model_result(shelf.model->add_paths(paths,group))){rebuild_loose();schedule_collect();reflow();}return 0;}
     case WM_COMMAND:if(LOWORD(wp)==1&&HIWORD(wp)==EN_CHANGE&&HWND(lp)==shelf.search) { shelf.scroll=0;if(shelf.expanded)reflow();InvalidateRect(window,nullptr,FALSE); }else if(LOWORD(wp)==2&&HIWORD(wp)==EN_KILLFOCUS&&HWND(lp)==shelf.editor) commit_title();return 0;
-    case WM_KEYDOWN:if(wp==VK_ESCAPE) { if(GetCapture()==window){ReleaseCapture();return 0;}shelf.moving=false;animate(false); }return 0;
-    case WM_MOUSEWHEEL:if(shelf.expanded) { int columns=std::max(1,(width()-scaled(24))/cell_size());wchar_t query[260]{};GetWindowTextW(shelf.search,query,260);size_t count=g_app.settings.organizer_view==2&&shelf.group.empty()&&!*query?shelf.model->groups.size():shelf.model->view(g_app.settings.organizer_view,query,shelf.group).size();int max_rows=std::max(0,int((count+size_t(columns)-1)/size_t(columns))-std::max(1,(shelf.height-scaled(58)-scaled(6))/row_size()));shelf.scroll=std::clamp(shelf.scroll+(GET_WHEEL_DELTA_WPARAM(wp)>0?-1:1),0,max_rows);InvalidateRect(window,nullptr,FALSE); }return 0;
+    case WM_KEYDOWN:if(wp=='Z'&&GetKeyState(VK_CONTROL)<0&&shelf.model&&shelf.model->can_undo()){
+        if(model_result(shelf.model->undo()))PostMessageW(window,WM_APP+95,0,0);return 0;
+    }if(wp==VK_ESCAPE) { if(GetCapture()==window){ReleaseCapture();return 0;}shelf.moving=false;animate(false); }return 0;
+    case WM_MOUSEWHEEL:if(shelf.expanded) { int columns=std::max(1,(width()-scaled(24))/cell_size());wchar_t query[260]{};GetWindowTextW(shelf.search,query,260);size_t count=g_app.settings.organizer_view==2&&shelf.group.empty()&&!*query?shelf.model->groups.size()+shelf.views.pinned_count(*shelf.model):shelf.views.list(*shelf.model,g_app.settings.organizer_view,query,shelf.group).size();int max_rows=std::max(0,int((count+size_t(columns)-1)/size_t(columns))-std::max(1,(shelf.height-scaled(58)-scaled(6))/row_size()));shelf.scroll=std::clamp(shelf.scroll+(GET_WHEEL_DELTA_WPARAM(wp)>0?-1:1),0,max_rows);InvalidateRect(window,nullptr,FALSE); }return 0;
     case WM_TIMER:
         if(wp==1) { auto now=GetTickCount64();double seconds=double(now-shelf.animation)/1000.;bool active=shelf.height_motion.step(seconds,shelf.reduced_motion);active=shelf.header_motion.step(seconds,shelf.reduced_motion)||active;shelf.animation=now;place(int(std::lround(shelf.height_motion.value)));InvalidateRect(window,nullptr,FALSE);if(!active){KillTimer(window,1);if(!shelf.expanded){RECT r{};GetClientRect(window,&r);shelf.surface.trim(r.right,r.bottom);shelf.content_black.trim(r.right,r.bottom);shelf.content_white.trim(r.right,r.bottom);}} }
-        else if(wp==7){auto now=GetTickCount64();bool active=shelf.opacity_motion.step(double(now-shelf.opacity_tick)/1000.,shelf.reduced_motion);shelf.opacity_tick=now;InvalidateRect(window,nullptr,FALSE);if(!active)KillTimer(window,7);}
-        else if(wp==4){float t=std::min(1.f,float(GetTickCount64()-shelf.hover_started)/135.f),ease=1-std::pow(1-t,3);for(auto it=shelf.hovers.begin();it!=shelf.hovers.end();){auto& value=it->second;value.value=value.from+(value.target-value.from)*ease;if(t>=1&&value.target==0)it=shelf.hovers.erase(it);else ++it;}InvalidateRect(window,nullptr,FALSE);if(t>=1)KillTimer(window,4);}
+        else if(wp==7){auto now=GetTickCount64();auto prior=int(shelf.opacity_motion.value);bool active=shelf.opacity_motion.step(double(now-shelf.opacity_tick)/1000.,shelf.reduced_motion);shelf.opacity_tick=now;if(prior!=int(shelf.opacity_motion.value))InvalidateRect(window,nullptr,FALSE);if(!active)KillTimer(window,7);}
+        else if(wp==4){float t=std::min(1.f,float(GetTickCount64()-shelf.hover_started)/135.f),ease=1-std::pow(1-t,3);for(auto it=shelf.hovers.begin();it!=shelf.hovers.end();){auto& value=it->second;value.value=value.from+(value.target-value.from)*ease;invalidate_tile(it->first);if(t>=1&&value.target==0)it=shelf.hovers.erase(it);else ++it;}if(t>=1)KillTimer(window,4);}
         else if(wp==2) { KillTimer(window,2);shelf.change_started=0;synchronize(); }
         else if(wp==3) { KillTimer(window,3);if(interaction_busy()||native_dialog_open()){SetTimer(window,3,500,nullptr);return 0;}if(g_app.settings.organizer_auto_collect){auto now=std::chrono::steady_clock::now();bool due=std::any_of(shelf.model->entries.begin(),shelf.model->entries.end(),[&](auto const& entry){return entry.loose&&!entry.manual_loose&&entry.due<=now;});if(shelf.model->collect_due(now)){rebuild_loose();reflow();}else if(due){SetTimer(window,3,2000,nullptr);return 0;}}schedule_collect(); }
+        else if(wp==9)finish_scan();
         else if(wp==8){
             if(finish_file_rename()&&shelf.stopping&&shutdown()&&g_app.settings.organizer_enabled) configure();
         }
         else if(wp==5){KillTimer(window,5);if(interaction_busy())SetTimer(window,5,200,nullptr);else {rebuild_loose();schedule_collect();reflow();}}
         else if(wp==6&&!interaction_busy()){auto work=monitor_work();if(!EqualRect(&work,&shelf.layout_work))reflow();if(!shelf.fixture&&!floating_preview()){lb::desktop_layer::maintain(window);for(auto const& item:shelf.loose)lb::desktop_layer::maintain(item->window);}}return 0;
     case changed_message:if(wp==shelf.token)desktop_changed();return 0;
-    case WM_APP+93:shelf.icons.receive();InvalidateRect(window,nullptr,FALSE);for(auto const& item:shelf.loose) InvalidateRect(item->window,nullptr,FALSE);return 0;
+    case WM_APP+93:{
+        std::set<std::wstring> paths;
+        bool retry=shelf.icons.receive(&paths);
+        if(paths.empty())return 0;
+        if(retry||shelf.views.revision!=shelf.model->revision)InvalidateRect(window,nullptr,FALSE);
+        else for(auto const& tile:shelf.tiles){
+            bool redraw=paths.contains(tile.identity);
+            if(tile.group){
+                auto const& covers=shelf.views.group_covers(*shelf.model);
+                auto cover=covers.find(tile.identity);
+                redraw=cover!=covers.end()&&std::any_of(cover->second.begin(),cover->second.end(),
+                    [&](size_t index){return paths.contains(shelf.model->entries[index].path);});
+            }
+            if(redraw)InvalidateRect(window,&tile.bounds,FALSE);
+        }
+        for(auto const& item:shelf.loose)if(retry||paths.contains(item->path))InvalidateRect(item->window,nullptr,FALSE);
+        return 0;
+    }
     case WM_APP+94:if(!interaction_busy()) { commit_title();animate(false); }return 0;
     case WM_APP+95:rebuild_loose();schedule_collect();reflow();return 0;
     case WM_DPICHANGED:shelf.dpi=HIWORD(wp);shelf_fonts();reflow();return 0;
     case WM_DISPLAYCHANGE:reflow();return 0;
     case WM_SETTINGCHANGE:if(wp==SPI_SETWORKAREA)reflow();else{appearance(window,scaled(36));if(shelf.reduced_motion){KillTimer(window,1);KillTimer(window,4);KillTimer(window,7);shelf.height_motion.reset(shelf.target);shelf.header_motion.reset(shelf.expanded?scaled(48):0);place(shelf.target);}}return 0;
     case WM_CLOSE:if(shelf.preview) shutdown();return 0;
-    case WM_DESTROY:for(auto timer:{1,2,3,4,5,6,7,8})KillTimer(window,timer);if(shelf.search)DestroyWindow(std::exchange(shelf.search,nullptr));if(shelf.editor)DestroyWindow(std::exchange(shelf.editor,nullptr));shelf.surface.clear();shelf.content_black.clear();shelf.content_white.clear();shelf.plate_surface.clear();if(shelf.edit_brush)DeleteObject(std::exchange(shelf.edit_brush,nullptr));shelf.icons.stop();if(shelf.outside) UnhookWindowsHookEx(std::exchange(shelf.outside,nullptr));shelf.window=nullptr;shelf.search=nullptr;shelf.editor=nullptr;shelf.editor_anchor=nullptr;shelf.editing_file=false;shelf.editing_entry.clear();shelf.drag_entry.clear();shelf.drag_group.clear();shelf.drag_groups=shelf.drag_started=shelf.dragging=shelf.menu=false;for(auto font:{shelf.font,shelf.small,shelf.heading})if(font)DeleteObject(font);shelf.font=shelf.small=shelf.heading=nullptr;shelf.hovers.clear();return 0;
+    case WM_DESTROY:if(shelf.scan){shelf.scan->cancelled=true;shelf.scan.reset();}KillTimer(window,9);shelf.views={};shelf.painted={};for(auto timer:{1,2,3,4,5,6,7,8})KillTimer(window,timer);if(shelf.search)DestroyWindow(std::exchange(shelf.search,nullptr));if(shelf.editor)DestroyWindow(std::exchange(shelf.editor,nullptr));shelf.surface.clear();shelf.content_black.clear();shelf.content_white.clear();shelf.plate_surface.clear();if(shelf.edit_brush)DeleteObject(std::exchange(shelf.edit_brush,nullptr));shelf.icons.stop();if(shelf.outside) UnhookWindowsHookEx(std::exchange(shelf.outside,nullptr));shelf.window=nullptr;shelf.search=nullptr;shelf.editor=nullptr;shelf.editor_anchor=nullptr;shelf.editing_file=false;shelf.editing_entry.clear();shelf.drag_entry.clear();shelf.drag_group.clear();shelf.drag_groups=shelf.drag_started=shelf.dragging=shelf.menu=false;for(auto font:{shelf.font,shelf.small,shelf.heading})if(font)DeleteObject(font);shelf.font=shelf.small=shelf.heading=nullptr;shelf.hovers.clear();return 0;
     }return DefWindowProcW(window,message,wp,lp);
 }
-bool show_shelf() {
+bool show_shelf(std::vector<RootListing> const* initial=nullptr) {
     wchar_t layer_fixture[2]{};shelf.layer_preview=shelf.preview&&GetEnvironmentVariableW(L"LIGHTBLOCK_ORGANIZER_LAYER_FIXTURE",layer_fixture,2)&&layer_fixture[0]==L'1';
     ++shelf.generation;
     shelf.model=std::make_unique<Model>(g_app.data);
@@ -456,11 +641,22 @@ bool show_shelf() {
         set_status(L"无法读取收纳配置，已保留原桌面与配置文件。",L"Could not read the organizer settings. Your desktop and settings are preserved.");
         return false;
     }
-    if(shelf.preview){auto root=std::filesystem::path(g_app.data)/L"sample-desktop";std::error_code error;for(auto name:{L"Documents",L"Pictures",L"Projects",L"Music",L"Videos",L"Notes",L"Archive"}){std::filesystem::create_directories(root/name,error);if(error)return false;}shelf.roots={root.wstring()};}else shelf.roots=desktop_roots();
-    if(!shelf.model->synchronize(shelf.roots,false,GetTickCount64()<shelf.protect_empty_until)) return false;shelf.dpi=GetDpiForSystem();shelf_fonts();
+    if(shelf.preview){auto root=std::filesystem::path(g_app.data)/L"sample-desktop";std::error_code error;for(auto name:{L"Documents",L"Pictures",L"Projects",L"Music",L"Videos",L"Notes",L"Archive"}){std::filesystem::create_directories(root/name,error);if(error)return false;}shelf.roots={root.wstring()};}
+    bool protect=GetTickCount64()<shelf.protect_empty_until;
+    bool loaded=initial?shelf.model->apply_scan(*initial,false,protect):shelf.model->synchronize(shelf.roots,false,protect);
+    if(!loaded)return false;
+    shelf.dpi=GetDpiForSystem();shelf_fonts();
     WNDCLASSW cls{};cls.hInstance=g_app.instance;cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);cls.lpfnWndProc=shelf_proc;cls.lpszClassName=L"LightBlockDesktopNative.Organizer";RegisterClassW(&cls);cls.style=CS_DBLCLKS;cls.lpfnWndProc=loose_proc;cls.lpszClassName=L"LightBlockDesktopNative.LooseIcon";RegisterClassW(&cls);
     HWND window=CreateWindowExW((floating_preview()?WS_EX_APPWINDOW:WS_EX_TOOLWINDOW)|WS_EX_LAYERED,L"LightBlockDesktopNative.Organizer",tr(L"轻块桌面 · 收纳",L"Light Block Desktop · Organizer"),WS_POPUP,0,0,scaled(1050),base_height(),floating_preview()?nullptr:GetShellWindow(),nullptr,g_app.instance,nullptr);
-    if(!window) return false;shelf.enabled=true;shelf.expanded=false;shelf.mouse_inside=false;shelf.header_motion.reset(0);shelf.height_motion.reset(base_height());shelf.group.clear();appearance(window,scaled(36));place(base_height());SetTimer(window,6,750,nullptr);rebuild_loose();schedule_collect();arrival_anchor.valid=false;if(!shelf.outside)shelf.outside=SetWindowsHookExW(WH_MOUSE_LL,outside_click,g_app.instance,0);shelf.watcher.start(shelf.roots,window,changed_message,shelf.token);desktop_changed();return true;
+    if(!window) return false;shelf.enabled=true;shelf.expanded=false;shelf.mouse_inside=false;shelf.header_motion.reset(0);shelf.height_motion.reset(base_height());shelf.group.clear();appearance(window,scaled(36));place(base_height());SetTimer(window,6,750,nullptr);rebuild_loose();schedule_collect();arrival_anchor.valid=false;if(!shelf.fixture&&!shelf.outside)shelf.outside=SetWindowsHookExW(WH_MOUSE_LL,outside_click,g_app.instance,0);shelf.watcher.start(shelf.roots,window,changed_message,shelf.token);desktop_changed();return true;
+}
+bool can_show_shelf(){
+    return g_app.settings.organizer_enabled&&!g_app.close_requested&&!shelf.stopping&&!shelf.session_suspended&&shelf.ready;
+}
+void acknowledge_shelf(){
+    if(!shelf.fixture)UpdateWindow(shelf.window);
+    SetEvent(shelf.ready.get());shelf.retry_seconds=0;
+    SetTimer(g_app.window,17,1500,nullptr);
 }
 bool start_lease(bool restore_only) {
     auto ready_name=L"Local\\LightBlockNative.ShelfReady."+std::to_wstring(GetCurrentProcessId())+L"."+std::to_wstring(shelf.token+1);
@@ -513,10 +709,12 @@ void resume_after_cancelled_session() {
     else if(!shelf.rename) configure();
 }
 bool shutdown() {
+    if(shelf.startup_scan){shelf.startup_scan->cancelled=true;shelf.startup_scan.reset();}
     shelf.retry_pending=false;
     commit_title();if(!finish_file_rename()){shelf.stopping=true;return false;}
     ++shelf.generation;
     shelf.stopping=true;shelf.enabled=false;commit_title();shelf.watcher.stop();for(auto &item:shelf.loose) if(item->window) DestroyWindow(item->window);shelf.loose.clear();if(shelf.window) DestroyWindow(shelf.window);shelf.window=nullptr;shelf.search=nullptr;shelf.editor=nullptr;if(shelf.stop) SetEvent(shelf.stop.get());
+    shelf.model.reset();shelf.tiles.clear();shelf.roots.clear();shelf.change_started=0;
     if(shelf.lease&&WaitForSingleObject(shelf.lease.get(),0)!=WAIT_OBJECT_0) { if(g_app.window) SetTimer(g_app.window,17,100,nullptr);return false; }
     shelf.lease.reset();shelf.stop.reset();shelf.ready.reset();return true;
 }
@@ -536,9 +734,14 @@ void tick(UINT timer) {
         if(shelf.session_suspended||g_app.close_requested) return;
         if(restart&&g_app.settings.organizer_enabled) configure();
         else if(g_app.settings.organizer_enabled||(recover&&code)) retry_after_shell_settles();
+    }else if(shelf.startup_scan&&shelf.startup_scan->done){
+        auto scan=std::move(shelf.startup_scan);
+        // Explorer keeps its icons visible until a complete shelf is ready.
+        if(can_show_shelf()&&show_shelf(&scan->listing))acknowledge_shelf();
+        else if(shelf.stop)SetEvent(shelf.stop.get());
     }
 }
-void desktop_changed() { if(shelf.window){auto now=GetTickCount64();if(!shelf.change_started)shelf.change_started=now;SetTimer(shelf.window,2,now-shelf.change_started>=1000?1:250,nullptr);} }
+void desktop_changed() { if(shelf.window){++shelf.change_serial;auto now=GetTickCount64();if(!shelf.change_started)shelf.change_started=now;SetTimer(shelf.window,2,now-shelf.change_started>=1000?1:250,nullptr);} }
 void shell_restarted() {
     if(shelf.preview||!g_app.settings.organizer_enabled||g_app.close_requested||shelf.session_suspended) return;
     shelf.protect_empty_until=GetTickCount64()+90000;
@@ -555,11 +758,12 @@ Model* editable_model(bool reload) {
 }
 }
 int settings_group(int index,UiGroup* out) {
-    if(index<0||!out)return 0;auto model=editable_model(index==0);if(!model||size_t(index)>=model->groups.size())return 0;auto const& group=model->groups[size_t(index)];*out={};StringCchCopyW(out->id,104,group.id.c_str());StringCchCopyW(out->name,128,group.name.c_str());out->color=int(group.color);out->count=int(std::count_if(model->entries.begin(),model->entries.end(),[&](auto const& e){return e.group==group.id;}));return 1;
+    if(index<0||!out)return 0;auto model=editable_model(index==0);if(!model||size_t(index)>=model->groups.size())return 0;auto const& group=model->groups[size_t(index)];*out={};StringCchCopyW(out->id,104,group.id.c_str());StringCchCopyW(out->name,128,group.name.c_str());StringCchCopyW(out->patterns,241,group.patterns.c_str());out->color=int(group.color);out->count=int(std::count_if(model->entries.begin(),model->entries.end(),[&](auto const& e){return e.group==group.id;}));return 1;
 }
 int settings_group_action(int action,wchar_t const* identifier,wchar_t const* argument,int value) {
     auto model=editable_model(true);if(!model)return 0;std::wstring id=identifier?identifier:L"",arg=argument?argument:L"";if(id.size()>100||arg.size()>=LB_PATH)return 0;auto before=*model;bool ok=false;
     auto found=std::find_if(model->groups.begin(),model->groups.end(),[&](auto const& group){return group.id==id;});
+    if(action==7)return model->set_patterns(id,arg)?1:0;
     if(action==0&&arg.size()<=120&&model->groups.size()<128){model->create_group(arg);ok=true;}
     else if(action==4){ok=model->synchronize(desktop_roots(),false);}
     else if(found!=model->groups.end()) {
@@ -569,7 +773,7 @@ int settings_group_action(int action,wchar_t const* identifier,wchar_t const* ar
         else if(action==5||action==6){
             bool system=action==6;DWORD attributes=system?0:GetFileAttributesW(arg.c_str());if((system&&(arg==L"shell:MyComputerFolder"||arg==L"shell:RecycleBinFolder"||arg==L"ms-settings:"))||(!system&&attributes!=INVALID_FILE_ATTRIBUTES&&!PathIsRelativeW(arg.c_str()))) {
                 auto entry=std::find_if(model->entries.begin(),model->entries.end(),[&](auto const& e){return !_wcsicmp(e.path.c_str(),arg.c_str());});
-                if(entry!=model->entries.end()){entry->group=id;entry->loose=false;entry->manual_loose=false;ok=true;}else if(model->entries.size()<10000){Entry item;item.path=arg;item.name=system?(arg==L"shell:MyComputerFolder"?tr(L"此电脑",L"This PC"):arg==L"shell:RecycleBinFolder"?tr(L"回收站",L"Recycle Bin"):tr(L"Windows 设置",L"Windows settings")):PathFindFileNameW(arg.c_str());item.group=id;item.system=system;item.external=true;item.directory=!system&&(attributes&FILE_ATTRIBUTE_DIRECTORY);model->entries.push_back(std::move(item));ok=true;}
+                if(entry!=model->entries.end()){ok=model->collect(entry->path,id);}else if(model->entries.size()<10000){Entry item;item.path=arg;item.name=system?(arg==L"shell:MyComputerFolder"?tr(L"此电脑",L"This PC"):arg==L"shell:RecycleBinFolder"?tr(L"回收站",L"Recycle Bin"):tr(L"Windows 设置",L"Windows settings")):PathFindFileNameW(arg.c_str());item.group=id;item.system=system;item.external=true;item.directory=!system&&(attributes&FILE_ATTRIBUTE_DIRECTORY);model->entries.push_back(std::move(item));ok=true;}
             }
         }
     }
@@ -579,12 +783,17 @@ int settings_group_action(int action,wchar_t const* identifier,wchar_t const* ar
 bool message(UINT msg,WPARAM wp,LPARAM lp) {
     if(msg!=WM_APP+90&&msg!=WM_APP+91) return false;if(wp!=shelf.token||!shelf.lease) return true;
     if(msg==WM_APP+90) {
-        if(g_app.settings.organizer_enabled&&!g_app.close_requested&&!shelf.stopping&&!shelf.session_suspended&&shelf.ready&&(shelf.window||show_shelf())) {
-            SetEvent(shelf.ready.get());shelf.retry_seconds=0;
-            SetTimer(g_app.window,17,1500,nullptr);
-        }else if(shelf.stop) SetEvent(shelf.stop.get());
+        if(!can_show_shelf()){
+            if(shelf.stop)SetEvent(shelf.stop.get());
+        }else if(shelf.window)acknowledge_shelf();
+        else if(!shelf.startup_scan){
+            shelf.roots=desktop_roots();
+            shelf.startup_scan=begin_scan(shelf.roots);
+            if(!shelf.startup_scan&&shelf.stop)SetEvent(shelf.stop.get());
+        }
     }
     else {
+        if(shelf.startup_scan){shelf.startup_scan->cancelled=true;shelf.startup_scan.reset();}
         if(shelf.stop) SetEvent(shelf.stop.get());
         // This helper may belong to an earlier off -> on transition. Its result
         // must never replace the user's latest desired state.
@@ -609,6 +818,70 @@ bool settings_group_tests(std::wstring const& directory) {
     if(!settings_group_action(3,created.id,L"",0)||!std::filesystem::exists(file,error))return false;
     for(int n=0;settings_group(n,&group);++n)if(!wcscmp(group.id,created.id))return false;
     return !settings_group_action(3,L"other",L"",0);
+}
+// Compare localized animation frames with a full repaint of exactly the same
+// state. This uses an offscreen layered HWND; no screen capture is involved.
+static bool hover_render_tests(HWND window){
+    shelf.dpi=144;shelf_fonts();g_app.settings.organizer_icon_size=1;
+    g_app.settings.icon_opacity=35;g_app.settings.organizer_glass=1;
+    shelf.opacity_motion.reset(175);shelf.expanded=true;
+    scope_exit cleanup([&]{shelf.expanded=false;shelf.hovers.clear();});
+    auto& model=*shelf.model;
+    for(int i=0;i<200;++i){
+        auto number=std::to_wstring(i);
+        model.entries.push_back({L"fixture-"+number,L"Item "+number,model.groups[size_t(i)%model.groups.size()].id,0,true});
+    }
+    ++model.revision;shelf.header_motion.reset(scaled(48));
+    RECT client{0,0,scaled(990),scaled(510)};
+    SetWindowPos(window,nullptr,-32000,-32000,client.right,client.bottom,SWP_NOACTIVATE|SWP_NOZORDER);
+    SetWindowTextW(shelf.search,L"");
+    auto pixels=[&]{
+        std::vector<uint32_t> result;
+        for(int y=0;y<client.bottom;++y){
+            auto row=shelf.surface.pixels()+size_t(y)*shelf.surface.stride();
+            result.insert(result.end(),row,row+client.right);
+        }
+        return result;
+    };
+    for(int order:{0,2}){
+        g_app.settings.organizer_view=order;
+        render_frame(window,client,client);
+        if(shelf.tiles.size()<4||shelf.painted.cx!=client.right)return false;
+        // Freeze icon availability for both paths being compared.
+        shelf.icons.receive();
+        render_frame(window,client,client);
+        auto unchanged=pixels();
+        auto bounds=shelf.tiles[2].bounds;
+        shelf.hovers[2].value=1;
+        render_frame(window,client,bounds);
+        auto localized=pixels();
+        render_frame(window,client,client);
+        if(localized!=pixels()||(!order&&localized==unchanged))return false;
+        std::vector<double> full,local;
+        for(int i=0;i<40;++i){
+            auto time=[&](RECT area){
+                auto before=std::chrono::steady_clock::now();render_frame(window,client,area);
+                return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-before).count();
+            };
+            shelf.hovers[2].value=(i%10)/10.f;
+            if(i%2){full.push_back(time(client));local.push_back(time(bounds));}
+            else{local.push_back(time(bounds));full.push_back(time(client));}
+        }
+        std::sort(full.begin(),full.end());std::sort(local.begin(),local.end());
+        log_line(L"Organizer offscreen hover (200 added entries, 144 DPI) view=%d full_p95_ms=%.2f tile_p95_ms=%.2f",order,full[37],local[37]);
+        shelf.hovers.clear();
+    }
+    auto& views=shelf.views;
+    auto const& before=views.group_covers(model);
+    auto id=model.groups[1].id;
+    auto previous=before.at(id).front();
+    model.entries[previous].loose=true;++model.revision;
+    auto const& after=views.group_covers(model).at(id);
+    if(after.empty()||after.front()==previous)return false;
+    auto path=model.entries[previous].name;
+    auto const& search=views.list(model,0,path,id);
+    if(std::find(search.begin(),search.end(),previous)!=search.end())return false;
+    return true;
 }
 bool surface_tests(std::wstring const& directory){
     if(shelf.window||shelf.lease||shelf.model)return false;
@@ -641,6 +914,7 @@ bool surface_tests(std::wstring const& directory){
         RECT owner{},edit{};GetWindowRect(window,&owner);GetWindowRect(shelf.search,&edit);if(edit.left<owner.left||edit.right>owner.right||edit.top<owner.top||edit.bottom>owner.bottom)return false;
         SetWindowTextW(shelf.search,L"中文 search");wchar_t text[40]{};GetWindowTextW(shelf.search,text,40);if(wcscmp(text,L"中文 search"))return false;
     }
+    if(!hover_render_tests(window))return false;
     HWND search=shelf.search;DestroyWindow(window);return !shelf.window&&!IsWindow(search)&&!shelf.surface.pixels();
 }
 bool arrival_tests(std::wstring const& directory){
@@ -662,8 +936,14 @@ bool arrival_tests(std::wstring const& directory){
     auto find=[&]()->Entry*{auto it=std::find_if(shelf.model->entries.begin(),shelf.model->entries.end(),[&](auto const& e){return e.path==file.wstring();});return it==shelf.model->entries.end()?nullptr:&*it;};
     if(shelf.loose.size()!=1||!find()||!find()->loose||!shelf.loose[0]->hint||IsWindowVisible(window)||IsWindowVisible(shelf.loose[0]->window))return false;
     if(!find()->positioned||find()->position.x!=anchor.x-std::max(scaled(184),cell_size())/2||find()->position.y!=anchor.y-scaled(5)||arrival_anchor.valid)return false;
+    auto revision=shelf.model->revision;
+    auto listing=scan_roots(shelf.roots);
+    if(listing.empty())return false;
+    std::reverse(listing.front().files.begin(),listing.front().files.end());
+    apply_listing(listing);
+    if(shelf.model->revision!=revision||!find())return false;
     auto due=find()->due;if(due<std::chrono::steady_clock::now()+std::chrono::seconds(50))return false;
-    synchronize();if(!find()||find()->due!=due||!find()->loose)return false;
+    apply_listing(scan_roots(shelf.roots));if(!find()||find()->due!=due||!find()->loose)return false;
     shelf_proc(window,WM_TIMER,3,0);if(!find()->loose)return false;
     g_app.settings.organizer_auto_collect=0;find()->due=std::chrono::steady_clock::now()-std::chrono::seconds(1);
     shelf_proc(window,WM_TIMER,3,0);if(!find()->loose)return false;
@@ -686,7 +966,7 @@ bool arrival_tests(std::wstring const& directory){
     if(!rejected||!std::filesystem::exists(file)||!std::filesystem::exists(collision)||start_file_rename(file.wstring(),L"../outside.txt"))return false;
     auto link=desktop/L"Demo.url", renamed=desktop/L"Approved.url";
     if(!write_utf8_atomic(link.c_str(),L"[InternetShortcut]\r\nURL=about:blank\r\n"))return false;
-    synchronize();
+    apply_listing(scan_roots(shelf.roots));
     auto edit=[&](wchar_t const* text){
         shelf.editor=CreateWindowExW(0,L"EDIT",text,WS_CHILD,0,0,100,24,window,HMENU(2),g_app.instance,nullptr);
         if(!shelf.editor)return false;
@@ -707,10 +987,59 @@ bool arrival_tests(std::wstring const& directory){
     return approved&&std::filesystem::exists(renamed)&&!std::filesystem::exists(link)&&
         !std::filesystem::exists(desktop/L"Approved")&&shortcut_extension(L"DEMO.LNK",false)==L".LNK"&&shortcut_extension(L"DEMO.LNK",true).empty();
 }
+static bool startup_scan_test(){
+    auto directory=std::filesystem::path(g_app.data)/L"startup-scan";
+    auto desktop=directory/L"Desktop";
+    std::error_code error;std::filesystem::create_directories(desktop,error);
+    if(error||!write_utf8_atomic((desktop/L"Visible.txt").c_str(),L"fixture"))return false;
+    auto data=std::wstring(g_app.data);auto previous_window=g_app.window;
+    auto fixture=shelf.fixture;auto stopping=shelf.stopping;auto enabled=shelf.enabled;
+    auto roots=shelf.roots;auto dpi=shelf.dpi;
+    scope_exit restore([&]{
+        shelf.watcher.stop();if(shelf.window)DestroyWindow(shelf.window);
+        shelf.startup_scan.reset();shelf.model.reset();shelf.ready.reset();shelf.lease.reset();shelf.stop.reset();
+        shelf.fixture=fixture;shelf.stopping=stopping;shelf.enabled=enabled;shelf.roots=std::move(roots);shelf.dpi=dpi;
+        if(g_app.window)DestroyWindow(g_app.window);g_app.window=previous_window;
+        StringCchCopyW(g_app.data,LB_PATH,data.c_str());
+    });
+    g_app.window=CreateWindowExW(0,L"STATIC",L"Organizer handshake fixture",0,0,0,1,1,HWND_MESSAGE,nullptr,g_app.instance,nullptr);
+    StringCchCopyW(g_app.data,LB_PATH,directory.c_str());
+    shelf.fixture=true;shelf.stopping=false;
+    shelf.ready.reset(CreateEventW(nullptr,TRUE,FALSE,nullptr));shelf.stop.reset(CreateEventW(nullptr,TRUE,FALSE,nullptr));
+    shelf.lease.reset(CreateEventW(nullptr,TRUE,FALSE,nullptr));shelf.roots={desktop.wstring()};
+    if(!shelf.ready||!shelf.stop||!shelf.lease||!g_app.window)return false;
+    auto wait=[](auto const& job){
+        auto until=GetTickCount64()+3000;
+        while(job&&!job->done&&GetTickCount64()<until)Sleep(2);
+        return job&&job->done;
+    };
+    shelf.startup_scan=begin_scan({(directory/L"Offline").wstring()});
+    if(!wait(shelf.startup_scan))return false;
+    tick(17);
+    if(shelf.window||WaitForSingleObject(shelf.ready.get(),0)!=WAIT_TIMEOUT||
+       WaitForSingleObject(shelf.stop.get(),0)!=WAIT_OBJECT_0)return false;
+    for(int cycle=0;cycle<3;++cycle){
+        ResetEvent(shelf.stop.get());ResetEvent(shelf.ready.get());shelf.stopping=false;
+        shelf.roots={desktop.wstring()};shelf.startup_scan=begin_scan(shelf.roots);
+        if(!wait(shelf.startup_scan))return false;
+        tick(17);
+        if(!shelf.window||IsWindowVisible(shelf.window)||shelf.outside||
+           WaitForSingleObject(shelf.ready.get(),0)!=WAIT_OBJECT_0)return false;
+        if(!std::any_of(shelf.model->entries.begin(),shelf.model->entries.end(),[](auto const& e){return e.name==L"Visible.txt"&&!e.loose;}))return false;
+        shutdown(); // The fake lease stays alive until its owner acknowledges stop.
+        if(shelf.window||shelf.model||shelf.scan||shelf.surface.pixels()||WaitForSingleObject(shelf.stop.get(),0)!=WAIT_OBJECT_0)return false;
+    }
+    shelf.startup_scan=begin_scan({desktop.wstring()});auto interrupted=shelf.startup_scan;
+    shutdown();
+    return interrupted&&interrupted->cancelled&&!shelf.startup_scan&&!shelf.window;
+}
 bool transition_tests() {
     if(shelf.lease||shelf.window||shelf.stop) return false;auto wanted=g_app.settings.organizer_enabled;bool prior=shelf.stopping;auto token=shelf.token;
     scope_exit restore([&]{shelf.lease.reset();shelf.stop.reset();shelf.stopping=prior;shelf.token=token;g_app.settings.organizer_enabled=wanted;});
-    shelf.lease.reset(CreateEventW(nullptr,TRUE,FALSE,nullptr));if(!shelf.lease) return false;shelf.token=42;shelf.stopping=true;g_app.settings.organizer_enabled=1;
+    g_app.settings.organizer_enabled=1;
+    if(!startup_scan_test())return false;
+    shelf.lease.reset(CreateEventW(nullptr,TRUE,FALSE,nullptr));if(!shelf.lease)return false;
+    shelf.token=42;shelf.stopping=true;
     if(!message(WM_APP+91,42,HRESULT_FROM_WIN32(ERROR_BUSY))||!g_app.settings.organizer_enabled) return false;
     shelf.stopping=false;if(!message(WM_APP+91,41,HRESULT_FROM_WIN32(ERROR_BUSY))||!g_app.settings.organizer_enabled) return false;
     shelf.stop.reset(CreateEventW(nullptr,TRUE,FALSE,nullptr));if(!shelf.stop) return false;shell_restarted();

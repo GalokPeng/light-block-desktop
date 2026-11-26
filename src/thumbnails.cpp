@@ -49,6 +49,25 @@ void start() {
     });
 }
 void request(std::wstring path) { if(g_app.close_requested)return;if(!queue) start();if(!queue)return;{ std::lock_guard lock(queue->mutex);if(queue->stop||queue->pending.size()>=cache_limit||failed.contains(path)||!queue->pending.insert(path).second) return;queue->requests.push_back(std::move(path)); }queue->changed.notify_one(); }
+void prioritize(int const* indices,int count){
+    if(!indices||count<=0||g_app.close_requested)return;
+    if(!queue)start();
+    if(!queue)return;
+    std::lock_guard lock(queue->mutex);
+    if(queue->stop)return;
+    // Running work finishes normally. Only queued covers from the old viewport
+    // are displaced, so scrolling never waits behind a page of old video decodes.
+    for(auto const& path:queue->requests)queue->pending.erase(path);
+    queue->requests.clear();
+    for(int i=0;i<std::min(count,int(cache_limit));++i){
+        int n=indices[i];
+        if(n<0||n>=int(g_app.count))continue;
+        auto const& item=g_app.items[n];
+        if(!item.thumb&&!failed.contains(item.path)&&queue->pending.insert(item.path).second)
+            queue->requests.emplace_back(item.path);
+    }
+    queue->changed.notify_one();
+}
 void receive() {
     if(!queue) return;std::vector<Reply> replies;{ std::lock_guard lock(queue->mutex);replies=std::move(queue->replies);for(auto const& reply:replies) queue->pending.erase(reply.path); }
     for(auto& reply:replies){if(!reply.bitmap){failed.insert(reply.path);continue;}for(auto& item:g_app.items)if(reply.path==item.path){if(item.thumb)DeleteObject(item.thumb);item.thumb=reply.bitmap.release();touch(reply.path);++g_app.thumbnail_revision;break;}}

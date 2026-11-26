@@ -39,33 +39,72 @@ void IconCache::start(HWND window,UINT message,size_t pending_limit,bool resolve
         for(;;) {
             Request request;
             { std::unique_lock lock(state->mutex);state->condition.wait(lock,[&]{return state->stop||!state->requests.empty();});if(state->stop) return;request=std::move(state->requests.front());state->requests.pop_front(); }
-            auto reply=std::make_unique<Reply>();reply->key=request.key;
+            auto reply=std::make_unique<Reply>();reply->key=std::move(request.key);reply->path=request.path;
             try { reply->icon=load(request.path,request.folder,request.system,state->resolve_metadata,request.size); }catch(...) { reply->icon=CopyIcon(LoadIconW(nullptr,IDI_APPLICATION)); }
-            { std::lock_guard lock(state->mutex);if(state->stop) return;state->replies.push_back(std::move(reply)); }
-            if(state->window&&state->message) PostMessageW(state->window,state->message,0,0);
+            bool notify=false;
+            { std::lock_guard lock(state->mutex);if(state->stop) return;notify=state->replies.empty();state->replies.push_back(std::move(reply)); }
+            if(notify&&state->window&&state->message) PostMessageW(state->window,state->message,0,0);
         }
     });
 }
 void IconCache::stop(DWORD wait_ms) noexcept {
-    for(auto const& [key,icon]:icons_)if(icon)DestroyIcon(icon);icons_.clear();order_.clear();
+    for(auto const& [key,item]:icons_)if(item.icon)DestroyIcon(item.icon);icons_.clear();order_.clear();bytes_=0;saturated_=false;
     if(!state_) return;{ std::lock_guard lock(state_->mutex);state_->stop=true; }state_->condition.notify_all();if(thread_.joinable()) { if(WaitForSingleObject(state_->done.get(),wait_ms)==WAIT_OBJECT_0) thread_.join();else thread_.detach(); }state_.reset();
 }
 HICON IconCache::get(std::wstring const& identity,std::wstring const& path,bool folder,bool system,int size) {
-    size=std::clamp(size,16,256);auto key=identity+L"\npx="+std::to_wstring(size);
-    if(auto icon=icons_.find(key);icon!=icons_.end()) return icon->second;if(!state_) return nullptr;
-    { std::lock_guard lock(state_->mutex);if(state_->pending.size()<state_->pending_limit && state_->pending.insert(key).second) state_->requests.push_back({key,path,folder,system,size}); }
-    state_->condition.notify_one();return nullptr;
+    size=std::clamp(size,16,256);
+    Key key{identity,size};
+    auto found=icons_.lower_bound(key);
+    if(found!=icons_.end()&&found->first==key){
+        order_.splice(order_.end(),order_,found->second.position);
+        return found->second.icon;
+    }
+    if(!state_)return nullptr;
+    bool queued=false;
+    {
+        std::lock_guard lock(state_->mutex);
+        if(state_->pending.size()<state_->pending_limit){
+            queued=state_->pending.insert(key).second;
+            if(queued)state_->requests.push_back({key,path,folder,system,size});
+        }else if(!state_->pending.contains(key))saturated_=true;
+    }
+    if(queued)state_->condition.notify_one();
+    // Keep the same item's image on screen while its new DPI/size is prepared.
+    if(found==icons_.end()||found->first.first!=identity){
+        if(found==icons_.begin())return nullptr;
+        --found;
+        if(found->first.first!=identity)return nullptr;
+    }
+    order_.splice(order_.end(),order_,found->second.position);
+    return found->second.icon;
 }
-void IconCache::receive() {
-    if(!state_) return;std::vector<std::unique_ptr<Reply>> replies;{ std::lock_guard lock(state_->mutex);replies=std::move(state_->replies);for(auto const& reply:replies) state_->pending.erase(reply->key); }
-    for(auto &reply:replies) { if(icons_.contains(reply->key)) continue;while(order_.size()>=128) { auto old=std::move(order_.front());order_.pop_front();if(icons_[old]) DestroyIcon(icons_[old]);icons_.erase(old); }order_.push_back(reply->key);icons_.emplace(reply->key,std::exchange(reply->icon,nullptr)); }
+bool IconCache::receive(std::set<std::wstring>* changed_paths) {
+    if(!state_)return false;
+    std::vector<std::unique_ptr<Reply>> replies;
+    {std::lock_guard lock(state_->mutex);replies.swap(state_->replies);for(auto const& reply:replies)state_->pending.erase(reply->key);}
+    for(auto& reply:replies){
+        auto const& key=reply->key;
+        if(icons_.contains(key))continue;
+        auto size=cost(key.second);
+        while(!order_.empty()&&(order_.size()>=128||bytes_+size>12*1024*1024)){
+            auto oldest=icons_.find(order_.front());
+            if(oldest->second.icon)DestroyIcon(oldest->second.icon);
+            bytes_-=cost(oldest->first.second);
+            icons_.erase(oldest);order_.pop_front();
+        }
+        order_.push_back(key);
+        icons_.emplace(key,Cached{std::exchange(reply->icon,nullptr),std::prev(order_.end())});
+        bytes_+=size;
+        if(changed_paths)changed_paths->insert(reply->path);
+    }
+    return !replies.empty()&&std::exchange(saturated_,false);
 }
 bool icon_cache_tests(){
     auto source=LoadIconW(nullptr,IDI_INFORMATION);if(!source)return false;
     auto dimensions=[](HICON icon,int expected){ICONINFO info{};if(!icon||!GetIconInfo(icon,&info))return false;scope_exit clean([&]{if(info.hbmColor)DeleteObject(info.hbmColor);if(info.hbmMask)DeleteObject(info.hbmMask);});BITMAP bitmap{};return GetObjectW(info.hbmColor,sizeof bitmap,&bitmap)&&bitmap.bmWidth==expected&&bitmap.bmHeight==expected;};
     for(int size:{24,48,96,160,256}){auto normalized=normalize(source,size);bool valid=dimensions(normalized,size);if(normalized)DestroyIcon(normalized);if(!valid)return false;}
-    IconCache cache;cache.start(nullptr,0,8);auto obtain=[&](int size){HICON icon{};auto end=GetTickCount64()+5000;while(!icon&&GetTickCount64()<end){cache.receive();icon=cache.get(L"fixture",L"shell:MyComputerFolder",false,true,size);if(!icon)Sleep(10);}return icon;};
-    auto small=obtain(48),large=obtain(160);if(!dimensions(small,48)||!dimensions(large,160)||small==large)return false;
+    IconCache cache;cache.start(nullptr,0,8);auto obtain=[&](int size){HICON icon{};auto end=GetTickCount64()+5000;while(GetTickCount64()<end){cache.receive();icon=cache.get(L"fixture",L"shell:MyComputerFolder",false,true,size);if(icon&&dimensions(icon,size))break;Sleep(10);}return icon;};
+    auto small=obtain(48);if(!small||cache.get(L"fixture",L"shell:MyComputerFolder",false,true,160)!=small)return false;auto large=obtain(160);if(!dimensions(small,48)||!dimensions(large,160)||small==large)return false;
     if(cache.get(L"fixture",L"shell:MyComputerFolder",false,true,48)!=small)return false;
     cache.stop();return !cache.get(L"fixture",L"shell:MyComputerFolder",false,true,48);
 }

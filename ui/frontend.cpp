@@ -5,6 +5,7 @@
 #include "online.hpp"
 #include "pointer_settings.hpp"
 #include "group_settings.hpp"
+#include "storage.hpp"
 #include "focus.hpp"
 #include "file_tools.hpp"
 #include "clipboard.hpp"
@@ -126,7 +127,12 @@ class Main:public QMainWindow {
                 if(control) { control->setAccessibleName(s(d.label));control->setSizePolicy(QSizePolicy::Preferred,QSizePolicy::Fixed);fields_[id]=control;values_[id]=d.value;form->addWidget(new SettingsRow(s(d.label),control)); }
             }
             if(section==0) form->addWidget(new SettingsRow(t("系统护眼模式","System night light"),night_light_button()));v->addWidget(fields);connect(title,&QToolButton::toggled,fields,[fields,title](bool open){title->setArrowType(open?Qt::DownArrow:Qt::RightArrow);fields->setVisible(open);});if(section>=1&&section<=3)title->setChecked(false);layout->addWidget(card);
-        }if(std::find(groups.begin(),groups.end(),1)!=groups.end()){auto card=new QFrame;card->setObjectName("surface");card->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Maximum);auto v=new QVBoxLayout(card);v->setContentsMargins(18,14,18,17);auto title=new SectionButton;title->setText(t("分组管理","Group management"));title->setChecked(false);title->setAccessibleName(title->text());title->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);title->setArrowType(Qt::RightArrow);title->setCheckable(true);v->addWidget(title);group_settings_=new GroupSettings;v->addWidget(group_settings_);group_settings_->hide();connect(title,&QToolButton::toggled,group_settings_,[this,title](bool open){title->setArrowType(open?Qt::DownArrow:Qt::RightArrow);group_settings_->setVisible(open);if(open)group_settings_->refresh();});layout->addWidget(card);}layout->addWidget(label(t("更改自动保存并生效。","Changes save and apply automatically."),"muted"));layout->addStretch();return scroll(body);
+        }if(std::find(groups.begin(),groups.end(),1)!=groups.end()){auto card=new QFrame;card->setObjectName("surface");card->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Maximum);auto v=new QVBoxLayout(card);v->setContentsMargins(18,14,18,17);auto title=new SectionButton;title->setText(t("分组管理","Group management"));title->setChecked(false);title->setAccessibleName(title->text());title->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);title->setArrowType(Qt::RightArrow);title->setCheckable(true);v->addWidget(title);group_settings_=new GroupSettings;v->addWidget(group_settings_);group_settings_->hide();connect(title,&QToolButton::toggled,group_settings_,[this,title](bool open){title->setArrowType(open?Qt::DownArrow:Qt::RightArrow);group_settings_->setVisible(open);if(open)group_settings_->refresh();});layout->addWidget(card);}
+        if(std::find(groups.begin(),groups.end(),0)!=groups.end()){
+            auto card=new QFrame;card->setObjectName("surface");auto box=new QVBoxLayout(card);
+            box->addWidget(label(t("存储空间","Storage")));box->addWidget(new storage::Panel);layout->addWidget(card);
+        }
+        layout->addWidget(label(t("更改自动保存并生效。","Changes save and apply automatically."),"muted"));layout->addStretch();return scroll(body);
     }
     QKeySequence sequence(int raw) { int vk=raw&0xffff;auto key=keypad_key(vk);auto mods=qt_modifiers(raw>>16);if(key==Qt::Key_unknown)key=qt_key(vk);else mods|=Qt::KeypadModifier;return QKeySequence(QKeyCombination(mods,key)); }
     void set_color(QPushButton* b,int value) { auto c=color(value);QPixmap swatch(36,36);swatch.fill(Qt::transparent);QPainter p(&swatch);p.setRenderHint(QPainter::Antialiasing);p.setPen(QPen(QColor("#80958d"),1));p.setBrush(c);p.drawRoundedRect(QRectF(2,2,32,32),8,8);p.end();swatch.setDevicePixelRatio(2);b->setIcon(QIcon(swatch));b->setIconSize(QSize(18,18));b->setText(c.name().toUpper()); }
