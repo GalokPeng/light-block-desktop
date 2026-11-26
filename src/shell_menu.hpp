@@ -8,7 +8,17 @@ class Menu {
     winrt::com_ptr<IContextMenu> menu_;
     winrt::com_ptr<IContextMenu2> menu2_;
     winrt::com_ptr<IContextMenu3> menu3_;
+    // Bind the submenu immediately, but create Explorer COM objects only when
+    // the user opens it. Installed Shell extensions can perform synchronous I/O.
     HWND owner_{};
+    HMENU deferred_{};
+    std::wstring path_;
+    bool extended_{}, initialized_{};
+    bool attach(HWND owner){
+        if(owner_)return owner_==owner;
+        if(!owner||!SetWindowSubclass(owner,messages,UINT_PTR(this),DWORD_PTR(this)))return false;
+        owner_=owner;return true;
+    }
     UINT count_{};
     bool system_shortcut_{};
     bool protected_verb(UINT id) const {
@@ -17,6 +27,14 @@ class Menu {
     static LRESULT CALLBACK messages(HWND hwnd,UINT message,WPARAM wp,LPARAM lp,UINT_PTR id,DWORD_PTR data) {
         auto self=reinterpret_cast<Menu*>(data);
         if(message==WM_NCDESTROY){RemoveWindowSubclass(hwnd,messages,id);self->owner_=nullptr;}
+        if(message==WM_INITMENUPOPUP&&self->deferred_){
+            if(HMENU(wp)==self->deferred_&&!self->initialized_){
+                self->initialized_=true;
+                DeleteMenu(self->deferred_,0,MF_BYPOSITION);
+                if(!self->append(hwnd,self->deferred_,self->path_,self->extended_))
+                    AppendMenuW(self->deferred_,MF_STRING|MF_GRAYED,0,tr(L"没有可用的系统操作",L"No Windows actions available"));
+            }
+        }
         if(message==WM_INITMENUPOPUP||message==WM_DRAWITEM||message==WM_MEASUREITEM||message==WM_MENUCHAR){
             LRESULT result{};
             if(self->menu3_&&self->menu3_->HandleMenuMsg2(message,wp,lp,&result)==S_OK)return result;
@@ -28,6 +46,15 @@ public:
     static constexpr UINT first_id=0x4000,last_id=0x7fff;
     Menu()=default;Menu(Menu const&)=delete;Menu& operator=(Menu const&)=delete;
     ~Menu(){if(owner_)RemoveWindowSubclass(owner_,messages,UINT_PTR(this));}
+    bool add_submenu(HWND owner,HMENU parent,std::wstring const& path,bool extended){
+        if(path.empty()||!attach(owner))return false;
+        auto sub=CreatePopupMenu();if(!sub)return false;
+        if(!AppendMenuW(sub,MF_STRING|MF_GRAYED,0,L"…")||
+           !AppendMenuW(parent,MF_POPUP,UINT_PTR(sub),tr(L"Windows 文件菜单",L"Windows file menu"))){
+            DestroyMenu(sub);return false;
+        }
+        path_=path;extended_=extended;deferred_=sub;return true;
+    }
     bool append(HWND owner,HMENU target,std::wstring const& path,bool extended=false){
         if(path.empty())return false;
         system_shortcut_=path==L"shell:MyComputerFolder"||path==L"shell:RecycleBinFolder"||path==L"ms-settings:";
@@ -41,8 +68,8 @@ public:
         // their local display-name action separate from changing Explorer.
         if(system_shortcut_) for(UINT offset=0;offset<count_;++offset)
             if(protected_verb(first_id+offset)) DeleteMenu(target,first_id+offset,MF_BYCOMMAND);
-        menu2_=menu_.try_as<IContextMenu2>();menu3_=menu_.try_as<IContextMenu3>();owner_=owner;
-        if(!SetWindowSubclass(owner,messages,UINT_PTR(this),DWORD_PTR(this)))owner_=nullptr;
+        menu2_=menu_.try_as<IContextMenu2>();menu3_=menu_.try_as<IContextMenu3>();
+        if(!attach(owner))return false;
         return count_!=0;
     }
     bool owns(UINT command)const{return menu_&&command>=first_id&&command<first_id+count_;}
@@ -65,6 +92,11 @@ inline bool tests(std::filesystem::path const& directory){
     HWND owner=CreateWindowExW(0,L"STATIC",L"Hidden shell menu test",WS_POPUP,0,0,1,1,nullptr,nullptr,g_app.instance,nullptr);if(!owner)return false;
     scope_exit close([&]{DestroyWindow(owner);});HMENU popup=CreatePopupMenu();if(!popup)return false;scope_exit destroy([&]{DestroyMenu(popup);});
     Menu menu;AppendMenuW(popup,MF_STRING,100,L"Organizer command");
-    return menu.append(owner,popup,path.wstring())&&menu.has_verb("properties")&&menu.has_verb("delete")&&menu.has_verb("rename")&&!menu.owns(100)&&std::filesystem::exists(path);
+    if(!menu.add_submenu(owner,popup,path.wstring(),false)||menu.owns(Menu::first_id))return false;
+    auto submenu=GetSubMenu(popup,1);if(!submenu||GetMenuItemCount(submenu)!=1)return false;
+    SendMessageW(owner,WM_INITMENUPOPUP,WPARAM(popup),0);
+    if(menu.owns(Menu::first_id))return false;
+    SendMessageW(owner,WM_INITMENUPOPUP,WPARAM(submenu),0);
+    return menu.has_verb("properties")&&menu.has_verb("delete")&&menu.has_verb("rename")&&!menu.owns(100)&&std::filesystem::exists(path);
 }
 }

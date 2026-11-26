@@ -4,7 +4,7 @@
 <p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases"><strong>Download latest release</strong></a> · <a href="#feature-preview">Feature preview</a> · <a href="https://light-block-desktop.vercel.app/en/">Website</a> · <a href="README.md">简体中文</a> · <a href="CHANGES.md">Changelog</a></p>
 
 
-**v2.1.0 stable.** Pin and reorder organizer items, match new files with group rules, or undo a collection action. The gallery prioritizes visible covers. Settings shows storage usage and lets you clear cached covers.
+**v2.1.1 stable.** Sharper organizer icons and faster access to organizer actions. Restoring a search result now collapses the shelf. Desktop notes and organizer popups no longer count as windows covering the taskbar.
 
 ## Download and install
 

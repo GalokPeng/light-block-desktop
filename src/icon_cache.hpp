@@ -39,6 +39,7 @@ public:
     void start(HWND window,UINT message,size_t pending_limit=512,bool resolve_metadata=false);
     void stop(DWORD wait_ms=1000) noexcept;
     HICON get(std::wstring const& key,std::wstring const& path,bool folder,bool system,int size=128);
-    bool receive(std::set<std::wstring>* changed_paths=nullptr);
+    static std::wstring shelf_key(std::wstring const& path,uint64_t modified,bool folder,bool system);
+    bool receive(std::set<std::wstring>* changed_paths=nullptr,std::set<std::wstring>* changed_keys=nullptr);
 };
 }

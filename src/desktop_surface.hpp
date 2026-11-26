@@ -57,16 +57,16 @@ public:
     }
     HDC dc()const{return dc_;}uint32_t* pixels()const{return pixels_;}int stride()const{return width_;}
     void trim(int w,int h){if(dc_&&(width_>(w+127)/128*128||height_>(h+127)/128*128)){clear();reserve(w,h);}}
-    bool present(HWND window,int w,int h,BYTE opacity,float radius,bool opaque=true,RECT const* dirty=nullptr){
+    bool present(HWND window,int w,int h,BYTE opacity,float radius,bool opaque=true,RECT const* dirty=nullptr,POINT* destination=nullptr){
         if(!dc_||w>width_||h>height_)return false;GdiFlush();mask(pixels_,width_,w,h,radius,opaque,dirty);
         POINT source{};SIZE size{w,h};BLENDFUNCTION blend{AC_SRC_OVER,0,opacity,AC_SRC_ALPHA};
         if(dirty){
             UPDATELAYEREDWINDOWINFO info{sizeof info};
-            info.psize=&size;info.hdcSrc=dc_;info.pptSrc=&source;info.pblend=&blend;
+            info.psize=&size;info.pptDst=destination;info.hdcSrc=dc_;info.pptSrc=&source;info.pblend=&blend;
             info.dwFlags=ULW_ALPHA;info.prcDirty=dirty;
             if(UpdateLayeredWindowIndirect(window,&info))return true;
         }
-        return UpdateLayeredWindow(window,nullptr,nullptr,&size,dc_,&source,0,&blend,ULW_ALPHA)!=FALSE;
+        return UpdateLayeredWindow(window,nullptr,destination,&size,dc_,&source,0,&blend,ULW_ALPHA)!=FALSE;
     }
 };
 inline bool tests(){

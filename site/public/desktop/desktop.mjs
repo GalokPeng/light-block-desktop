@@ -154,7 +154,7 @@ function settings(){
   return settingsGroup('play',t('播放与系统','Playback and system'),check('fullPause',t('前台全屏时暂停动态壁纸','Pause wallpaper during fullscreen'))+check('batteryPause',t('使用电池时暂停动态壁纸','Pause when on battery'))+check('resume',t('启动时恢复上次的壁纸','Restore wallpaper on startup'))+check('night',t('虚拟显示器夜间模式','Virtual display night light'))+'<small>'+t('开机启动和系统级护眼配置可在安装版中设置。','Set Windows startup and system night light in the installed app.')+'</small>',true)+settingsGroup('tool-prefs',t('工具偏好','Tool preferences'),check('restoreNotes',t('启动时恢复已贴桌面的便签','Restore pinned notes on startup')));
 }
 function about(){
-  return '<div class="about-card"><img src="/media/icon.png" alt=""><h2>'+product+' / v2.1.0</h2><h3>'+t('给桌面一点风景，给工作一点安静。','A little scenery for your desktop. A little calm for your work.')+'</h3><p>'+t('纯属个人娱乐，有BUG随便提issues，自己用得不顺就改改','A personal project. Found a bug? Open an issue, or adapt it to your liking.')+'</p><a href="https://github.com/GalokPeng/light-block-desktop" target="_blank" rel="noopener">GitHub ↗</a></div>';
+  return '<div class="about-card"><img src="/media/icon.png" alt=""><h2>'+product+' / v2.1.1</h2><h3>'+t('给桌面一点风景，给工作一点安静。','A little scenery for your desktop. A little calm for your work.')+'</h3><p>'+t('纯属个人娱乐，有BUG随便提issues，自己用得不顺就改改','A personal project. Found a bug? Open an issue, or adapt it to your liking.')+'</p><a href="https://github.com/GalokPeng/light-block-desktop" target="_blank" rel="noopener">GitHub ↗</a></div>';
 }
 const groups=[{name:t('常用','Favorites'),color:'#9cdcc2'}];
 let shelfExpanded=false,shelfQuery='',selectedFile=null,shelfMove=false,shelfOrigin=null;

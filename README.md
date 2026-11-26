@@ -4,7 +4,7 @@
 <p align="center"><a href="https://github.com/GalokPeng/light-block-desktop/releases"><strong>下载最新安装包</strong></a> · <a href="#功能展示">功能展示</a> · <a href="https://light-block-desktop.vercel.app/?lang=zh">产品官网</a> · <a href="README.en.md">English</a> · <a href="CHANGES.md">更新日志</a></p>
 
 
-**v2.1.0 正式版。** 收纳支持首排固定、拖动排序、按文件名匹配分组和撤销操作。图库优先加载可见封面；设置中可查看空间占用并清理封面缓存。
+**v2.1.1 正式版。** 收纳图标按实际显示尺寸绘制，右键优先打开收纳操作。修复搜索结果还原后收缩异常，以及收纳和桌面便签干扰任务栏显隐。
 
 ## 下载与安装
 

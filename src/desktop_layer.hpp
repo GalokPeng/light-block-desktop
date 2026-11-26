@@ -1,6 +1,13 @@
 #pragma once
 #include <windows.h>
 namespace lb::desktop_layer {
+inline constexpr wchar_t surface_property[]=L"LightBlock.DesktopSurface";
+inline void mark(HWND window){SetPropW(window,surface_property,HANDLE(1));}
+inline bool is_surface(HWND window){
+    for(int depth=0;window&&depth<16;++depth,window=GetWindow(window,GW_OWNER))
+        if(GetPropW(window,surface_property))return true;
+    return false;
+}
 inline HWND host(){
     HWND result{};EnumWindows([](HWND window,LPARAM parameter)->BOOL{
         if(FindWindowExW(window,nullptr,L"SHELLDLL_DefView",nullptr)){*reinterpret_cast<HWND*>(parameter)=window;return FALSE;}return TRUE;
@@ -39,7 +46,7 @@ inline void maintain(HWND window,HWND desktop){
         if(current==window){seen=true;continue;}
         if(current==desktop){repair=!seen;break;}
         auto owner=GetAncestor(current,GA_ROOTOWNER);
-        if(seen&&IsWindowVisible(current)&&!IsIconic(current)&&owner!=desktop&&owner!=GetShellWindow())repair=true;
+        if(seen&&IsWindowVisible(current)&&!IsIconic(current)&&owner!=desktop&&owner!=GetShellWindow()&&!is_surface(current))repair=true;
     }
     if(repair)SetWindowPos(window,anchor(window,desktop),0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER);
 }

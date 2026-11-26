@@ -1,6 +1,7 @@
 #include "taskbar.hpp"
 #include "taskbar_recovery.hpp"
 #include "taskbar_policy.hpp"
+#include "desktop_layer.hpp"
 #include <sddl.h>
 #include <fstream>
 #include <filesystem>
@@ -225,8 +226,8 @@ struct Coverage { RECT strip;HWND bar;bool covered{}; };
 BOOL CALLBACK covered_window(HWND window,LPARAM value) {
     auto &coverage=*reinterpret_cast<Coverage*>(value);if(window==coverage.bar || !IsWindowVisible(window)||IsIconic(window)) return TRUE;
     LONG_PTR ex=GetWindowLongPtrW(window,GWL_EXSTYLE);if(ex&WS_EX_TRANSPARENT) return TRUE;
-    wchar_t type[100];GetClassNameW(window,type,100);if(!wcscmp(type,L"Progman")||!wcscmp(type,L"WorkerW")||!wcsncmp(type,L"Shell_",6)) return TRUE;
-    HWND owner=GetWindow(window,GW_OWNER);if(owner==GetShellWindow()) return TRUE;
+    wchar_t type[100];GetClassNameW(window,type,100);if(!wcscmp(type,L"#32768")||!_wcsicmp(type,L"tooltips_class32")||!wcscmp(type,L"Progman")||!wcscmp(type,L"WorkerW")||!wcsncmp(type,L"Shell_",6)) return TRUE;
+    HWND owner=GetWindow(window,GW_OWNER);if((owner&&owner==GetShellWindow())||lb::desktop_layer::is_surface(window)) return TRUE;
     DWORD cloaked=0;DwmGetWindowAttribute(window,14,&cloaked,sizeof cloaked);if(cloaked) return TRUE;
     RECT rect{};if(FAILED(DwmGetWindowAttribute(window,9,&rect,sizeof rect))) GetWindowRect(window,&rect);RECT intersection{};
     if(IntersectRect(&intersection,&rect,&coverage.strip) && intersection.right-intersection.left>3 && intersection.bottom-intersection.top>3) { coverage.covered=true;return FALSE; }return TRUE;
@@ -337,6 +338,12 @@ bool fullscreen_tests(){
     scope_exit close_owner([&]{DestroyWindow(owner);});
     HWND window=CreateWindowExW(WS_EX_NOACTIVATE,L"STATIC",L"Frameless cached-work-area fixture",WS_POPUP|WS_VISIBLE,area.before.left,area.before.top,600,400,owner,nullptr,g_app.instance,nullptr);if(!window)return false;
     scope_exit close([&]{DestroyWindow(window);});
+    RECT strip{area.before.left,area.before.bottom-16,area.before.right,area.before.bottom};
+    Coverage real{strip,nullptr};covered_window(window,LPARAM(&real));if(!real.covered)return false;
+    lb::desktop_layer::mark(owner);Coverage popup{strip,nullptr};covered_window(window,LPARAM(&popup));if(popup.covered)return false;
+    RemovePropW(owner,lb::desktop_layer::surface_property);
+    lb::desktop_layer::mark(window);Coverage note{strip,nullptr};covered_window(window,LPARAM(&note));if(note.covered)return false;
+    RemovePropW(window,lb::desktop_layer::surface_property);
     WorkArea::resize(window,LPARAM(&area));RECT rect{};GetWindowRect(window,&rect);if(rect.bottom!=area.after.bottom)return false;
     std::swap(area.before,area.after);area.attempts.clear();WorkArea::resize(window,LPARAM(&area));GetWindowRect(window,&rect);
     return rect.bottom==area.after.bottom;

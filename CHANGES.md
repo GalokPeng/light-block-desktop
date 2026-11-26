@@ -1,3 +1,14 @@
+# v2.1.1 · 收纳图标、右键菜单与任务栏修复 / Organizer and taskbar fixes
+
+- 收纳图标原先按悬停放大尺寸准备，静止时再次缩小，细线容易发虚。现在按实际像素准备常态图标，高分辨率图标缩小时保留更多细节。透明底板和背景透明度动画复用绘制结果，减少重复重绘。
+- 原先打开右键菜单要等待资源管理器和第三方文件扩展。现在先显示收纳操作，展开「Windows 文件菜单」时才加载系统命令，属性、重命名和删除仍使用 Windows 原生操作。
+- 搜索展开后还原图标、移入分组或从桌面菜单放回收纳，会在操作成功后关闭搜索并收起。修复输入框和收纳面板切换、收缩后局部重绘时可能出现的闪动。
+- 任务栏自动隐藏曾把部分桌面浮层当作遮挡窗口，包括编辑中的便签、收纳框的弹出控件和系统菜单。现在识别这些窗口，普通应用和全屏窗口仍按遮挡情况触发显隐。
+- Render resting shelf icons at their actual pixel size, preserve detail during downsampling, and reuse tile surfaces and foreground content during opacity animation.
+- Open organizer actions without waiting for installed Shell extensions. Expand **Windows file menu** for native file commands.
+- Collapse Search after restoring or regrouping an item. Avoid redundant edit-window updates and rebuild the surface after a resize.
+- Exclude desktop surfaces, editing notes and their owned popups from taskbar coverage detection while retaining fullscreen app behavior.
+
 # v2.1.0 · 桌面收纳、图库与空间管理 / Organizer, gallery and storage
 
 - 右键固定最多十个收纳项到首排，拖动固定项可调整顺序。分组支持按文件名或扩展名匹配新文件，一次撤销可恢复刚才的收纳、移动分组或移除快捷入口。

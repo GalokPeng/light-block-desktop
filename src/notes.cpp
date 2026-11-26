@@ -31,6 +31,7 @@ static LRESULT CALLBACK note_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) 
     if(!n) return DefWindowProcW(window,message,wp,lp);
     switch(message) {
     case WM_CREATE:
+        lb::desktop_layer::mark(window);
         n->brush=CreateSolidBrush(n->color);
         n->loading=TRUE;n->edit=CreateWindowExW(0,L"EDIT",L"",WS_CHILD|WS_VISIBLE|ES_MULTILINE|ES_AUTOVSCROLL|ES_WANTRETURN,18,48,300,200,window,(HMENU)1,g_app.instance,NULL);
         SendMessageW(n->edit,WM_SETFONT,(WPARAM)g_app.font,TRUE);SendMessageW(n->edit,EM_SETLIMITTEXT,128*1024,0);SetWindowSubclass(n->edit,note_edit,1,0);return 0;
@@ -64,7 +65,7 @@ static LRESULT CALLBACK note_proc(HWND window,UINT message,WPARAM wp,LPARAM lp) 
     case WM_CLOSE:
         if(n->dirty && !note_save(n)) { error_box(window,tr(L"便签保存失败，请保留窗口后重试",L"Could not save this note. Keep it open and retry."),HRESULT_FROM_WIN32(GetLastError()));return 0; }
         if(!shutting_down) note_meta_set(n->file,L"pinned",0);DestroyWindow(window);return 0;
-    case WM_DESTROY:DeleteObject(n->brush);ZeroMemory(n,sizeof *n);return 0;
+    case WM_DESTROY:RemovePropW(window,lb::desktop_layer::surface_property);DeleteObject(n->brush);ZeroMemory(n,sizeof *n);return 0;
     }
     return DefWindowProcW(window,message,wp,lp);
 }
